@@ -6,6 +6,9 @@ import SwiftUI
 struct AnchorDrawingPane: View {
     @EnvironmentObject var env: AppEnvironment
     @Binding var draggingAnchor: AnchorID?
+    @Binding var isOutliningBuilding: Bool
+    @Binding var outlinePoints: [LocalPoint]
+    let proposedAnchors: [AnchorPair]
 
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -105,6 +108,9 @@ struct AnchorDrawingPane: View {
                 Button("취소") { env.pendingAnchorLocal = nil }
                     .buttonStyle(.toolbarIcon)
                     .controlSize(.mini)
+            } else if isOutliningBuilding {
+                Text("건물 외곽 모서리를 순서대로 찍으세요 (\(outlinePoints.count)점 · 최소 4점)")
+                    .font(.caption)
             } else {
                 Text("도면에서 Anchor로 쓸 지점을 클릭하세요 (건물 모서리·기둥 중심처럼 지도에서도 특정 가능한 곳)")
                     .font(.caption)
@@ -134,6 +140,19 @@ struct AnchorDrawingPane: View {
                 drawMarker(ctx, at: pair.local, index: i + 1,
                            color: env.canvasBackground.marker(
                                env.outlierIndices.contains(i) ? .outlier : .normal))
+            }
+            if !outlinePoints.isEmpty {
+                var outline = Path()
+                outline.move(to: outlinePoints[0].cg)
+                for p in outlinePoints.dropFirst() { outline.addLine(to: p.cg) }
+                if outlinePoints.count >= 4 { outline.closeSubpath() }
+                ctx.stroke(outline, with: .color(.orange), lineWidth: 2 / scale)
+                for (i, point) in outlinePoints.enumerated() {
+                    drawMarker(ctx, at: point, index: i + 1, color: .orange)
+                }
+            }
+            for (i, pair) in proposedAnchors.enumerated() {
+                drawMarker(ctx, at: pair.local, index: i + 1, color: .purple)
             }
             if let pending = env.pendingAnchorLocal {
                 drawMarker(ctx, at: pending, index: nil,
@@ -166,7 +185,7 @@ struct AnchorDrawingPane: View {
             .onChanged { value in
                 if draggingAnchor == nil && !panning && lastDrag == .zero {
                     let start = toLocal(value.startLocation)
-                    if let hit = nearestAnchor(to: start) { draggingAnchor = hit }
+                    if !isOutliningBuilding, let hit = nearestAnchor(to: start) { draggingAnchor = hit }
                     else { panning = true }
                 }
                 let delta = CGSize(width: value.translation.width - lastDrag.width,
@@ -183,7 +202,8 @@ struct AnchorDrawingPane: View {
             .onEnded { value in
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if draggingAnchor == nil && moved < 5 {
-                    env.pendingAnchorLocal = toLocal(value.location)
+                    if isOutliningBuilding { outlinePoints.append(toLocal(value.location)) }
+                    else { env.pendingAnchorLocal = toLocal(value.location) }
                 }
                 draggingAnchor = nil
                 panning = false

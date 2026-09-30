@@ -20,6 +20,16 @@ struct AnchorScreen: View {
     @State private var grabOffset: CLLocationCoordinate2D?
     @State private var didPinCamera = false
     @State private var showCriteria = false
+    @State private var showAutoAssistant = false
+    @State private var isOutliningBuilding = false
+    @State private var outlinePoints: [LocalPoint] = []
+    @State private var footprints: [BuildingFootprint] = []
+    @State private var selectedFootprintID: String?
+    @State private var autoCenter: GeoPoint?
+    @State private var autoProposal: AutoAnchorProposal?
+    @State private var autoMessage: String?
+    @State private var isLoadingFootprints = false
+    @State private var footprintRequestID = UUID()
     // 명세 9-6 선정 기준 팝오버의 열림 상태. 기본은 닫힘이다 — 아래 `criteriaButton` 주석 참고.
     @FocusState private var searchFocused: Bool
 
@@ -27,9 +37,17 @@ struct AnchorScreen: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
+            if showAutoAssistant {
+                autoAssistantPanel
+                Divider()
+            }
             HSplitView {
-                AnchorDrawingPane(draggingAnchor: $draggingAnchor)
+                AnchorDrawingPane(draggingAnchor: $draggingAnchor,
+                                  isOutliningBuilding: $isOutliningBuilding,
+                                  outlinePoints: $outlinePoints,
+                                  proposedAnchors: autoProposal?.pairs ?? [])
                     .frame(minWidth: 380)
+                    .onChange(of: outlinePoints) { _, _ in autoProposal = nil }
                 mapPane
                     .frame(minWidth: 380)
             }
@@ -61,6 +79,13 @@ struct AnchorScreen: View {
             Spacer(minLength: 8)
 
             statusChip
+
+            Button {
+                showAutoAssistant.toggle()
+                if !showAutoAssistant { isOutliningBuilding = false }
+            } label: {
+                Label("자동 앵커 후보", systemImage: "wand.and.stars")
+            }
 
             Toggle(isOn: $showOverlay) {
                 Label("도면 겹쳐보기", systemImage: "square.on.square")
@@ -125,6 +150,31 @@ struct AnchorScreen: View {
 
             MapReader { proxy in
                 Map(position: $camera) {
+                    if showAutoAssistant {
+                        ForEach(Array(footprints.enumerated()), id: \.element.id) { index, footprint in
+                            MapPolyline(coordinates: footprint.coordinates.map(\.clCoordinate)
+                                        + [footprint.coordinates[0].clCoordinate])
+                                .stroke(footprint.id == selectedFootprintID ? .blue : .gray,
+                                        lineWidth: footprint.id == selectedFootprintID ? 3 : 1.5)
+                            Annotation("건물 \(index + 1)", coordinate: footprint.center.clCoordinate) {
+                                Text("\(index + 1)")
+                                    .font(.caption.weight(.bold))
+                                    .padding(5)
+                                    .background(footprint.id == selectedFootprintID ? Color.blue : Color.gray,
+                                                in: Circle())
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        if let proposal = autoProposal {
+                            ForEach(Array(proposal.pairs.enumerated()), id: \.element.id) { index, pair in
+                                Annotation("자동 후보 \(index + 1)", coordinate: pair.geo.clCoordinate) {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(.purple)
+                                }
+                            }
+                        }
+                    }
                     ForEach(Array(env.anchors.pairs.enumerated()), id: \.element.id) { i, pair in
                         Annotation(pair.label, coordinate: pair.geo.clCoordinate, anchor: .center) {
                             AnchorMapMarker(index: i + 1,
@@ -140,12 +190,12 @@ struct AnchorScreen: View {
                         }
                     }
                 }
-                .mapStyle(.imagery(elevation: .flat))
+                .mapStyle(.standard(elevation: .flat))
                 .onMapCameraChange(frequency: .onEnd) { context in
                     visibleRegion = context.region
                 }
                 .onAppear { pinCameraIfNeeded() }
-                .onChange(of: env.anchors.pairs.count) { _ in pinCameraIfNeeded() }
+                .onChange(of: env.anchors.pairs.count) { _, _ in pinCameraIfNeeded() }
                 // 지금 보고 있는 범위를 검색 편향값으로 쓴다(`PlaceSearchModel.search(around:)`).
                 // 같은 이름의 장소가 여럿일 때 화면 근처를 먼저 돌려준다.
                 .overlay {
@@ -166,6 +216,133 @@ struct AnchorScreen: View {
 
     // MARK: 장소 검색 (2026-08-26 요청)
 
+    private var autoAssistantPanel: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Text("자동 앵커 후보").font(.subheadline.weight(.semibold))
+                Text("장소 검색 → 건물 외곽 선택 → 도면 외곽 모서리를 순서대로 찍기")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Link("건물 외곽 © OpenStreetMap contributors",
+                     destination: URL(string: "https://www.openstreetmap.org/copyright")!)
+                    .font(.caption2)
+            }
+            HStack(spacing: 8) {
+                Button("주변 건물 찾기") { Task { await loadFootprints() } }
+                    .disabled(isLoadingFootprints || (autoCenter == nil && visibleRegion == nil))
+                if isLoadingFootprints { ProgressView().controlSize(.small) }
+
+                Picker("지도 건물", selection: $selectedFootprintID) {
+                    Text("건물 선택").tag(nil as String?)
+                    ForEach(footprints) { footprint in
+                        Text(footprint.displayName).tag(Optional(footprint.id))
+                    }
+                }
+                .frame(maxWidth: 330)
+                .disabled(footprints.isEmpty)
+                .onChange(of: selectedFootprintID) { _, id in
+                    autoProposal = nil
+                    if let building = footprints.first(where: { $0.id == id }) {
+                        let latitudes = building.coordinates.map(\.latitude)
+                        let longitudes = building.coordinates.map(\.longitude)
+                        let latMeters = ((latitudes.max() ?? 0) - (latitudes.min() ?? 0)) * 111_000
+                        let lonMeters = ((longitudes.max() ?? 0) - (longitudes.min() ?? 0))
+                            * 111_000 * cos(building.center.latitude * .pi / 180)
+                        camera = .region(MKCoordinateRegion(
+                            center: building.center.clCoordinate,
+                            latitudinalMeters: max(150, latMeters * 2),
+                            longitudinalMeters: max(150, lonMeters * 2)))
+                        didPinCamera = true
+                    }
+                }
+
+                Toggle("도면 외곽 찍기", isOn: $isOutliningBuilding)
+                    .fixedSize()
+                    .disabled(env.document == nil)
+                    .onChange(of: isOutliningBuilding) { _, enabled in
+                        if enabled { env.pendingAnchorLocal = nil }
+                    }
+                Button("마지막 점 취소") {
+                    if !outlinePoints.isEmpty { outlinePoints.removeLast() }
+                }
+                .disabled(outlinePoints.isEmpty)
+                Button("초기화") {
+                    outlinePoints = []
+                    autoProposal = nil
+                }
+                .disabled(outlinePoints.isEmpty)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 8) {
+                Button("후보 생성") { makeAutoProposal() }
+                    .disabled(outlinePoints.count < 4 || selectedFootprintID == nil)
+                Button("4쌍 적용") {
+                    guard let proposal = autoProposal else { return }
+                    env.addAutoAnchorProposal(proposal)
+                    if !env.anchors.pairs.isEmpty {
+                        autoProposal = nil
+                        isOutliningBuilding = false
+                    }
+                }
+                .disabled(autoProposal?.canApply != true || !env.anchors.pairs.isEmpty)
+
+                if !env.anchors.pairs.isEmpty {
+                    Text("기존 Anchor가 있으면 후보를 적용할 수 없습니다. 기존 쌍을 확인하세요.")
+                        .foregroundStyle(.secondary)
+                } else if let proposal = autoProposal {
+                    Text(String(format: "외곽 정합 오차 %.1f m (크기 대비 %.0f%%)%@",
+                                proposal.rmsMeters, proposal.relativeError * 100,
+                                proposal.canApply ? " · 지도와 도면에서 후보를 확인하세요" : " · 다른 외곽을 고르세요"))
+                        .foregroundStyle(proposal.canApply ? Color.secondary : Color.red)
+                } else if let autoMessage {
+                    Text(autoMessage).foregroundStyle(.secondary)
+                } else {
+                    Text("후보는 확인 후에만 저장됩니다. 외곽이 불명확하면 수동 앵커를 사용하세요.")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+    }
+
+    @MainActor
+    private func loadFootprints() async {
+        guard !isLoadingFootprints else { return }
+        let center = visibleRegion.map {
+            GeoPoint(longitude: $0.center.longitude, latitude: $0.center.latitude)
+        } ?? autoCenter
+        guard let center else { return }
+        isLoadingFootprints = true
+        let requestID = UUID()
+        footprintRequestID = requestID
+        autoMessage = nil
+        footprints = []
+        selectedFootprintID = nil
+        autoProposal = nil
+        defer { if footprintRequestID == requestID { isLoadingFootprints = false } }
+        do {
+            let found = try await BuildingFootprintService.fetch(near: center)
+            guard footprintRequestID == requestID else { return }
+            footprints = found
+            autoMessage = footprints.isEmpty
+                ? "근처에 건물 외곽 데이터가 없습니다. 수동 앵커나 측량 좌표를 사용하세요."
+                : "건물 \(footprints.count)개를 찾았습니다. 지도 윤곽과 면적을 보고 대상 건물을 고르세요."
+        } catch {
+            guard footprintRequestID == requestID else { return }
+            autoMessage = error.localizedDescription
+        }
+    }
+
+    private func makeAutoProposal() {
+        guard let id = selectedFootprintID,
+              let building = footprints.first(where: { $0.id == id }) else { return }
+        autoProposal = AutoAnchorMatcher.propose(localOutline: outlinePoints, building: building)
+        autoMessage = autoProposal == nil ? "외곽 정합에 실패했습니다. 모서리를 둘레 순서대로 다시 찍으세요." : nil
+    }
+
     private var searchBar: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
@@ -176,7 +353,7 @@ struct AnchorScreen: View {
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onSubmit { placeSearch.search(around: visibleRegion) }
-                .onChange(of: placeSearch.query) { _ in
+                .onChange(of: placeSearch.query) { _, _ in
                     if PlaceSearchModel.normalized(placeSearch.query) == nil { placeSearch.clear() }
                 }
                 // 검색어를 지우면 남아 있던 결과 목록도 함께 닫는다.
@@ -215,12 +392,21 @@ struct AnchorScreen: View {
 
             ForEach(placeSearch.results) { result in
                 Button {
-                    camera = .region(PlaceSearchModel.focusRegion(for: result))
+                    let region = PlaceSearchModel.focusRegion(for: result)
+                    camera = .region(region)
+                    visibleRegion = region
                     didPinCamera = true
+                    autoCenter = GeoPoint(longitude: result.coordinate.longitude,
+                                          latitude: result.coordinate.latitude)
+                    footprintRequestID = UUID()
+                    isLoadingFootprints = false
+                    footprints = []
+                    selectedFootprintID = nil
+                    autoProposal = nil
                     placeSearch.dismissResults()
                     searchFocused = false
-                    // 검색은 지도를 옮기기만 한다. Anchor 쌍은 사용자의 클릭으로만 만들어진다 —
-                    // MapKit이 주는 점은 건물 대표점이라 도면의 특정 모서리와 대응하지 않는다.
+                    // 검색 결과 좌표는 건물 대표점이라 대응점으로 저장하지 않는다.
+                    // 자동 후보를 만들 때는 별도의 건물 외곽과 도면 외곽을 맞춘다.
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(result.name).font(.callout)
@@ -354,7 +540,7 @@ struct AnchorScreen: View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "lightbulb")
                 .foregroundStyle(.secondary)
-            Text("Anchor를 한쪽에 몰아 찍지 말고 도면의 각 모서리 근처에 하나씩, 내부에도 몇 개를 두세요. 건물 외벽 모서리처럼 위성 이미지에서도 특정할 수 있는 지점이 좋습니다.")
+            Text("Anchor를 한쪽에 몰아 찍지 말고 도면의 각 모서리 근처에 하나씩, 내부에도 몇 개를 두세요. 일반 지도에도 위치가 명확히 표시되는 지점을 고르세요.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -478,7 +664,7 @@ struct AnchorScreen: View {
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)
 
-            Text("MapKit 위성 이미지 해상도가 부족한 건물에서는 이 직접 입력 경로가 주 경로입니다. 측량 성과가 있으면 그 값을 그대로 넣으세요.")
+            Text("일반 지도에 정확한 건물 외곽이 표시되지 않을 수 있습니다. 측량 좌표가 있으면 직접 입력하세요.")
                 .font(.caption2).foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -583,10 +769,10 @@ enum AnchorCriteria {
         var id: String { text }
     }
 
-    static let principle = "도면과 실제 지도(위성 이미지) 양쪽에서 똑같이 특정할 수 있는 지점이어야 합니다."
+    static let principle = "도면과 일반 지도 양쪽에서 위치를 똑같이 특정할 수 있는 지점이어야 합니다."
 
     static let suitable: [Item] = [
-        Item(text: "건물 외벽 모서리", note: "가장 정확합니다. 우선 이것부터 찾으세요."),
+        Item(text: "건물 외벽 모서리", note: "지도에 외곽이 정확히 표시될 때 사용하세요."),
         Item(text: "주 출입구 중심", note: ""),
         Item(text: "외부 돌출 구조물의 모서리", note: ""),
         Item(text: "도면에 그려진 외부 포장·보도의 교차점", note: ""),
@@ -594,12 +780,12 @@ enum AnchorCriteria {
 
     static let unsuitable: [Item] = [
         Item(text: "방 한가운데, 가구, 실내 벽 교차점",
-             note: "위성 이미지에서 찍을 수 없습니다."),
+             note: "일반 지도에서 위치를 특정할 수 없습니다."),
         Item(text: "나무·차량 옆",
              note: "시점에 따라 위치가 바뀝니다."),
     ]
 
-    static let tallBuildingNote = "위성 촬영 각도 때문에 옥상이 옆으로 밀려 보입니다. 옥상 모서리가 아니라 건물이 지면과 만나는 접합부를 찍으세요."
+    static let tallBuildingNote = "일반 지도의 건물 윤곽은 실제 외벽과 차이가 있을 수 있습니다. 확인된 지면 접합부 좌표를 우선 사용하세요."
 }
 
 extension GeoPoint {
