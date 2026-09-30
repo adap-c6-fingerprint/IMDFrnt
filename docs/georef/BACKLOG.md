@@ -2,7 +2,9 @@
 
 작성일: 2026-09-30
 
-관련 상위 이슈: [#4 — 지도에 도면 정렬하여 Footprint 찍기](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/4)
+관련 상위 이슈: [#4 — 지도에 도면 정렬하여 Footprint 찍기](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/4)
+
+현재 저장소: [adap-c6-fingerprint/IMDFrnt](https://github.com/adap-c6-fingerprint/IMDFrnt). 이전 작업의 보존과 이슈 재등록 내역은 [이관 기록](MIGRATION.md)에 남겼다.
 
 사용자가 제공한 `AUTO_GEOREF_TASK.md`를 기반으로, 이후 확정한 제품 범위를 적용한 구현 계획이다. 각 이슈에 작업 목록과 측정 가능한 완료 조건을 기록했다. 선행 단계의 완료 조건을 통과한 뒤 다음 단계에 착수한다.
 
@@ -30,16 +32,16 @@
 
 | 단계 | 이슈 | 선행 | 핵심 완료 조건 |
 |---|---|---|---|
-| M0 | [#6 패키지·CRS·Provider·캐시](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/6) | 없음 | 좌표 왕복 < 1 mm, Bessel 정의 검증, 결정성·캐시 정책 |
-| M1 | [#7 입력 어댑터·합성 fixture](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/7) | #6 | 동일 seed 해시, 전체 도면 20종 외곽 면적 오차 ≤ 2% |
-| M2 | [#8 다중 가설·rigid/eave 정합](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/8) | #7 | 가설 포함률 ≥ 99%, 비대칭 성공률 ≥ 95%, median 오차 ≤ 1.5 m |
-| M3 | [#9 모호성 게이트·검토 CLI](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/9) | #8 | 무단서 대칭 골든 100% 검토, 자동 수락 오답 ≤ 1% |
-| M4 | [#10 방위·주소·인접 건물 단서](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/10) | #9 | 독립 방위 단서가 있는 대칭 사례 자동 수락 ≥ 90%, 오답 ≤ 1% |
-| M5 | [#11 실제 Provider·provenance](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/11) | #10 | 출처·라이선스·snapshot 기록 100%, 후보 포함률 ≥ 99% |
-| M6 | [#12 실제 데이터 벤치마크](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/12) | #11 | 정확도·모호성 지표와 표본 수, 후보 ≤ 50개 p95 ≤ 10 s |
-| M7 UI | [#13 S7·방향키 검토 UX](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/13) | #12 | 2/4방향 후보 검토, 입력 충돌 방지, 확정·실행 취소 |
-| M7 IMDF | [#14 extension·도면 기하·sidecar](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/14) | #13 | validator 통과, 좌표 7자리, 도면 유래 기하 |
-| M7 Raster | [#15 래스터·단위 미확정 입력](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/15) | #14 | 축척 bound·불확실성 기록, IMDF 출력 검증 |
+| M0 | [#6 패키지·CRS·Provider·캐시](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/6) | 없음 | 좌표 왕복 < 1 mm, Bessel 정의 검증, 결정성·캐시 정책 |
+| M1 | [#7 입력 어댑터·합성 fixture](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/7) | #6 | 동일 seed 해시, 전체 도면 20종 외곽 면적 오차 ≤ 2% |
+| M2 | [#8 다중 가설·rigid/eave 정합](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/8) | #7 | 가설 포함률 ≥ 99%, 비대칭 성공률 ≥ 95%, median 오차 ≤ 1.5 m |
+| M3 | [#9 모호성 게이트·검토 CLI](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/9) | #8 | 무단서 대칭 골든 100% 검토, 자동 수락 오답 ≤ 1% |
+| M4 | [#10 방위·주소·인접 건물 단서](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/10) | #9 | 독립 방위 단서가 있는 대칭 사례 자동 수락 ≥ 90%, 오답 ≤ 1% |
+| M5 | [#11 실제 Provider·provenance](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/11) | #10 | 출처·라이선스·snapshot 기록 100%, 후보 포함률 ≥ 99% |
+| M6 | [#12 실제 데이터 벤치마크](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/12) | #11 | 정확도·모호성 지표와 표본 수, 후보 ≤ 50개 p95 ≤ 10 s |
+| M7 UI | [#13 S7·방향키 검토 UX](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/13) | #12 | 2/4방향 후보 검토, 입력 충돌 방지, 확정·실행 취소 |
+| M7 IMDF | [#14 extension·도면 기하·sidecar](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/14) | #13 | validator 통과, 좌표 7자리, 도면 유래 기하 |
+| M7 Raster | [#15 래스터·단위 미확정 입력](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/15) | #14 | 축척 bound·불확실성 기록, IMDF 출력 검증 |
 
 M7은 앱 통합, IMDF 출력, 입력 확장을 각각 검토할 수 있도록 세 이슈로 나눴다. 모든 이슈에 `enhancement` 라벨과 `logichoon-redo` 담당자를 지정했다.
 

@@ -40,4 +40,15 @@
 
 ### 다음 단계
 
-[#6 — 독립 georef 패키지와 좌표계·Provider·캐시 기반](https://github.com/sionionion/DeveloperAcademy-POSTECH-2026-C6-M06-Fingerprint-IMDFrnt/issues/6). 이번 백로그 작업에서 구현은 시작하지 않았다.
+[#6 — 독립 georef 패키지와 좌표계·Provider·캐시 기반](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/6). 이번 백로그 작업에서 구현은 시작하지 않았다.
+
+## 2026-09-30 — 저장소 이관
+
+- 이후 작업 저장소를 `adap-c6-fingerprint/IMDFrnt`로 변경했다. 현재 로컬 경로는 `/Users/dd/Downloads/IMDFrnt`다.
+- 기존 레거시 및 앵커 보조 자동화 커밋이 새 저장소에 동일한 해시로 존재함을 확인했다.
+- 누락된 백로그 이슈 10개를 새 저장소 #6–#15로 재등록했다. 담당자·라벨·완료 조건·선행 관계를 유지했다.
+- 이전 백로그·진행 문서 커밋을 보존하고 활성 링크를 새 저장소로 바꿨다. #4에는 새 이슈 목록을 연결한다.
+- 이전 HTML UX 개념 시안은 원본 참고 자료로 보존했다. 현재 범위에서 출입구 대응이 제외된 사실을 함께 기록했다.
+- [이관 기록](docs/georef/MIGRATION.md)에 커밋, 이슈와 로컬 경로를 정리했다.
+
+이관은 코드 보존 및 기록 복원 작업이다. 매칭 성공률·runtime 측정이나 새 엔진 구현 상태는 변경하지 않았다.
