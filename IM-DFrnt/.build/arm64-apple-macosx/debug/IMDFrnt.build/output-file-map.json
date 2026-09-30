@@ -1,0 +1,467 @@
+{
+  "": {
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/primary.swiftdeps"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/AppEnvironment.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AppEnvironment.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AppEnvironment.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AppEnvironment~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AppEnvironment.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AppEnvironment.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/ClosedPolygon.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygon.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygon.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygon~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygon.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygon.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/CurvedWork.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedWork.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedWork.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedWork~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedWork.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedWork.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/DoorClosure.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosure.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosure.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosure~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosure.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosure.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/IMDFrntApp.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFrntApp.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFrntApp.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFrntApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFrntApp.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFrntApp.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/MoveSession.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MoveSession.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MoveSession.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MoveSession~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MoveSession.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MoveSession.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/ProjectPersistence.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectPersistence.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectPersistence.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectPersistence~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectPersistence.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectPersistence.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/RenderCache.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RenderCache.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RenderCache.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RenderCache~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RenderCache.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RenderCache.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/RootView.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RootView.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RootView.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RootView~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RootView.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RootView.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/App/SelfTest.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelfTest.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelfTest.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelfTest~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelfTest.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelfTest.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Export/GeoJSONExporter.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/GeoJSONExporter.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/GeoJSONExporter.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/GeoJSONExporter~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/GeoJSONExporter.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/GeoJSONExporter.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/ClosedPolygonFinder.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonFinder.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonFinder.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonFinder~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonFinder.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonFinder.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/CurveFlattener.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurveFlattener.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurveFlattener.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurveFlattener~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurveFlattener.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurveFlattener.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/HitTester.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HitTester.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HitTester.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HitTester~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HitTester.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HitTester.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/OverlapDetector.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/OverlapDetector.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/OverlapDetector.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/OverlapDetector~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/OverlapDetector.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/OverlapDetector.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/RingClosureValidator.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RingClosureValidator.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RingClosureValidator.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RingClosureValidator~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RingClosureValidator.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RingClosureValidator.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/SegmentationValidator.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SegmentationValidator.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SegmentationValidator.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SegmentationValidator~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SegmentationValidator.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SegmentationValidator.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/SnapPointExtractor.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SnapPointExtractor.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SnapPointExtractor.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SnapPointExtractor~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SnapPointExtractor.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SnapPointExtractor.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/SpatialIndex.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SpatialIndex.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SpatialIndex.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SpatialIndex~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SpatialIndex.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SpatialIndex.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Geometry/VertexExtractor.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VertexExtractor.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VertexExtractor.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VertexExtractor~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VertexExtractor.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VertexExtractor.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Georeference/AffineTransform.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AffineTransform.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AffineTransform.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AffineTransform~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AffineTransform.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AffineTransform.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Georeference/Georeferencer.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Georeferencer.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Georeferencer.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Georeferencer~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Georeferencer.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Georeferencer.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Georeference/ResidualCalculator.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ResidualCalculator.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ResidualCalculator.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ResidualCalculator~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ResidualCalculator.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ResidualCalculator.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/AnchorPair.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorPair.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorPair.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorPair~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorPair.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorPair.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/Assignment.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Assignment.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Assignment.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Assignment~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Assignment.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Assignment.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/EditorLayer.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/EditorLayer.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/EditorLayer.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/EditorLayer~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/EditorLayer.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/EditorLayer.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/FeatureGroup.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/FeatureGroup.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/FeatureGroup.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/FeatureGroup~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/FeatureGroup.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/FeatureGroup.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/Geometry.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Geometry.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Geometry.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Geometry~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Geometry.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Geometry.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/IMDFFeatureType.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFFeatureType.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFFeatureType.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFFeatureType~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFFeatureType.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/IMDFFeatureType.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/ProjectFile.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectFile.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectFile.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectFile~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectFile.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ProjectFile.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/PropertySchema.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PropertySchema.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PropertySchema.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PropertySchema~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PropertySchema.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PropertySchema.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/Segmentation.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Segmentation.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Segmentation.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Segmentation~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Segmentation.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Segmentation.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/StableObjectID.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StableObjectID.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StableObjectID.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StableObjectID~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StableObjectID.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StableObjectID.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/TemporaryDoor.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/TemporaryDoor.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/TemporaryDoor.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/TemporaryDoor~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/TemporaryDoor.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/TemporaryDoor.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Model/VectorObject.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VectorObject.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VectorObject.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VectorObject~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VectorObject.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/VectorObject.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/SVG/PathDataParser.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PathDataParser.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PathDataParser.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PathDataParser~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PathDataParser.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PathDataParser.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/SVG/SVGParser.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SVGParser.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SVGParser.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SVGParser~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SVGParser.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SVGParser.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/SVG/SampleFloorplan.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SampleFloorplan.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SampleFloorplan.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SampleFloorplan~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SampleFloorplan.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SampleFloorplan.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/SVG/StyleResolver.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StyleResolver.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StyleResolver.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StyleResolver~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StyleResolver.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/StyleResolver.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Store/Stores.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Stores.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Stores.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Stores~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Stores.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/Stores.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/Store/UndoStack.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/UndoStack.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/UndoStack.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/UndoStack~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/UndoStack.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/UndoStack.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Anchor/AnchorDrawingPane.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorDrawingPane.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorDrawingPane.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorDrawingPane~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorDrawingPane.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorDrawingPane.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Anchor/AnchorMapMarker.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMarker.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMarker.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMarker~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMarker.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMarker.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Anchor/AnchorMapMath.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMath.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMath.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMath~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMath.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorMapMath.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Anchor/AnchorScreen.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorScreen.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorScreen.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorScreen~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorScreen.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AnchorScreen.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Anchor/PlaceSearch.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PlaceSearch.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PlaceSearch.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PlaceSearch~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PlaceSearch.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PlaceSearch.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Auxiliary/AuxiliaryDrawingPane.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryDrawingPane.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryDrawingPane.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryDrawingPane~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryDrawingPane.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryDrawingPane.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Auxiliary/AuxiliaryScreen.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryScreen.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryScreen.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryScreen~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryScreen.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/AuxiliaryScreen.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/CanvasView.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasView.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasView.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasView~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasView.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasView.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/CanvasZoom.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasZoom.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasZoom.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasZoom~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasZoom.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CanvasZoom.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/ClosedPolygon/ClosedPolygonAppearance.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonAppearance.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonAppearance.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonAppearance~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonAppearance.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ClosedPolygonAppearance.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/ClosedPolygon/PolygonToolbar.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PolygonToolbar.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PolygonToolbar.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PolygonToolbar~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PolygonToolbar.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/PolygonToolbar.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Curved/CurvedDrawingPane.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedDrawingPane.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedDrawingPane.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedDrawingPane~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedDrawingPane.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedDrawingPane.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/Curved/CurvedScreen.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedScreen.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedScreen.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedScreen~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedScreen.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/CurvedScreen.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/DoorClosure/DoorClosurePane.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosurePane.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosurePane.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosurePane~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosurePane.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosurePane.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/DoorClosure/DoorClosureScreen.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosureScreen.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosureScreen.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosureScreen~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosureScreen.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/DoorClosureScreen.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/HoverNote.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HoverNote.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HoverNote.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HoverNote~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HoverNote.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/HoverNote.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/LeftSidebar.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/LeftSidebar.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/LeftSidebar.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/LeftSidebar~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/LeftSidebar.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/LeftSidebar.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/MarqueeSelection.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MarqueeSelection.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MarqueeSelection.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MarqueeSelection~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MarqueeSelection.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/MarqueeSelection.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/RightSidebar.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RightSidebar.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RightSidebar.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RightSidebar~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RightSidebar.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/RightSidebar.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/SelectModifierMonitor.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectModifierMonitor.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectModifierMonitor.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectModifierMonitor~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectModifierMonitor.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectModifierMonitor.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/SelectionToolbar.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectionToolbar.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectionToolbar.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectionToolbar~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectionToolbar.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SelectionToolbar.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/SidebarResizeHandle.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarResizeHandle.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarResizeHandle.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarResizeHandle~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarResizeHandle.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarResizeHandle.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/SidebarSection.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarSection.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarSection.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarSection~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarSection.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/SidebarSection.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/ToolbarButtonStyle.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ToolbarButtonStyle.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ToolbarButtonStyle.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ToolbarButtonStyle~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ToolbarButtonStyle.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ToolbarButtonStyle.dia"
+  },
+  "/Users/sionlee/Desktop/IM-DFrnt/Sources/IMDFrnt/UI/ZoomEventMonitor.swift": {
+    "dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ZoomEventMonitor.d",
+    "object": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ZoomEventMonitor.swift.o",
+    "swiftmodule": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ZoomEventMonitor~partial.swiftmodule",
+    "swift-dependencies": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ZoomEventMonitor.swiftdeps",
+    "diagnostics": "/Users/sionlee/Desktop/IM-DFrnt/.build/arm64-apple-macosx/debug/IMDFrnt.build/ZoomEventMonitor.dia"
+  }
+}

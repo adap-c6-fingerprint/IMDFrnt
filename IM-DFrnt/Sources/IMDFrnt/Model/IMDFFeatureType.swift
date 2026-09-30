@@ -1,0 +1,63 @@
+import Foundation
+
+/// 명세 3항의 property type 14종.
+/// section·geofence는 초판 목록(12종)에 없었으나, 둘 다 Polygon이라
+/// opening 빌려주기 대상이 되므로 2026-08-24에 추가했다.
+enum IMDFFeatureType: String, CaseIterable, Identifiable, Codable, Hashable {
+    case address, amenity, anchor, building, fixture, footprint, geofence
+    case level, manifest, occupant, opening, section, unit, venue
+
+    var id: String { rawValue }
+
+    var displayName: String { rawValue }
+
+    var serialPrefix: String { rawValue }
+
+    /// `01) geojson 파일별 properties 구조.md`의 geometry 열 그대로.
+    var requiredGeometry: GeoJSONGeometryKind {
+        switch self {
+        case .address, .occupant, .building, .manifest: return .none
+        case .amenity, .anchor: return .point
+        case .opening: return .lineString
+        case .fixture: return .multiPolygon
+        case .footprint, .geofence, .level, .section, .unit, .venue: return .polygon
+        }
+    }
+
+    /// display point 찍기 버튼 노출 조건(명세 7-3-4).
+    var hasDisplayPoint: Bool {
+        switch self {
+        case .amenity, .building, .fixture, .geofence, .level, .section, .unit, .venue: return true
+        default: return false
+        }
+    }
+
+    /// 명세 10-2-4) 문 빌려주기 대상 — 닫힌 폴리곤이 필요한 type만 해당한다.
+    /// Point(amenity·anchor)·null(address·occupant·building)·LineString(opening 자신)은 제외.
+    /// 닫힌 폴리곤이 필요한 type인가. 빌려주기 대상 판정(명세 10-2-4)과 링 검증(10-4)이 함께 쓴다.
+    var requiresClosedRing: Bool {
+        requiredGeometry == .polygon || requiredGeometry == .multiPolygon
+    }
+
+    var canBorrowOpenings: Bool {
+        switch requiredGeometry {
+        case .polygon, .multiPolygon: return true
+        default: return false
+        }
+    }
+
+    var note: String {
+        switch self {
+        case .geofence:
+            return "OGC 스펙에 \"A Geofence models the extent of a geofence.\" 외 설명이 없다. 용도는 category 열거값으로 추정."
+        case .section:
+            return "테마의 대략적 범위. 경계가 물리적 벽이 아닐 수 있고, 아래 walkway가 보이도록 gap을 둘 수 있다."
+        case .anchor:
+            return "주소·입주자의 대표 표시 지점. 지오레퍼런싱 Anchor과 무관하다."
+        case .manifest:
+            return "피처 파일이 아니라 세트 메타데이터."
+        default:
+            return ""
+        }
+    }
+}
