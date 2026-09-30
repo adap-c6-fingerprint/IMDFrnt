@@ -90,6 +90,64 @@ enum SelfTest {
         ]
         check("한 직선 위 3점 거부", !Georeferencer(pairs: collinear).isConfigured)
 
+        // 자동 Anchor 후보: OSM의 닫힌 건물 외곽을 읽고, 도면의 순서 있는 외곽과 맞춘다.
+        let osmXML = """
+        <osm version="0.6">
+          <node id="1" lon="127.0720000" lat="37.4957000"/>
+          <node id="2" lon="127.0724000" lat="37.4957000"/>
+          <node id="3" lon="127.0724000" lat="37.4955000"/>
+          <node id="4" lon="127.0720000" lat="37.4955000"/>
+          <way id="42"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/>
+            <tag k="building" v="yes"/><tag k="name" v="시험 건물"/></way>
+          <way id="43"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/>
+            <tag k="building" v="no"/></way>
+          <way id="44"><nd ref="1"/><nd ref="2"/><nd ref="3"/>
+            <tag k="building" v="yes"/></way>
+        </osm>
+        """
+        let center = GeoPoint(longitude: 127.0722, latitude: 37.4956)
+        let buildings = (try? BuildingFootprintService.parse(Data(osmXML.utf8), near: center)) ?? []
+        check("OSM: 닫힌 건물만 읽고 building=no 제외", buildings.count == 1
+              && buildings.first?.id == "42" && buildings.first?.name == "시험 건물")
+        check("OSM: 잘못된 XML 거부",
+              (try? BuildingFootprintService.parse(Data("<osm><way>".utf8), near: center)) == nil)
+
+        if let building = buildings.first {
+            let metersPerLongitude = 111_000 * cos(building.center.latitude * .pi / 180)
+            let localOutline = building.coordinates.map { point in
+                let x = (point.longitude - building.center.longitude) * metersPerLongitude
+                let y = (point.latitude - building.center.latitude) * 111_000
+                return LocalPoint(300 + 5 * x, 200 - 5 * y)
+            }
+            let proposal = AutoAnchorMatcher.propose(localOutline: localOutline, building: building)
+            check("자동 Anchor: 같은 외곽에서 4쌍 생성", proposal?.pairs.count == 4
+                  && proposal?.canApply == true && (proposal?.rmsMeters ?? .infinity) < 0.1)
+            let reversed = AutoAnchorMatcher.propose(localOutline: Array(localOutline.reversed()),
+                                                      building: building)
+            check("자동 Anchor: 도면 외곽의 반대 순서 허용", reversed?.canApply == true
+                  && (reversed?.rmsMeters ?? .infinity) < 0.1)
+            let unrelated = [LocalPoint(0, 0), LocalPoint(100, 0),
+                             LocalPoint(100, 100), LocalPoint(0, 100)]
+            let unrelatedProposal = AutoAnchorMatcher.propose(localOutline: unrelated,
+                                                               building: building)
+            check("자동 Anchor: 다른 외곽 형태 적용 거부",
+                  unrelatedProposal?.canApply == false,
+                  String(format: "오차 %.1f%% / %.1f m",
+                         (unrelatedProposal?.relativeError ?? 0) * 100,
+                         unrelatedProposal?.rmsMeters ?? 0))
+            check("자동 Anchor: 점이 부족하면 후보 없음",
+                  AutoAnchorMatcher.propose(localOutline: Array(localOutline.prefix(3)),
+                                            building: building) == nil)
+            if let proposal {
+                let autoEnv = AppEnvironment()
+                autoEnv.addAutoAnchorProposal(proposal)
+                check("자동 Anchor: 4쌍을 한 작업으로 적용", autoEnv.anchors.pairs.count == 4
+                      && autoEnv.georeferencer.isConfigured && autoEnv.canUndo)
+                autoEnv.undo()
+                check("자동 Anchor: 한 번에 실행 취소", autoEnv.anchors.pairs.isEmpty)
+            }
+        }
+
         // 5. 소유권
         var reg = OwnershipRegistry()
         let f1 = UUID(), f2 = UUID()

@@ -1899,6 +1899,24 @@ final class AppEnvironment: ObservableObject {
         pendingAnchorLocal = nil
     }
 
+    /// 검토 화면에서 확정한 건물 외곽 매칭만 한 번에 저장한다. 실행 취소도 한 단계다.
+    func addAutoAnchorProposal(_ proposal: AutoAnchorProposal) {
+        guard anchors.pairs.isEmpty else {
+            notify("기존 Anchor가 있습니다. 자동 후보를 적용하기 전에 기존 쌍을 확인하세요.", isError: true)
+            return
+        }
+        guard proposal.canApply, proposal.pairs.count >= AnchorStore.minimumPairs,
+              (try? GeoAffineTransform.fit(from: proposal.pairs)) != nil else {
+            notify("도면과 건물 외곽의 정합이 불확실해 후보를 적용할 수 없습니다.", isError: true)
+            return
+        }
+        perform("자동 Anchor 후보 적용") {
+            anchors.pairs.append(contentsOf: proposal.pairs)
+        }
+        pendingAnchorLocal = nil
+        notify("건물 외곽을 기준으로 Anchor \(proposal.pairs.count)쌍을 추가했습니다. 지도 겹쳐보기와 잔차를 확인하세요.")
+    }
+
     /// 도면 쪽 마커 드래그.
     func updateAnchorLocal(_ id: AnchorID, to p: LocalPoint) {
         guard let i = anchors.pairs.firstIndex(where: { $0.id == id }) else { return }

@@ -17,7 +17,7 @@ struct AnchorMapMarker: View {
         ZStack {
             crosshair(lineWidth: 3.6, color: .white.opacity(0.9))
             crosshair(lineWidth: 1.6, color: isOutlier ? .red : .cyan)
-            // 위성 이미지 위에서는 한 가지 색만으로 어떤 지붕에서도 보이게 할 수 없다.
+            // 다양한 지도 배경 위에서는 한 가지 색만으로 언제나 선명하게 보이게 할 수 없다.
             // 흰 선을 굵게 깔고 그 위에 색을 얹어, 밝은 옥상과 어두운 그림자 양쪽에서 모두 보이게 한다.
 
             Text("\(index)")
