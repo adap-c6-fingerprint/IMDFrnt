@@ -2,7 +2,7 @@
 
 작성일: 2026-09-30
 
-관련 상위 이슈: [#4 — 지도에 도면 정렬하여 Footprint 찍기](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/4)
+통합 전 요청: [#4 — 지도에 도면 정렬하여 Footprint 찍기](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/4). 현재 #6·#13에서 범위를 관리하므로 중복으로 닫고 원래 요청 기록을 보존했다.
 
 현재 저장소: [adap-c6-fingerprint/IMDFrnt](https://github.com/adap-c6-fingerprint/IMDFrnt). 이전 작업의 보존과 이슈 재등록 내역은 [이관 기록](MIGRATION.md)에 남겼다.
 
@@ -38,7 +38,7 @@
 | 저장·IMDF 출력 | [#14](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/14) | #13 | 확정 변환·extension·도면 기하·외부 sidecar |
 | 래스터 확장 — 후속 | [#15](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/15) | #14 | PNG/PDF·단위 미확정 입력·제한된 축척 추정 |
 
-최초에 분리한 #7–#12는 #6에 통합하고 닫았다. 세부 작업과 완료 조건을 #6의 체크리스트 및 아래 단계 표에 유지한다. 닫힌 이슈는 통합 전 기록으로 보존하며, 구현 상태는 활성 이슈에서 관리한다. #4는 관련 상위 요청으로 유지한다.
+최초에 분리한 #7–#12는 #6에 통합하고 닫았다. 세부 작업과 완료 조건을 #6의 체크리스트 및 아래 단계 표에 유지한다. 닫힌 이슈는 통합 전 기록으로 보존하며, 구현 상태는 활성 이슈에서 관리한다. #4도 #6·#13에 통합해 `duplicate` 라벨과 대체 이슈 링크를 남기고 닫았다.
 
 ## 기존 지도 기능 확인
 
