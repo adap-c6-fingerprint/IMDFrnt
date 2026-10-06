@@ -142,6 +142,7 @@ extension AppEnvironment {
         routingSelectedNodeID = nil
         routingSelectedEdgeID = nil
         routingConnectStart = nil
+        routingConnectionDrag = nil
         routingPendingAnchor = nil
         showRoutingScreen = routing.imdfSourceName != nil
         routingTool = .place

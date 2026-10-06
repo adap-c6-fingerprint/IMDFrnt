@@ -80,6 +80,7 @@ extension AppEnvironment {
     func selectRoutingFloor(_ id: UUID) {
         guard routing.floor(id) != nil else { return }
         routingFloorID = id
+        routingConnectionDrag = nil
         routingSelectedNodeID = nil
         routingSelectedEdgeID = nil
         routingPendingAnchor = nil
@@ -91,6 +92,7 @@ extension AppEnvironment {
         if tool == .calibrate && currentRoutingFloor?.imdfCoordinates != nil { return }
         guard routingTool != tool else { return }
         routingTool = tool
+        routingConnectionDrag = nil
         routingConnectStart = nil
         routingPendingAnchor = nil
     }
@@ -108,6 +110,7 @@ extension AppEnvironment {
         perform("층과 길찾기 노드 삭제") {
             routing.removeFloor(id)
             routingConnectStart = nil
+            routingConnectionDrag = nil
             routingSelectedNodeID = nil
             routingSelectedEdgeID = nil
             routingFloorID = routing.floors.first?.id
@@ -195,6 +198,35 @@ extension AppEnvironment {
         routingSelectedEdgeID = id
     }
 
+    /// Both Option-drag and the connection tool use the same drop behavior.
+    func beginRoutingConnectionDrag(from id: UUID) {
+        guard showRoutingScreen, !isImportingIMDF, let node = routing.node(id),
+              node.floorID == currentRoutingFloor?.id else { return }
+        routingConnectStart = nil
+        selectRoutingNode(id)
+        routingConnectionDrag = RoutingConnectionDrag(from: id, floorID: node.floorID, pointer: node.point)
+    }
+
+    func updateRoutingConnectionDrag(to point: LocalPoint, tolerance: Double) {
+        guard var drag = routingConnectionDrag else { return }
+        guard currentRoutingFloor?.id == drag.floorID, routing.node(drag.from)?.floorID == drag.floorID,
+              point.x.isFinite, point.y.isFinite else { routingConnectionDrag = nil; return }
+        drag.pointer = point
+        let hit = nearestRoutingNode(to: point, tolerance: tolerance)
+        drag.target = hit?.id == drag.from ? nil : hit?.id
+        routingConnectionDrag = drag
+    }
+
+    func finishRoutingConnectionDrag(at point: LocalPoint, tolerance: Double) {
+        updateRoutingConnectionDrag(to: point, tolerance: tolerance)
+        guard let drag = routingConnectionDrag else { return }
+        routingConnectionDrag = nil
+        guard let target = drag.target else { return }
+        var connected: UUID?
+        perform("노드 연결") { connected = routing.connect(drag.from, target) }
+        if let connected { selectRoutingEdge(connected) }
+    }
+
     func handleRoutingClick(at point: LocalPoint, tolerance: Double) {
         guard let floor = currentRoutingFloor, let doc = routingDocument else { return }
         if routingTool == .calibrate {
@@ -265,6 +297,7 @@ extension AppEnvironment {
                 routing.removeNode(id)
                 selectRoutingNode(nil)
                 if routingConnectStart == id { routingConnectStart = nil }
+                if routingConnectionDrag?.from == id || routingConnectionDrag?.target == id { routingConnectionDrag = nil }
             }
         } else if let id = routingSelectedEdgeID {
             perform("연결 삭제") {

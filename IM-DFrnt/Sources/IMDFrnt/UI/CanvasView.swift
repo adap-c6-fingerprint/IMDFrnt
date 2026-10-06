@@ -38,6 +38,10 @@ struct CanvasView: View {
     @State private var moveBase: [VectorObjectID: CGSize]?
     @State private var routingDragNode: UUID?
     @State private var routingDragPoint: LocalPoint?
+    @State private var routingDragIsConnection = false
+    @State private var routingDragOptionHeld = false
+    @State private var routingDragConnectCandidate: UUID?
+    @State private var routingConnectionStarted = false
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -48,7 +52,7 @@ struct CanvasView: View {
                 if let doc = displayedDocument {
                     canvas(doc: doc, viewport: geo.size)
                         .overlay { MarqueeOverlay(marquee: marquee, background: env.canvasBackground) }
-                        .gesture(dragGesture())
+                        .gesture(dragGesture(viewport: geo.size))
                         .onAppear { fit(doc: doc, viewport: geo.size) }
                         .onChange(of: doc.fingerprint) { _, _ in fit(doc: doc, viewport: geo.size) }
                         .onChange(of: env.routingFloorID) { _, _ in fit(doc: doc, viewport: geo.size) }
@@ -97,7 +101,10 @@ struct CanvasView: View {
             )
         }
         .onAppear { installZoomMonitor() }
-        .onDisappear { zoomMonitor.stop() }
+        .onDisappear {
+            zoomMonitor.stop()
+            env.routingConnectionDrag = nil
+        }
     }
 
     // MARK: 확대·축소
@@ -368,7 +375,6 @@ struct CanvasView: View {
             node.id == routingDragNode ? (routingDragPoint ?? node.point) : node.point
         }
         let floorID = env.currentRoutingFloor?.id
-        let connected = Set(env.routing.edges.flatMap { [$0.from, $0.to] })
         for edge in env.routing.edges {
             guard let a = env.routing.node(edge.from), let b = env.routing.node(edge.to),
                   a.floorID == floorID || b.floorID == floorID else { continue }
@@ -389,22 +395,41 @@ struct CanvasView: View {
                          at: CGPoint(x: p.x, y: p.y + 20 / s))
             }
         }
+        if let drag = env.routingConnectionDrag, let from = env.routing.node(drag.from), drag.floorID == floorID {
+            let destination = env.routing.node(drag.target)?.point ?? drag.pointer
+            var line = Path()
+            line.move(to: from.point.cg)
+            line.addLine(to: destination.cg)
+            ctx.stroke(line, with: .color(.blue.opacity(0.85)),
+                       style: StrokeStyle(lineWidth: 1.5 / s, lineCap: .round,
+                                          dash: drag.target == nil ? [4 / s, 3 / s] : []))
+        }
+        let displayIDs = env.routing.nodeDisplayIDs
         for node in env.routing.nodes(on: floorID) {
             let p = point(node)
-            let selected = env.routingSelectedNodeID == node.id || env.routingConnectStart == node.id
-            let r: CGFloat = (selected ? 10 : 7) / s
-            let color = selected ? Color.orange : env.canvasBackground.selection
-            let circle = Path(ellipseIn: CGRect(x: p.x-r, y: p.y-r, width: 2*r, height: 2*r))
-            ctx.fill(circle, with: .color(color))
-            ctx.stroke(circle, with: .color(env.canvasBackground.fill), lineWidth: 2 / s)
-            if !connected.contains(node.id) {
-                ctx.stroke(Path(ellipseIn: CGRect(x: p.x-r-3/s, y: p.y-r-3/s,
-                                                  width: 2*r+6/s, height: 2*r+6/s)),
-                           with: .color(.orange), lineWidth: 1 / s)
+            let selected = env.routingSelectedNodeID == node.id || env.routingConnectStart == node.id ||
+                env.routingConnectionDrag?.target == node.id
+            let r: CGFloat = 4 / s
+            if selected {
+                let glowRadius: CGFloat = 12 / s
+                let glow = Path(ellipseIn: CGRect(x: p.x-glowRadius, y: p.y-glowRadius,
+                                                 width: 2*glowRadius, height: 2*glowRadius))
+                ctx.fill(glow, with: .radialGradient(Gradient(colors: [.blue.opacity(0.55), .blue.opacity(0)]),
+                                                     center: p.cg, startRadius: 0, endRadius: glowRadius))
             }
+            let circle = Path(ellipseIn: CGRect(x: p.x-r, y: p.y-r, width: 2*r, height: 2*r))
+            ctx.fill(circle, with: .color(env.canvasBackground.selection))
+            ctx.stroke(circle, with: .color(env.canvasBackground.fill), lineWidth: 1 / s)
+            var labels = ctx
+            labels.translateBy(x: p.x, y: p.y)
+            labels.rotate(by: .degrees(-env.rotationDegrees))
+            labels.draw(Text(displayIDs[node.id] ?? node.shortID)
+                .font(.system(size: 8 / s, weight: .regular, design: .monospaced))
+                .foregroundStyle(env.canvasBackground.toolbarForeground.opacity(0.5)),
+                        at: CGPoint(x: 0, y: 13 / s))
             if !node.name.isEmpty {
-                ctx.draw(Text(node.name).font(.system(size: 11 / s)).foregroundStyle(env.canvasBackground.toolbarForeground),
-                         at: CGPoint(x: p.x+14/s, y: p.y-12/s), anchor: .leading)
+                labels.draw(Text(node.name).font(.system(size: 10 / s)).foregroundStyle(env.canvasBackground.toolbarForeground),
+                            at: CGPoint(x: 0, y: -13 / s))
             }
         }
         if env.routingTool == .calibrate {
@@ -457,7 +482,7 @@ struct CanvasView: View {
         return LocalPoint(x, y)
     }
 
-    private func dragGesture() -> some Gesture {
+    private func dragGesture(viewport: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 if dragStart == nil {
@@ -466,9 +491,13 @@ struct CanvasView: View {
                     dragIsMarquee = !env.showRoutingScreen && env.isSelectModeActive
                     if env.showRoutingScreen {
                         NSApp.keyWindow?.makeFirstResponder(nil)
-                        if env.routingTool == .place || env.routingTool == .select {
-                            routingDragNode = env.nearestRoutingNode(to: toLocal(value.startLocation),
-                                                                   tolerance: 14 / Double(effectiveScale))?.id
+                        let hit = env.nearestRoutingNode(to: toLocal(value.startLocation),
+                                                        tolerance: 9 / Double(effectiveScale))
+                        routingDragOptionHeld = NSEvent.modifierFlags.contains(.option)
+                        routingDragIsConnection = routingDragOptionHeld || (env.routingTool == .connect && hit != nil)
+                        routingDragConnectCandidate = routingDragIsConnection ? hit?.id : nil
+                        if !routingDragIsConnection && (env.routingTool == .place || env.routingTool == .select) {
+                            routingDragNode = hit?.id
                             if let routingDragNode { env.selectRoutingNode(routingDragNode) }
                         }
                     }
@@ -489,7 +518,15 @@ struct CanvasView: View {
                                    height: value.translation.height - lastDrag.height)
                 lastDrag = value.translation
 
-                if routingDragNode != nil {
+                if routingDragIsConnection {
+                    let moved = abs(value.translation.width) + abs(value.translation.height)
+                    if !routingConnectionStarted, let from = routingDragConnectCandidate,
+                       routingDragOptionHeld || moved >= MarqueeRect.dragThreshold {
+                        routingConnectionStarted = true
+                        env.beginRoutingConnectionDrag(from: from)
+                    }
+                    env.updateRoutingConnectionDrag(to: toLocal(value.location), tolerance: 9 / Double(effectiveScale))
+                } else if routingDragNode != nil {
                     routingDragPoint = toLocal(value.location)
                 } else if dragIsMarquee == true {
                     marquee = MarqueeRect(start: value.startLocation, current: value.location)
@@ -507,10 +544,18 @@ struct CanvasView: View {
             .onEnded { value in
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if env.showRoutingScreen {
-                    if let id = routingDragNode, moved >= MarqueeRect.dragThreshold {
+                    if routingDragIsConnection {
+                        if routingConnectionStarted {
+                            if CGRect(origin: .zero, size: viewport).contains(value.location) {
+                                env.finishRoutingConnectionDrag(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale))
+                            } else { env.routingConnectionDrag = nil }
+                        } else if !routingDragOptionHeld, moved < MarqueeRect.dragThreshold {
+                            env.handleRoutingClick(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale))
+                        }
+                    } else if let id = routingDragNode, moved >= MarqueeRect.dragThreshold {
                         env.moveRoutingNode(id, to: toLocal(value.location))
                     } else if moved < MarqueeRect.dragThreshold {
-                        env.handleRoutingClick(at: toLocal(value.location), tolerance: 14 / Double(effectiveScale))
+                        env.handleRoutingClick(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale))
                     }
                 } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
                     selectByMarquee(m)
@@ -529,6 +574,10 @@ struct CanvasView: View {
                 moveBase = nil
                 routingDragNode = nil
                 routingDragPoint = nil
+                routingDragIsConnection = false
+                routingDragOptionHeld = false
+                routingDragConnectCandidate = nil
+                routingConnectionStarted = false
                 dragStart = nil
                 lastDrag = .zero
             }

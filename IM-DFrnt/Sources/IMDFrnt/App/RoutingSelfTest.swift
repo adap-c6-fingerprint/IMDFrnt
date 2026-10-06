@@ -183,6 +183,7 @@ enum RoutingSelfTest {
         _ = currentGraph
         env.showRoutingScreen = false
         check("일반 IMDF 편집에서 Delete를 가로채지 않음", !monitor.handle(keyCode: 51))
+        RoutingInteractionSelfTest.run(check: check)
         IMDFSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)

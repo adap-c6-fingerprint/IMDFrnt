@@ -138,6 +138,7 @@ final class AppEnvironment: ObservableObject {
     @Published var routingSelectedEdgeID: UUID?
     @Published var routingTool: RoutingTool = .place
     @Published var routingConnectStart: UUID?
+    @Published var routingConnectionDrag: RoutingConnectionDrag?
     @Published var routingPendingAnchor: LocalPoint?
     @Published var routingExportError: String?
     @Published var isImportingIMDF = false
@@ -485,6 +486,7 @@ final class AppEnvironment: ObservableObject {
             routingSelectedNodeID = nil
             routingSelectedEdgeID = nil
             routingConnectStart = nil
+            routingConnectionDrag = nil
             routingPendingAnchor = nil
             showRoutingScreen = false
             // 임시 문은 개체 id를 들고 있다. 다른 도면에 남겨두면 없는 개체를 가리킨다.
@@ -1205,6 +1207,7 @@ final class AppEnvironment: ObservableObject {
         routingSelectedNodeID = s.routingSelectedNodeID
         routingSelectedEdgeID = s.routingSelectedEdgeID
         routingConnectStart = nil
+        routingConnectionDrag = nil
         routingPendingAnchor = nil
         conflict = nil
         pendingClearSelection = nil

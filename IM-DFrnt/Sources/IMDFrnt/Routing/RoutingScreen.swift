@@ -40,7 +40,10 @@ struct RoutingScreen: View {
             monitor.start()
             keyMonitor = monitor
         }
-        .onDisappear { keyMonitor?.stop(); keyMonitor = nil }
+        .onDisappear {
+            keyMonitor?.stop(); keyMonitor = nil
+            env.routingConnectionDrag = nil
+        }
         .confirmationDialog("이 층의 도면·노드·연결을 삭제할까요?", isPresented: Binding(
             get: { deletingFloor != nil }, set: { if !$0 { deletingFloor = nil } }
         )) {
@@ -373,15 +376,17 @@ final class RoutingKeyMonitor {
     func handle(keyCode: UInt16, modifiers: NSEvent.ModifierFlags = [], textIsEditing: Bool = false,
                 hasModal: Bool = false) -> Bool {
         guard let env, env.showRoutingScreen, !hasModal, !textIsEditing,
-              modifiers.intersection([.command, .option, .control]).isEmpty else { return false }
-        if [51, 117].contains(keyCode), env.routingSelectedNodeID != nil || env.routingSelectedEdgeID != nil {
-            env.deleteRoutingSelection(); return true
-        }
+              modifiers.intersection([.command, .control]).isEmpty else { return false }
         if keyCode == 53 {
+            env.routingConnectionDrag = nil
             env.routingConnectStart = nil
             env.routingPendingAnchor = nil
             env.selectRoutingNode(nil)
             return true
+        }
+        guard !modifiers.contains(.option) else { return false }
+        if [51, 117].contains(keyCode), env.routingSelectedNodeID != nil || env.routingSelectedEdgeID != nil {
+            env.deleteRoutingSelection(); return true
         }
         return false
     }

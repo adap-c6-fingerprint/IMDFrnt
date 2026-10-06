@@ -31,7 +31,8 @@ struct RoutingNode: Identifiable, Equatable, Codable {
     var category: String = "waypoint"
     var metadataJSON: String = "{}"
 
-    var label: String { name.isEmpty ? "노드 \(id.uuidString.prefix(6))" : name }
+    var shortID: String { String(id.uuidString.prefix(8)) }
+    var label: String { name.isEmpty ? "노드 \(shortID)" : name }
 }
 
 enum RoutingEdgeCategory: String, CaseIterable, Codable {
@@ -62,6 +63,22 @@ struct RoutingGraph: Equatable, Codable {
     func edge(_ id: UUID?) -> RoutingEdge? { edges.first { $0.id == id } }
     func nodes(on floorID: UUID?) -> [RoutingNode] { nodes.filter { $0.floorID == floorID } }
     func connections(of id: UUID) -> [RoutingEdge] { edges.filter { $0.from == id || $0.to == id } }
+
+    /// Extend only colliding prefixes so every canvas label distinguishes its node.
+    var nodeDisplayIDs: [UUID: String] {
+        var result: [UUID: String] = [:]
+        for group in Dictionary(grouping: nodes, by: \.shortID).values {
+            for node in group {
+                let uuid = node.id.uuidString
+                var length = 8
+                while length < uuid.count && group.contains(where: {
+                    $0.id != node.id && $0.id.uuidString.prefix(length) == uuid.prefix(length)
+                }) { length += 1 }
+                result[node.id] = String(uuid.prefix(length))
+            }
+        }
+        return result
+    }
 
     mutating func removeNode(_ id: UUID) {
         nodes.removeAll { $0.id == id }
@@ -127,10 +144,18 @@ enum RoutingTool: String, CaseIterable {
     }
     var hint: String {
         switch self {
-        case .place: "빈 곳을 클릭해 노드 추가 · 핀을 클릭해 편집 · 드래그해 위치 조정"
-        case .select: "핀·연결선을 클릭해 선택 · Delete로 삭제 · 빈 곳 드래그로 화면 이동"
-        case .connect: "연결할 두 핀을 차례로 클릭 · 다른 층으로 전환해 계단·엘리베이터 연결"
+        case .place: "빈 곳 클릭으로 노드 추가 · 핀 드래그로 이동 · ⌥ Option + 핀 드래그로 연결"
+        case .select: "핀·연결선 선택 · Delete로 삭제 · ⌥ Option + 핀 드래그로 연결"
+        case .connect: "핀에서 다른 핀으로 드래그해 연결 · 층간 연결은 두 핀을 차례로 클릭"
         case .calibrate: "도면에서 기준점을 클릭하고 오른쪽에 실제 경도·위도 입력 (최소 3점)"
         }
     }
+}
+
+/// Transient pointer interaction; excluded from project files and undo snapshots.
+struct RoutingConnectionDrag: Equatable {
+    var from: UUID
+    var floorID: UUID
+    var pointer: LocalPoint
+    var target: UUID?
 }
