@@ -93,13 +93,15 @@ struct DrawingDocument {
     let objects: [VectorObject]
     let canvasSize: CGSize
     let sourceName: String
+    let rasterImages: [DrawingRasterImage]
 
     private let index: [VectorObjectID: Int]
 
-    init(objects: [VectorObject], canvasSize: CGSize, sourceName: String) {
+    init(objects: [VectorObject], canvasSize: CGSize, sourceName: String, rasterImages: [DrawingRasterImage] = []) {
         self.objects = objects
         self.canvasSize = canvasSize
         self.sourceName = sourceName
+        self.rasterImages = rasterImages
         var map: [VectorObjectID: Int] = [:]
         for (i, o) in objects.enumerated() { map[o.id] = i }
         self.index = map

@@ -44,9 +44,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
-            <key>CFBundleTypeName</key><string>SVG Drawing</string>
+            <key>CFBundleTypeName</key><string>Drawing</string>
             <key>CFBundleTypeRole</key><string>Editor</string>
-            <key>LSItemContentTypes</key><array><string>public.svg-image</string></array>
+            <key>LSItemContentTypes</key><array><string>public.svg-image</string><string>public.png</string><string>public.jpeg</string></array>
         </dict>
     </array>
 </dict>

@@ -6,7 +6,9 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if env.showAnchorScreen {
+            if env.showRoutingScreen {
+                RoutingScreen()
+            } else if env.showAnchorScreen {
                 AnchorScreen()
                 // 명세 9항: Anchor 지정은 시트가 아니라 전체 화면 전환이다.
             } else if env.showDoorClosureScreen {

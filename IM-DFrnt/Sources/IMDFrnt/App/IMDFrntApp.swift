@@ -23,7 +23,7 @@ struct IMDFrntApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("SVG 열기…") { env.openFile() }
+                Button("도면 열기…") { env.openFile() }
                     .keyboardShortcut("o")
                 Divider()
                 Button("작업 열기…") { env.openProject() }
@@ -55,8 +55,15 @@ struct IMDFrntApp: App {
                 // 같은 단축키를 두고 다투게 된다(명세 디버깅 8번).
             }
             CommandMenu("도구") {
+                Button("길찾기 노드 편집") { env.enterRoutingScreen() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .disabled(env.document == nil)
+                Button("길찾기 GeoJSON 내보내기…") { env.exportRoutingGraph() }
+                    .disabled(env.routing.nodes.isEmpty)
+                Divider()
                 Button("Anchor 지정 화면") { env.enterAnchorScreen() }
                     .keyboardShortcut("k")
+                    .disabled(env.showRoutingScreen)
                 Button("전체 선택 해제") { env.requestClearSelection(.main) }
                     .keyboardShortcut(.escape, modifiers: [])
                     .disabled(env.selection.isEmpty)
@@ -66,7 +73,7 @@ struct IMDFrntApp: App {
                 Button("모든 개체 원위치") { env.resetPositions() }
                     .disabled(!env.hasAnyOffset)
                 Divider()
-                Button("geojson 내보내기") { env.export() }
+                Button(env.showRoutingScreen ? "길찾기 GeoJSON 내보내기" : "geojson 내보내기") { env.export() }
                     .keyboardShortcut("e")
             }
         }
@@ -78,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @MainActor weak var env: AppEnvironment?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        RoutingSelfTest.runIfRequested()
         _ = SelfTest.runIfRequested()
         // --selftest 인자가 있으면 여기서 점검 결과를 출력하고 종료한다.
         NSApplication.shared.setActivationPolicy(.regular)

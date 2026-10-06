@@ -131,6 +131,17 @@ enum AuxiliaryOpacity {
 @MainActor
 final class AppEnvironment: ObservableObject {
 
+    @Published var routing = RoutingGraph()
+    @Published var showRoutingScreen = false
+    @Published var routingFloorID: UUID?
+    @Published var routingSelectedNodeID: UUID?
+    @Published var routingSelectedEdgeID: UUID?
+    @Published var routingTool: RoutingTool = .place
+    @Published var routingConnectStart: UUID?
+    @Published var routingPendingAnchor: LocalPoint?
+    @Published var routingExportError: String?
+    var routingDrawingCache: [UUID: (String, DrawingDocument)] = [:]
+
     // MARK: 문서와 상태
 
     @Published var document: DrawingDocument? {
@@ -433,12 +444,17 @@ final class AppEnvironment: ObservableObject {
 
     func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "svg") ?? .xml]
+        panel.allowedContentTypes = [UTType(filenameExtension: "svg") ?? .xml, .png, .jpeg]
+        panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.title = "SVG 도면 열기"
+        panel.title = "도면 열기 (SVG·PNG·JPG)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            load(data: try Data(contentsOf: url), name: url.lastPathComponent)
+            let data = try Data(contentsOf: url)
+            let image = ["png", "jpg", "jpeg"].contains(url.pathExtension.lowercased())
+            let svg = try image ? DrawingImageImporter.embeddedSVG(from: data)
+                : DrawingImageImporter.embedLocalImages(in: data, relativeTo: url)
+            load(data: svg, name: url.lastPathComponent)
         } catch {
             notify("파일을 읽지 못했습니다: \(error.localizedDescription)", isError: true)
         }
@@ -461,6 +477,15 @@ final class AppEnvironment: ObservableObject {
             openingGate = OpeningGateStore()
             borrow = BorrowRegistry()
             doorClosures = DoorClosureStore()
+            anchors = AnchorStore()
+            routing = RoutingGraph()
+            routingDrawingCache = [:]
+            routingFloorID = nil
+            routingSelectedNodeID = nil
+            routingSelectedEdgeID = nil
+            routingConnectStart = nil
+            routingPendingAnchor = nil
+            showRoutingScreen = false
             // 임시 문은 개체 id를 들고 있다. 다른 도면에 남겨두면 없는 개체를 가리킨다.
             // 도면이 바뀌면 게이트도 대여도 처음부터다. 남겨두면 새 도면에서 다른 type 메뉴가
             // 이미 열려 있어 opening 선행 태깅이 통째로 건너뛰어진다.
@@ -1152,7 +1177,10 @@ final class AppEnvironment: ObservableObject {
                        anchors: anchors, doorClosures: doorClosures, serials: serials,
                        ids: ids, expandedFeatures: expandedFeatures,
                        focusedFeature: focusedFeature,
-                       faceSelection: faceSelection)
+                       faceSelection: faceSelection,
+                       routing: routing, routingFloorID: routingFloorID,
+                       routingSelectedNodeID: routingSelectedNodeID,
+                       routingSelectedEdgeID: routingSelectedEdgeID)
     }
 
     private func restore(_ s: EditorSnapshot) {
@@ -1171,6 +1199,12 @@ final class AppEnvironment: ObservableObject {
         expandedFeatures = s.expandedFeatures
         focusedFeature = s.focusedFeature
         faceSelection = s.faceSelection
+        routing = s.routing
+        routingFloorID = s.routingFloorID
+        routingSelectedNodeID = s.routingSelectedNodeID
+        routingSelectedEdgeID = s.routingSelectedEdgeID
+        routingConnectStart = nil
+        routingPendingAnchor = nil
         conflict = nil
         pendingClearSelection = nil
         // 열려 있던 경고창은 되돌린 상태와 아귀가 안 맞을 수 있으니 함께 닫는다.
@@ -1971,6 +2005,7 @@ final class AppEnvironment: ObservableObject {
     // MARK: 내보내기 (명세 7-4)
 
     func export() {
+        if showRoutingScreen { exportRoutingGraph(); return }
         guard let doc = document, let type = layers.activePropertyType else {
             notify("먼저 property type 레이어를 선택하세요.", isError: true)
             return

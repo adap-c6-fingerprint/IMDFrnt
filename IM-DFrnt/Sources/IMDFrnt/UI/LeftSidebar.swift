@@ -56,6 +56,12 @@ struct LeftSidebar: View {
                 Spacer()
                 SidebarCollapseAllButton(owner: .left)
             }
+            Button { env.enterRoutingScreen() } label: {
+                Label("길찾기 노드 편집", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .controlSize(.small)
+            .disabled(env.document == nil)
         }
         .padding(12)
     }

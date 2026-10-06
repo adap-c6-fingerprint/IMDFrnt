@@ -38,7 +38,7 @@ extension AppEnvironment {
 
     func startAutosaveLoop() {
         guard autosaveTimer == nil else { return }
-        guard !CommandLine.arguments.contains("--selftest") else { return }
+        guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--routing-selftest") else { return }
         // 같은 이유로 점검 중에는 저장 루프도 돌리지 않는다 — 점검이 사용자 파일을 덮어쓰면 안 된다.
         let t = Timer.scheduledTimer(withTimeInterval: Self.autosaveInterval, repeats: true) { _ in
             Task { @MainActor in self.autosaveTick() }
@@ -106,6 +106,7 @@ extension AppEnvironment {
         file.assignment = assignment
         file.doorClosures = doorClosures
         file.drawingFingerprint = doc.fingerprint
+        file.routing = routing.floors.isEmpty ? nil : routing
         return file
     }
 
@@ -135,6 +136,14 @@ extension AppEnvironment {
         openingGate = file.openingGate
         borrow = file.borrow
         doorClosures = file.doorClosures
+        routing = file.routing ?? RoutingGraph()
+        routingDrawingCache = [:]
+        routingFloorID = routing.floors.first?.id
+        routingSelectedNodeID = nil
+        routingSelectedEdgeID = nil
+        routingConnectStart = nil
+        routingPendingAnchor = nil
+        showRoutingScreen = false
 
         projectID = file.projectID
         assignment = file.assignment
@@ -167,7 +176,7 @@ extension AppEnvironment {
     /// **저장만 하고 복원하지 않으면 사용자 입장에서는 저장이 없는 것과 같다.**
     func restoreAutosaveIfAvailable() {
         guard document == nil else { return }
-        guard !CommandLine.arguments.contains("--selftest") else { return }
+        guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--routing-selftest") else { return }
         // 자체점검은 **사용자의 실제 작업을 건드리면 안 된다.** SwiftUI의 `onAppear`가
         // `applicationDidFinishLaunching`보다 먼저 도는 경우가 있어, 막지 않으면
         // 점검을 돌릴 때마다 진짜 자동 저장본을 읽어 들인다. 점검 결과가 그날 작업 내용에

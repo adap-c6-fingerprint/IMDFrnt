@@ -2,6 +2,8 @@
 
 SVG 도면에서 IMDF GeoJSON을 반자동으로 추출하는 macOS 앱의 **UI 우선 Working Prototype**.
 
+길찾기 노드 편집은 왼쪽 `길찾기 노드 편집` 버튼 또는 ⌘⇧N으로 연다. SVG·PNG·JPG 도면에서 층별 노드 배치·정보 편집·연결·Delete·실행취소·프로젝트 저장·클라이언트용 GeoJSON 내보내기를 지원한다. [사용법과 클라이언트 파일 계약](../docs/routing/NODE_EDITOR.md).
+
 명세: `02) Projects/06) Challenge 6/02) FP-to-IMDF 자동화/00) FP-to-IMDF 새버전 (반자동화).md`
 아키텍처: 같은 폴더 `03) FTI 아키텍쳐.md`
 

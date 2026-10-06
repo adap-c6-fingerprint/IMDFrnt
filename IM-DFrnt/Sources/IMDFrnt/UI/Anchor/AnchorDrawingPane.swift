@@ -128,6 +128,7 @@ struct AnchorDrawingPane: View {
         Canvas { ctx, _ in
             ctx.translateBy(x: offset.width, y: offset.height)
             ctx.scaleBy(x: scale, y: scale)
+            doc.drawImages(in: ctx)
 
             for o in doc.objects {
                 let path = o.geometry.swiftUIPath

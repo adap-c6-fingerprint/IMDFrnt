@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import SwiftUI
 
@@ -35,6 +36,8 @@ struct CanvasView: View {
     @State private var dragIsMarquee: Bool?
     /// 이동 재도입(명세 2-3, 2026-08-25). `nil`이면 이동 중이 아니다.
     @State private var moveBase: [VectorObjectID: CGSize]?
+    @State private var routingDragNode: UUID?
+    @State private var routingDragPoint: LocalPoint?
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -42,18 +45,23 @@ struct CanvasView: View {
             ZStack {
                 env.canvasBackground.fill
 
-                if let doc = env.document {
+                if let doc = displayedDocument {
                     canvas(doc: doc, viewport: geo.size)
                         .overlay { MarqueeOverlay(marquee: marquee, background: env.canvasBackground) }
                         .gesture(dragGesture())
                         .onAppear { fit(doc: doc, viewport: geo.size) }
-                        .onChange(of: doc.sourceName) { _ in fit(doc: doc, viewport: geo.size) }
+                        .onChange(of: doc.fingerprint) { _, _ in fit(doc: doc, viewport: geo.size) }
+                        .onChange(of: env.routingFloorID) { _, _ in fit(doc: doc, viewport: geo.size) }
                 } else {
                     emptyState
                 }
 
                 VStack {
-                    if env.isPolygonWorkMode {
+                    if env.showRoutingScreen {
+                        Text(env.routingTool.hint)
+                            .font(.caption).padding(10).toolbarCard(cornerRadius: 8)
+                            .allowsHitTesting(false)
+                    } else if env.isPolygonWorkMode {
                         PolygonToolbar()
                         // 폴리곤 type에서는 선택 대상이 개체가 아니라 면이라 상단바가 다르다.
                         // **선택이 없어도 항상 뜬다** — 이 모드에서는 무엇을 더 해야 하는지가 곧 안내다.
@@ -67,9 +75,9 @@ struct CanvasView: View {
                 VStack {
                     Spacer()
                     HStack {
-                        zoomControls(doc: env.document, viewport: geo.size)
+                        zoomControls(doc: displayedDocument, viewport: geo.size)
                         Spacer()
-                        modeChip
+                        if !env.showRoutingScreen { modeChip }
                     }
                     .padding(12)
                 }
@@ -128,6 +136,8 @@ struct CanvasView: View {
 
     // MARK: 그리기
 
+    private var displayedDocument: DrawingDocument? { env.showRoutingScreen ? env.routingDocument : env.document }
+
     private func canvas(doc: DrawingDocument, viewport: CGSize) -> some View {
         Canvas { ctx, size in
             let s = effectiveScale
@@ -142,6 +152,12 @@ struct CanvasView: View {
                 ctx.translateBy(x: c.x, y: c.y)
                 ctx.rotate(by: .degrees(env.rotationDegrees))
                 ctx.translateBy(x: -c.x, y: -c.y)
+            }
+
+            doc.drawImages(in: ctx)
+            if env.showRoutingScreen {
+                drawRouting(in: &ctx, document: doc, scale: s)
+                return
             }
 
             // 하위 기본 레이어 — 원위치를 20% opacity로. 히트테스트 대상이 아니다.
@@ -334,6 +350,64 @@ struct CanvasView: View {
                    with: .color(color), lineWidth: 1.5 / s)
     }
 
+    private func drawRouting(in ctx: inout GraphicsContext, document: DrawingDocument, scale s: CGFloat) {
+        for object in document.objects {
+            let path = object.geometry.swiftUIPath
+            if let fill = object.style.fill { ctx.fill(path, with: .color(env.canvasBackground.resolveFill(fill).opacity(0.25))) }
+            ctx.stroke(path, with: .color(env.canvasBackground.resolve(object.style.stroke).opacity(0.6)),
+                       lineWidth: CanvasZoom.strokeWidth(object.style.strokeWidth, at: s))
+        }
+        func point(_ node: RoutingNode) -> LocalPoint {
+            node.id == routingDragNode ? (routingDragPoint ?? node.point) : node.point
+        }
+        let floorID = env.currentRoutingFloor?.id
+        let connected = Set(env.routing.edges.flatMap { [$0.from, $0.to] })
+        for edge in env.routing.edges {
+            guard let a = env.routing.node(edge.from), let b = env.routing.node(edge.to),
+                  a.floorID == floorID || b.floorID == floorID else { continue }
+            let selected = env.routingSelectedEdgeID == edge.id
+            let color = selected ? Color.orange : (edge.accessible ? Color.blue : Color.purple)
+            if a.floorID == b.floorID {
+                var line = Path()
+                line.move(to: point(a).cg); line.addLine(to: point(b).cg)
+                ctx.stroke(line, with: .color(color),
+                           style: StrokeStyle(lineWidth: (selected ? 4 : 2) / s,
+                                              dash: edge.accessible ? [] : [6 / s, 4 / s]))
+            } else {
+                let local = a.floorID == floorID ? a : b
+                let other = a.floorID == floorID ? b : a
+                let p = point(local)
+                ctx.draw(Text("↕ \(env.routing.floor(other.floorID)?.name ?? "")")
+                    .font(.system(size: 11 / s)).foregroundStyle(color),
+                         at: CGPoint(x: p.x, y: p.y + 20 / s))
+            }
+        }
+        for node in env.routing.nodes(on: floorID) {
+            let p = point(node)
+            let selected = env.routingSelectedNodeID == node.id || env.routingConnectStart == node.id
+            let r: CGFloat = (selected ? 10 : 7) / s
+            let color = selected ? Color.orange : env.canvasBackground.selection
+            let circle = Path(ellipseIn: CGRect(x: p.x-r, y: p.y-r, width: 2*r, height: 2*r))
+            ctx.fill(circle, with: .color(color))
+            ctx.stroke(circle, with: .color(env.canvasBackground.fill), lineWidth: 2 / s)
+            if !connected.contains(node.id) {
+                ctx.stroke(Path(ellipseIn: CGRect(x: p.x-r-3/s, y: p.y-r-3/s,
+                                                  width: 2*r+6/s, height: 2*r+6/s)),
+                           with: .color(.orange), lineWidth: 1 / s)
+            }
+            if !node.name.isEmpty {
+                ctx.draw(Text(node.name).font(.system(size: 11 / s)).foregroundStyle(env.canvasBackground.toolbarForeground),
+                         at: CGPoint(x: p.x+14/s, y: p.y-12/s), anchor: .leading)
+            }
+        }
+        if env.routingTool == .calibrate {
+            for pair in env.currentRoutingFloor?.anchors.pairs ?? [] {
+                drawCross(ctx, at: pair.local, scale: s, color: .green)
+            }
+            if let pending = env.routingPendingAnchor { drawCross(ctx, at: pending, scale: s, color: .orange) }
+        }
+    }
+
     /// 지금 화면에 보이는 도면 범위. 화면 네 모서리를 도면 좌표로 옮겨 감싸는 사각형을 만든다.
     /// `toLocal`이 회전까지 역변환하므로 90° 회전 상태에서도 정확하다.
     private func visibleDocRect(viewport: CGSize) -> CGRect {
@@ -356,7 +430,7 @@ struct CanvasView: View {
 
     /// 문서 중심 — 회전축.
     private var docCenter: CGPoint {
-        guard let d = env.document else { return .zero }
+        guard let d = displayedDocument else { return .zero }
         return CGPoint(x: d.canvasSize.width / 2, y: d.canvasSize.height / 2)
     }
 
@@ -382,10 +456,18 @@ struct CanvasView: View {
                 if dragStart == nil {
                     dragStart = offset
                     lastDrag = .zero
-                    dragIsMarquee = env.isSelectModeActive
+                    dragIsMarquee = !env.showRoutingScreen && env.isSelectModeActive
+                    if env.showRoutingScreen {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        if env.routingTool == .place || env.routingTool == .select {
+                            routingDragNode = env.nearestRoutingNode(to: toLocal(value.startLocation),
+                                                                   tolerance: 14 / Double(effectiveScale))?.id
+                            if let routingDragNode { env.selectRoutingNode(routingDragNode) }
+                        }
+                    }
                     // 드래그 도중 fn+shift+z를 놓으면 팬으로 돌변해 화면이 튄다.
                     // 시작 시점에 무엇을 하는 드래그인지 확정하고 끝까지 유지한다.
-                    if dragIsMarquee == false, !env.isPolygonWorkMode, env.isMoveEnabled {
+                    if !env.showRoutingScreen, dragIsMarquee == false, !env.isPolygonWorkMode, env.isMoveEnabled {
                         // fn+shift+z가 없을 때만 이동 후보다 — 사각형 선택이 최우선이다.
                         // '개체 이동' 토글이 꺼져 있으면 여기를 아예 건너뛴다(2026-08-29 사노 요청).
                         // `moveBase`가 nil로 남으므로 아래 분기에서 화면 팬이 된다 — 드래그가
@@ -400,7 +482,9 @@ struct CanvasView: View {
                                    height: value.translation.height - lastDrag.height)
                 lastDrag = value.translation
 
-                if dragIsMarquee == true {
+                if routingDragNode != nil {
+                    routingDragPoint = toLocal(value.location)
+                } else if dragIsMarquee == true {
                     marquee = MarqueeRect(start: value.startLocation, current: value.location)
                 } else if let base = moveBase {
                     // 화면 델타를 그대로 도면 좌표 델타로 쓰면 확대 배율만큼 실제보다 크게 옮겨진다.
@@ -415,7 +499,13 @@ struct CanvasView: View {
             }
             .onEnded { value in
                 let moved = abs(value.translation.width) + abs(value.translation.height)
-                if let m = marquee, moved >= MarqueeRect.dragThreshold {
+                if env.showRoutingScreen {
+                    if let id = routingDragNode, moved >= MarqueeRect.dragThreshold {
+                        env.moveRoutingNode(id, to: toLocal(value.location))
+                    } else if moved < MarqueeRect.dragThreshold {
+                        env.handleRoutingClick(at: toLocal(value.location), tolerance: 14 / Double(effectiveScale))
+                    }
+                } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
                     selectByMarquee(m)
                 } else if moveBase == nil, moved < MarqueeRect.dragThreshold {
                     if env.isPolygonWorkMode {
@@ -430,6 +520,8 @@ struct CanvasView: View {
                 dragIsMarquee = nil
                 if moveBase != nil { env.endMove() }
                 moveBase = nil
+                routingDragNode = nil
+                routingDragPoint = nil
                 dragStart = nil
                 lastDrag = .zero
             }
@@ -473,9 +565,15 @@ struct CanvasView: View {
             Image(systemName: "square.on.square.dashed")
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(env.canvasBackground.toolbarForeground.opacity(0.65))
-            Text("SVG 도면을 열어 시작하세요")
+            Text(env.showRoutingScreen
+                 ? (env.currentRoutingFloor == nil ? "층을 추가하여 시작하세요" : "이 층의 원본 도면을 불러오세요")
+                 : "도면을 열어 시작하세요")
                 .font(.title3)
-            Button("SVG 파일 열기…") { env.openFile() }
+            Button(env.showRoutingScreen && env.currentRoutingFloor == nil ? "층 추가" : "도면 불러오기…") {
+                if env.showRoutingScreen {
+                    if env.currentRoutingFloor == nil { env.addRoutingFloor() } else { env.importRoutingDrawing() }
+                } else { env.openFile() }
+            }
                 .buttonStyle(.borderedProminent)
             // 샘플 도면 버튼을 뺀 뒤 남은 유일한 입구라 주 버튼으로 올렸다(명세 디버깅 12번).
             // `.bordered`로 두면 시작점이 없는 빈 화면처럼 보인다.

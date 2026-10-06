@@ -30,6 +30,10 @@ struct EditorSnapshot: Equatable {
     var expandedFeatures: Set<FeatureGroupID>
     var focusedFeature: FeatureGroupID?
     var faceSelection: Set<String>
+    var routing = RoutingGraph()
+    var routingFloorID: UUID?
+    var routingSelectedNodeID: UUID?
+    var routingSelectedEdgeID: UUID?
     /// 고른 면(신기능 5-4). 저장하면 선택이 비워지므로, 되돌렸을 때 고르던 것이
     /// 그대로 돌아와야 "저장을 취소했다"가 성립한다.
     // 카드를 여러 개 펼 수 있게 된 뒤로 한 칸이 아니라 집합이다(2026-08-26).
