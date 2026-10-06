@@ -30,12 +30,12 @@ enum RoutingExporter {
         if Set(ids).count != ids.count { errors.append("노드·연결 ID가 중복됩니다.") }
         var coordinates: [UUID: GeoPoint] = [:]
         for floor in graph.floors where !graph.nodes(on: floor.id).isEmpty {
-            let georef = Georeferencer(pairs: floor.anchors.pairs)
-            if !georef.isConfigured { errors.append("\(floor.name): 서로 일직선이 아닌 좌표 기준점 3개 이상이 필요합니다.") }
+            let configured = floor.hasGeographicCoordinates
+            if !configured { errors.append("\(floor.name): IMDF 좌표 또는 서로 일직선이 아닌 좌표 기준점 3개 이상이 필요합니다.") }
             for node in graph.nodes(on: floor.id) {
-                guard let geo = georef.geoPoint(for: node.point), geo.longitude.isFinite,
+                guard let geo = floor.geoPoint(for: node.point), geo.longitude.isFinite,
                       geo.latitude.isFinite, abs(geo.longitude) <= 180, abs(geo.latitude) <= 90 else {
-                    if georef.isConfigured { errors.append("\(node.label): 실제 좌표가 유효하지 않습니다.") }
+                    if configured { errors.append("\(node.label): 실제 좌표가 유효하지 않습니다.") }
                     continue
                 }
                 coordinates[node.id] = geo

@@ -17,8 +17,7 @@ extension AppEnvironment {
     }
 
     func enterRoutingScreen() {
-        guard let doc = document, let svg = loadedSVGText else { return }
-        if routing.floors.isEmpty {
+        if routing.floors.isEmpty, let doc = document, let svg = loadedSVGText {
             perform("길찾기 작업 시작") {
                 let floor = RoutingFloor(name: "1층", ordinal: 0, sourceName: doc.sourceName,
                                          svg: svg, anchors: anchors)
@@ -30,16 +29,66 @@ extension AppEnvironment {
         showRoutingScreen = true
     }
 
+    func importIMDF() {
+        guard !isImportingIMDF else { return }
+        let panel = NSOpenPanel()
+        panel.title = "IMDF 불러오기"
+        panel.message = "IMDF ZIP 또는 폴더를 선택하세요. 폴더 안의 manifest.json이나 level.geojson도 열 수 있습니다."
+        panel.allowedContentTypes = [.zip, .json, UTType(filenameExtension: "geojson") ?? .json,
+                                     UTType(filenameExtension: "imdf") ?? .data]
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        isImportingIMDF = true
+        Task {
+            defer { isImportingIMDF = false }
+            do {
+                let imported = try await Task.detached(priority: .userInitiated) {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    return try IMDFImporter.load(url)
+                }.value
+                try adoptIMDF(imported)
+                notify("\(imported.sourceName) — \(imported.floors.count)개 층을 불러왔습니다. 바로 노드를 찍을 수 있습니다.")
+            } catch { notify("IMDF를 불러오지 못했습니다: \(error.localizedDescription)", isError: true) }
+        }
+    }
+
+    func adoptIMDF(_ imported: ImportedIMDF) throws {
+        guard let first = imported.floors.first else { throw IMDFImporter.Failure(message: "IMDF에 층이 없습니다.") }
+        var graph = RoutingGraph()
+        graph.imdfSourceName = imported.sourceName
+        graph.layoutVersion = imported.layoutVersion
+        graph.floors = imported.floors.map {
+            RoutingFloor(id: $0.id, name: $0.name, ordinal: $0.ordinal,
+                         sourceName: imported.sourceName, svg: $0.svg,
+                         imdfCoordinates: imported.coordinates)
+        }
+        // Open as a separate project so Save cannot overwrite an earlier source drawing project.
+        var file = ProjectFile(sourceName: imported.sourceName, svg: first.svg,
+            features: FeatureStore(), ownership: OwnershipRegistry(), segmentation: SegmentationStore(),
+            auxiliary: AuxiliaryStore(), anchors: AnchorStore(), serials: SerialNumberAllocator(),
+            ids: IDAssigner(), openingGate: OpeningGateStore(), borrow: BorrowRegistry())
+        file.routing = graph
+        try adopt(file, from: nil)
+        routingTool = .place
+        canvasRotation = 0
+        showRoutingScreen = true
+        lastSavedSnapshot = nil
+    }
+
     func selectRoutingFloor(_ id: UUID) {
         guard routing.floor(id) != nil else { return }
         routingFloorID = id
         routingSelectedNodeID = nil
         routingSelectedEdgeID = nil
         routingPendingAnchor = nil
+        if currentRoutingFloor?.imdfCoordinates != nil && routingTool == .calibrate { routingTool = .place }
         // Keep the first connection endpoint while the user changes floors.
     }
 
     func setRoutingTool(_ tool: RoutingTool) {
+        if tool == .calibrate && currentRoutingFloor?.imdfCoordinates != nil { return }
         guard routingTool != tool else { return }
         routingTool = tool
         routingConnectStart = nil
@@ -105,6 +154,7 @@ extension AppEnvironment {
         perform("층 도면 불러오기") {
             if routing.floors[index].svg != String(decoding: svg, as: UTF8.self) {
                 routing.floors[index].anchors = AnchorStore()
+                routing.floors[index].imdfCoordinates = nil
             }
             routing.floors[index].svg = String(decoding: svg, as: UTF8.self)
             routing.floors[index].sourceName = name

@@ -140,6 +140,7 @@ final class AppEnvironment: ObservableObject {
     @Published var routingConnectStart: UUID?
     @Published var routingPendingAnchor: LocalPoint?
     @Published var routingExportError: String?
+    @Published var isImportingIMDF = false
     var routingDrawingCache: [UUID: (String, DrawingDocument)] = [:]
 
     // MARK: 문서와 상태

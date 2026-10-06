@@ -8,6 +8,19 @@ struct RoutingFloor: Identifiable, Equatable, Codable {
     var sourceName: String = ""
     var svg: String = ""
     var anchors = AnchorStore()
+    /// IMDF already contains WGS 84 geometry; no manual calibration is needed.
+    var imdfCoordinates: IMDFCoordinateSpace?
+
+    var hasGeographicCoordinates: Bool {
+        imdfCoordinates?.isValid == true || Georeferencer(pairs: anchors.pairs).isConfigured
+    }
+
+    func geoPoint(for point: LocalPoint) -> GeoPoint? {
+        if let coordinates = imdfCoordinates {
+            return coordinates.isValid ? coordinates.geoPoint(for: point) : nil
+        }
+        return Georeferencer(pairs: anchors.pairs).geoPoint(for: point)
+    }
 }
 
 struct RoutingNode: Identifiable, Equatable, Codable {
@@ -42,6 +55,7 @@ struct RoutingGraph: Equatable, Codable {
     var edges: [RoutingEdge] = []
     var layoutVersion = "layout-1"
     var hardSearchRadiusMeters = 25.0
+    var imdfSourceName: String?
 
     func floor(_ id: UUID?) -> RoutingFloor? { floors.first { $0.id == id } }
     func node(_ id: UUID?) -> RoutingNode? { nodes.first { $0.id == id } }

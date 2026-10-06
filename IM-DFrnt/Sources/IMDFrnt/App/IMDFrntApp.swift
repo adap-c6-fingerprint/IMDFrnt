@@ -23,6 +23,9 @@ struct IMDFrntApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("IMDF 불러오기…") { env.importIMDF() }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                    .disabled(env.isImportingIMDF)
                 Button("도면 열기…") { env.openFile() }
                     .keyboardShortcut("o")
                 Divider()
@@ -57,7 +60,6 @@ struct IMDFrntApp: App {
             CommandMenu("도구") {
                 Button("길찾기 노드 편집") { env.enterRoutingScreen() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
-                    .disabled(env.document == nil)
                 Button("길찾기 GeoJSON 내보내기…") { env.exportRoutingGraph() }
                     .disabled(env.routing.nodes.isEmpty)
                 Divider()

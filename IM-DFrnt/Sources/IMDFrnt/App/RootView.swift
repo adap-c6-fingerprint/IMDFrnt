@@ -42,6 +42,13 @@ struct RootView: View {
                 .overlay(alignment: .topTrailing) { sidebarToggle(.trailing) }
             }
         }
+        .disabled(env.isImportingIMDF)
+        .overlay {
+            if env.isImportingIMDF {
+                ProgressView("IMDF를 불러오는 중…").padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
         .environment(\.canvasBackground, env.canvasBackground)
         // 상단바 색은 시스템 외관이 아니라 캔버스 배경을 따라야 한다(디버깅 10번).
         // `ButtonStyle`은 `@EnvironmentObject`를 못 받으므로 여기서 한 번 흘려보낸다.

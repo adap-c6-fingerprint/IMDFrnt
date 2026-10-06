@@ -52,6 +52,10 @@ struct CanvasView: View {
                         .onAppear { fit(doc: doc, viewport: geo.size) }
                         .onChange(of: doc.fingerprint) { _, _ in fit(doc: doc, viewport: geo.size) }
                         .onChange(of: env.routingFloorID) { _, _ in fit(doc: doc, viewport: geo.size) }
+                        .onChange(of: geo.size) { _, size in
+                            // Switching from the drawing editor changes sidebar widths and layout.
+                            if env.showRoutingScreen { fit(doc: doc, viewport: size) }
+                        }
                 } else {
                     emptyState
                 }
@@ -353,7 +357,10 @@ struct CanvasView: View {
     private func drawRouting(in ctx: inout GraphicsContext, document: DrawingDocument, scale s: CGFloat) {
         for object in document.objects {
             let path = object.geometry.swiftUIPath
-            if let fill = object.style.fill { ctx.fill(path, with: .color(env.canvasBackground.resolveFill(fill).opacity(0.25))) }
+            if let fill = object.style.fill {
+                ctx.fill(path, with: .color(env.canvasBackground.resolveFill(fill).opacity(0.25)),
+                         style: FillStyle(eoFill: env.currentRoutingFloor?.imdfCoordinates != nil))
+            }
             ctx.stroke(path, with: .color(env.canvasBackground.resolve(object.style.stroke).opacity(0.6)),
                        lineWidth: CanvasZoom.strokeWidth(object.style.strokeWidth, at: s))
         }
@@ -566,17 +573,17 @@ struct CanvasView: View {
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(env.canvasBackground.toolbarForeground.opacity(0.65))
             Text(env.showRoutingScreen
-                 ? (env.currentRoutingFloor == nil ? "층을 추가하여 시작하세요" : "이 층의 원본 도면을 불러오세요")
+                 ? (env.currentRoutingFloor == nil ? "완성된 IMDF를 불러와 노드를 찍으세요" : "이 층의 원본 도면을 불러오세요")
                  : "도면을 열어 시작하세요")
                 .font(.title3)
+            Button("IMDF 불러오기…") { env.importIMDF() }
+                .buttonStyle(.borderedProminent).disabled(env.isImportingIMDF)
             Button(env.showRoutingScreen && env.currentRoutingFloor == nil ? "층 추가" : "도면 불러오기…") {
                 if env.showRoutingScreen {
                     if env.currentRoutingFloor == nil { env.addRoutingFloor() } else { env.importRoutingDrawing() }
                 } else { env.openFile() }
             }
-                .buttonStyle(.borderedProminent)
-            // 샘플 도면 버튼을 뺀 뒤 남은 유일한 입구라 주 버튼으로 올렸다(명세 디버깅 12번).
-            // `.bordered`로 두면 시작점이 없는 빈 화면처럼 보인다.
+                .buttonStyle(.bordered)
         }
         .padding(.horizontal, 40)
         .padding(.vertical, 32)

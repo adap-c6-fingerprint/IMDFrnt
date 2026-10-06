@@ -143,7 +143,8 @@ extension AppEnvironment {
         routingSelectedEdgeID = nil
         routingConnectStart = nil
         routingPendingAnchor = nil
-        showRoutingScreen = false
+        showRoutingScreen = routing.imdfSourceName != nil
+        routingTool = .place
 
         projectID = file.projectID
         assignment = file.assignment

@@ -10,12 +10,15 @@ struct RoutingScreen: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Button { env.showRoutingScreen = false } label: {
-                    Label("IMDF 편집으로", systemImage: "chevron.left")
+                    Label("도면 편집으로", systemImage: "chevron.left")
                 }
                 Text("길찾기 노드").font(.headline)
+                Button("IMDF 불러오기…") { env.importIMDF() }
                 Spacer()
                 Picker("편집 도구", selection: Binding(get: { env.routingTool }, set: { env.setRoutingTool($0) })) {
-                    ForEach(RoutingTool.allCases, id: \.self) { Text($0.title).tag($0) }
+                    ForEach(RoutingTool.allCases.filter { $0 != .calibrate || env.currentRoutingFloor?.imdfCoordinates == nil }, id: \.self) {
+                        Text($0.title).tag($0)
+                    }
                 }
                 .pickerStyle(.segmented).frame(maxWidth: 460)
                 Button("작업 저장") { env.saveProject() }
@@ -63,8 +66,13 @@ struct RoutingScreen: View {
                 Button { env.addRoutingFloor() } label: { Image(systemName: "plus") }
                     .help("새 층 추가")
             }
-            Button("클라이언트 층 목록 가져오기…") { env.importRoutingLevels() }
-                .controlSize(.small)
+            if let source = env.routing.imdfSourceName {
+                Label(source, systemImage: "map").font(.caption).lineLimit(2)
+                Text("IMDF의 층 ID·좌표를 사용합니다.").font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Button("클라이언트 층 목록 가져오기…") { env.importRoutingLevels() }
+                    .controlSize(.small)
+            }
             Text("층 번호 0 = 지상 1층 · 지하는 음수")
                 .font(.caption2).foregroundStyle(.secondary)
             ScrollView {
@@ -144,7 +152,7 @@ struct RoutingScreen: View {
                                     env.perform("탐색 반경 편집", coalescingKey: "routing-radius") { env.routing.hardSearchRadiusMeters = value }
                                 }), format: .number)
                         }
-                        Text("GeoJSON으로 전체 층의 노드와 연결을 함께 내보냅니다. 실제 위경도를 만들려면 각 층의 좌표 기준점이 필요합니다.")
+                        Text("GeoJSON으로 전체 층의 노드와 연결을 함께 내보냅니다. IMDF를 불러오면 기존 위경도를 바로 사용합니다. 이미지·SVG 도면은 좌표 기준점이 필요합니다.")
                             .font(.caption2).foregroundStyle(.secondary)
                     }.padding(.top, 8)
                 }
@@ -172,26 +180,36 @@ private struct RoutingFloorEditor: View {
                     env.updateRoutingFloor(floor.id, field: "ordinal") { $0.ordinal = value }
                 }), format: .number)
             }
-            Button("이 층 도면 불러오기…") { env.importRoutingDrawing() }
+            if floor.imdfCoordinates == nil {
+                Button("이 층 도면 불러오기…") { env.importRoutingDrawing() }
+            }
             Text(floor.sourceName.isEmpty ? "SVG·PNG·JPG 도면을 불러오세요." : floor.sourceName)
                 .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
-            let configured = Georeferencer(pairs: floor.anchors.pairs).isConfigured
-            Label(configured ? "실제 좌표 변환 준비됨" : "좌표 기준점 \(floor.anchors.pairs.count)개 / 최소 3개",
+            let configured = floor.hasGeographicCoordinates
+            Label(floor.imdfCoordinates != nil ? "IMDF 위경도 사용 · 바로 편집 가능" :
+                  (configured ? "실제 좌표 변환 준비됨" : "좌표 기준점 \(floor.anchors.pairs.count)개 / 최소 3개"),
                   systemImage: configured ? "checkmark.circle" : "location.slash")
                 .font(.caption).foregroundStyle(configured ? Color.green : Color.orange)
-            Button("좌표 기준점 설정") { env.setRoutingTool(.calibrate) }
-                .controlSize(.small)
+            if floor.imdfCoordinates == nil {
+                Button("좌표 기준점 설정") { env.setRoutingTool(.calibrate) }
+                    .controlSize(.small)
+            }
             DisclosureGroup("클라이언트 층 ID") {
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("level UUID", text: $levelID).font(.caption.monospaced())
-                    Button("층 ID 적용") {
-                        guard let id = UUID(uuidString: levelID) else {
-                            env.notify("올바른 UUID를 입력하세요.", isError: true); return
+                    if floor.imdfCoordinates != nil {
+                        Text(floor.id.uuidString.lowercased()).font(.caption.monospaced()).textSelection(.enabled)
+                        Text("불러온 IMDF의 level ID입니다.").font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        TextField("level UUID", text: $levelID).font(.caption.monospaced())
+                        Button("층 ID 적용") {
+                            guard let id = UUID(uuidString: levelID) else {
+                                env.notify("올바른 UUID를 입력하세요.", isError: true); return
+                            }
+                            env.assignRoutingLevelID(floor.id, newID: id)
                         }
-                        env.assignRoutingLevelID(floor.id, newID: id)
+                        Text("level.geojson의 ID와 일치시켜야 클라이언트의 층과 연결됩니다. 층 목록 가져오기로 자동 지정할 수 있습니다.")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
-                    Text("level.geojson의 ID와 일치시켜야 클라이언트의 층과 연결됩니다. 층 목록 가져오기로 자동 지정할 수 있습니다.")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }.padding(.top, 6)
             }
         }
@@ -224,7 +242,7 @@ private struct RoutingNodeEditor: View {
             Text(String(format: "도면 좌표: %.1f, %.1f", node.point.x, node.point.y))
                 .font(.caption.monospacedDigit())
             if let floor = env.routing.floor(node.floorID),
-               let geo = Georeferencer(pairs: floor.anchors.pairs).geoPoint(for: node.point) {
+               let geo = floor.geoPoint(for: node.point) {
                 Text(String(format: "경도 %.7f · 위도 %.7f", geo.longitude, geo.latitude))
                     .font(.caption2.monospacedDigit()).textSelection(.enabled)
             }

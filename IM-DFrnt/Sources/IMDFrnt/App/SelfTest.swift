@@ -1915,7 +1915,7 @@ enum SelfTest {
         check("저장: 확장자는 .imdfrnt", ProjectFile.fileExtension == "imdfrnt",
               ProjectFile.fileExtension)
         check("저장: 버전 1과 확장자가 같으므로 version 필드가 유일한 판별 수단",
-              ProjectFile.currentVersion == 3,
+              ProjectFile.currentVersion == 4,
               "확장자를 되돌려서 파일 이름만으로는 옛 파일을 구분할 수 없다")
         check("저장: 자동 저장 주기 30초",
               abs(AppEnvironment.autosaveInterval - 30) < 1e-9,
