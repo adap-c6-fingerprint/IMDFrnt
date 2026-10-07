@@ -227,15 +227,21 @@ extension AppEnvironment {
         if let connected { selectRoutingEdge(connected) }
     }
 
-    func handleRoutingClick(at point: LocalPoint, tolerance: Double) {
-        guard let floor = currentRoutingFloor, let doc = routingDocument else { return }
-        if routingTool == .calibrate {
+    func handleRoutingClick(at point: LocalPoint, tolerance: Double, modifiers: NSEvent.ModifierFlags = []) {
+        guard !isImportingIMDF, let floor = currentRoutingFloor, let doc = routingDocument,
+              modifiers.intersection([.option, .control]).isEmpty else { return }
+        let addingNode = modifiers.contains(.command)
+        if addingNode {
+            routingConnectStart = nil
+            routingPendingAnchor = nil
+        }
+        if routingTool == .calibrate && !addingNode {
             routingPendingAnchor = point
             return
         }
         if let hit = nearestRoutingNode(to: point, tolerance: tolerance) {
             selectRoutingNode(hit.id)
-            if routingTool == .connect {
+            if routingTool == .connect && !addingNode {
                 if let start = routingConnectStart {
                     guard start != hit.id else { routingConnectStart = nil; return }
                     var connected: UUID?
@@ -250,11 +256,12 @@ extension AppEnvironment {
             }
             return
         }
-        if routingTool == .select, let edge = nearestRoutingEdge(to: point, tolerance: tolerance / 2) {
+        if !addingNode, routingTool == .select || routingTool == .place,
+           let edge = nearestRoutingEdge(to: point, tolerance: tolerance / 2) {
             selectRoutingEdge(edge.id)
             return
         }
-        if routingTool == .place {
+        if addingNode {
             guard point.x >= 0, point.y >= 0, point.x <= doc.canvasSize.width, point.y <= doc.canvasSize.height else {
                 notify("도면 안에 노드를 찍어 주세요.", isError: true); return
             }

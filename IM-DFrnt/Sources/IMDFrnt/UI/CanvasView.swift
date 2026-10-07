@@ -40,6 +40,7 @@ struct CanvasView: View {
     @State private var routingDragPoint: LocalPoint?
     @State private var routingDragIsConnection = false
     @State private var routingDragOptionHeld = false
+    @State private var routingDragCommandHeld = false
     @State private var routingDragConnectCandidate: UUID?
     @State private var routingConnectionStarted = false
     @StateObject private var zoomMonitor = ZoomEventMonitor()
@@ -493,10 +494,15 @@ struct CanvasView: View {
                         NSApp.keyWindow?.makeFirstResponder(nil)
                         let hit = env.nearestRoutingNode(to: toLocal(value.startLocation),
                                                         tolerance: 9 / Double(effectiveScale))
-                        routingDragOptionHeld = NSEvent.modifierFlags.contains(.option)
-                        routingDragIsConnection = routingDragOptionHeld || (env.routingTool == .connect && hit != nil)
+                        let modifiers = NSEvent.modifierFlags
+                        routingDragOptionHeld = modifiers.contains(.option)
+                        routingDragCommandHeld = modifiers.contains(.command) &&
+                            modifiers.intersection([.option, .control]).isEmpty
+                        routingDragIsConnection = routingDragOptionHeld ||
+                            (!routingDragCommandHeld && env.routingTool == .connect && hit != nil)
                         routingDragConnectCandidate = routingDragIsConnection ? hit?.id : nil
-                        if !routingDragIsConnection && (env.routingTool == .place || env.routingTool == .select) {
+                        if !routingDragIsConnection && !routingDragCommandHeld &&
+                            (env.routingTool == .place || env.routingTool == .select) {
                             routingDragNode = hit?.id
                             if let routingDragNode { env.selectRoutingNode(routingDragNode) }
                         }
@@ -518,6 +524,8 @@ struct CanvasView: View {
                                    height: value.translation.height - lastDrag.height)
                 lastDrag = value.translation
 
+                // Command is a click shortcut, so a Command-drag neither moves pins nor pans the map.
+                if routingDragCommandHeld && !routingDragIsConnection { return }
                 if routingDragIsConnection {
                     let moved = abs(value.translation.width) + abs(value.translation.height)
                     if !routingConnectionStarted, let from = routingDragConnectCandidate,
@@ -552,6 +560,10 @@ struct CanvasView: View {
                         } else if !routingDragOptionHeld, moved < MarqueeRect.dragThreshold {
                             env.handleRoutingClick(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale))
                         }
+                    } else if routingDragCommandHeld {
+                        if moved < MarqueeRect.dragThreshold {
+                            env.handleRoutingClick(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale), modifiers: .command)
+                        }
                     } else if let id = routingDragNode, moved >= MarqueeRect.dragThreshold {
                         env.moveRoutingNode(id, to: toLocal(value.location))
                     } else if moved < MarqueeRect.dragThreshold {
@@ -576,6 +588,7 @@ struct CanvasView: View {
                 routingDragPoint = nil
                 routingDragIsConnection = false
                 routingDragOptionHeld = false
+                routingDragCommandHeld = false
                 routingDragConnectCandidate = nil
                 routingConnectionStarted = false
                 dragStart = nil

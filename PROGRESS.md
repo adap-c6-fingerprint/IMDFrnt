@@ -1,5 +1,16 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-07 — Command 클릭 노드 추가·클라이언트 출력 점검
+
+- 구현 전에 컨벤션에 맞춘 [이슈 #17](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/17)을 등록했다. 담당자 `logichoon-redo`, 라벨 `enhancement`, 작업 브랜치 `feat/#17-command-node-export`다.
+- 모든 노드 편집 도구에서 ⌘+클릭으로 현재 층에 노드를 추가한다. 일반 클릭은 선택, 기존 핀의 ⌘+클릭도 선택만 하고 중복 생성·연결을 하지 않는다. ⌘+드래그는 노드 이동·추가와 화면 이동을 하지 않으며 Option 드래그 연결을 유지한다. 입력 시작 시 modifier를 기억해 마우스를 놓기 전에 Command를 놓아도 클릭 의도를 유지한다.
+- 지정한 클라이언트 원격 브랜치를 fetch해 최신 HEAD가 `8274d1d`임을 다시 확인했다. 그래프 로더·경로 탐색 구현은 없고 최소 GeoJSON fixture 및 헤더를 읽는 테스트가 있다.
+- 내보내기는 JSON 기반 `routing-graph.geojson`이다. 실제 생산 코드로 샘플 및 C5 지도 노드 2개·연결 1개를 내보내고 클라이언트 fixture의 필수 필드·타입·좌표·연결 ID 참조를 검사했다. C5 출력은 원본 IMDF 층 UUID·ordinal도 일치한다. 형식 변경이 필요한 불일치는 없었다. 이름·메타데이터·추가 카테고리 해석과 실제 경로 탐색은 클라이언트 로더 구현 이후 검증한다.
+- 자체 검사 83/83, 기존 회귀 ALL PASS, 릴리즈 빌드 통과. 사용자 자동 저장본을 별도 백업했으며 검사 실행은 자동 저장본을 읽거나 덮어쓰지 않는다.
+- 출력 검사기는 잘못된 노드 참조·위경도 순서·접근성 타입·층 ordinal·schema_version 타입의 오류 입력 5개를 모두 거절했다. 서명 검사 통과 및 사용자 routing 저장 데이터가 백업과 동일함을 확인했다.
+- 최종 UI 확인·재실행은 자동화 도구의 `Sky Computer Use native pipe startup failed`가 재연결 뒤에도 반복되어 완료하지 못했다. Command modifier의 클릭 처리 자체는 자체 검사로 확인했고 실제 마우스 입력 경로는 코드 검토 범위다. 업데이트 앱 번들은 빌드 완료 상태다.
+- 재사용 가능한 출력 검사기 `scripts/validate-routing-export.py`와 [사용법](docs/routing/NODE_EDITOR.md)을 추가했다.
+
 ## 2026-10-06 — 노드 표시와 드래그 연결 UX 개선
 
 - [이슈 #16](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/16)에 관련 UI 요청을 하나로 묶었다. 이슈를 먼저 기록하라는 요청 이후의 추가 변경은 등록 후 진행했고, 이후 작업 규칙을 `AGENTS.md`에 남겼다.

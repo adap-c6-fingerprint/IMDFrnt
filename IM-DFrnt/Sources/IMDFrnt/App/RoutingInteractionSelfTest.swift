@@ -8,7 +8,7 @@ enum RoutingInteractionSelfTest {
         env.openSample()
         env.enterRoutingScreen()
         for point in [LocalPoint(100, 100), LocalPoint(240, 100), LocalPoint(360, 200)] {
-            env.handleRoutingClick(at: point, tolerance: 9)
+            env.handleRoutingClick(at: point, tolerance: 9, modifiers: .command)
         }
         let nodes = env.routing.nodes
         let a = nodes[0].id, b = nodes[1].id

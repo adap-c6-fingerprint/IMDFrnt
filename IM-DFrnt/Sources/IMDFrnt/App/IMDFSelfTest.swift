@@ -46,9 +46,9 @@ enum IMDFSelfTest {
             check("Polygon 안쪽 구멍 유지", env.routingDocument?.objects.first?.geometry.subpaths.count == 2)
             let original = GeoPoint(longitude: 129.00005, latitude: 36.00005)
             let local = imported.coordinates.localPoint(longitude: original.longitude, latitude: original.latitude)
-            env.handleRoutingClick(at: local, tolerance: 0.1)
+            env.handleRoutingClick(at: local, tolerance: 0.1, modifiers: .command)
             let id = env.routingSelectedNodeID!
-            env.handleRoutingClick(at: imported.coordinates.localPoint(longitude: 129.00006, latitude: 36.00005), tolerance: 0.1)
+            env.handleRoutingClick(at: imported.coordinates.localPoint(longitude: 129.00006, latitude: 36.00005), tolerance: 0.1, modifiers: .command)
             _ = env.routing.connect(id, env.routingSelectedNodeID!)
             let output = try RoutingExporter.collection(env.routing)
             let node = (output["features"] as! [[String: Any]]).first { $0["id"] as? String == id.uuidString.lowercased() }!
@@ -97,11 +97,22 @@ enum IMDFSelfTest {
                           ((try? SVGParser.parse(data: Data(floor.svg.utf8), sourceName: floor.sourceName))?.objects.count ?? 0) > 1
                       })
                 let p = real.coordinates.localPoint(longitude: 129.3258293, latitude: 36.0141502)
-                env.handleRoutingClick(at: p, tolerance: 0.1)
+                env.handleRoutingClick(at: p, tolerance: 0.1, modifiers: .command)
+                let nodeID = env.routingSelectedNodeID!
+                let next = real.coordinates.localPoint(longitude: 129.3258793, latitude: 36.0141902)
+                env.handleRoutingClick(at: next, tolerance: 0.1, modifiers: .command)
+                _ = env.routing.connect(nodeID, env.routingSelectedNodeID!)
                 let collection = try RoutingExporter.collection(env.routing)
-                let feature = (collection["features"] as! [[String: Any]])[0]
+                let feature = (collection["features"] as! [[String: Any]]).first {
+                    $0["id"] as? String == nodeID.uuidString.lowercased()
+                }!
                 let c = (feature["geometry"] as! [String: Any])["coordinates"] as! [Double]
                 check("실제 C5 지도에서 기준점 없이 원본 좌표 내보내기 \(flag)", abs(c[0] - 129.3258293) < 1e-10 && abs(c[1] - 36.0141502) < 1e-10)
+                if let index = CommandLine.arguments.firstIndex(of: "--routing-imdf-test-output"),
+                   CommandLine.arguments.indices.contains(index + 1) {
+                    try RoutingExporter.encoded(env.routing).write(
+                        to: URL(fileURLWithPath: CommandLine.arguments[index + 1]), options: .atomic)
+                }
                 if flag == "--imdf-test-zip" {
                     try env.makeProjectFile()!.encoded().write(to: URL(fileURLWithPath: "/tmp/imdfrnt-imdf-qa.imdfrnt"), options: .atomic)
                 }

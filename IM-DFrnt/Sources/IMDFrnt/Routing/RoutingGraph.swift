@@ -144,10 +144,10 @@ enum RoutingTool: String, CaseIterable {
     }
     var hint: String {
         switch self {
-        case .place: "빈 곳 클릭으로 노드 추가 · 핀 드래그로 이동 · ⌥ Option + 핀 드래그로 연결"
-        case .select: "핀·연결선 선택 · Delete로 삭제 · ⌥ Option + 핀 드래그로 연결"
-        case .connect: "핀에서 다른 핀으로 드래그해 연결 · 층간 연결은 두 핀을 차례로 클릭"
-        case .calibrate: "도면에서 기준점을 클릭하고 오른쪽에 실제 경도·위도 입력 (최소 3점)"
+        case .place: "⌘ Command + 클릭으로 노드 추가 · 클릭으로 선택 · 핀 드래그로 이동 · ⌥ Option + 드래그로 연결"
+        case .select: "⌘ Command + 클릭으로 노드 추가 · 핀·연결선 선택 · Delete로 삭제 · ⌥ Option + 드래그로 연결"
+        case .connect: "⌘ Command + 클릭으로 노드 추가 · 핀 드래그로 연결 · 층간 연결은 두 핀을 차례로 클릭"
+        case .calibrate: "기준점 클릭 후 실제 경도·위도 입력 (최소 3점) · ⌘ Command + 클릭으로 노드 추가"
         }
     }
 }

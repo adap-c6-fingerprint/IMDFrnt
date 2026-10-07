@@ -31,11 +31,11 @@ enum RoutingSelfTest {
         let firstFloor = env.currentRoutingFloor!.id
         check("기존 도면과 좌표 기준점 재사용", env.routingDocument?.fingerprint == env.document?.fingerprint &&
               env.currentRoutingFloor?.anchors == env.anchors)
-        env.handleRoutingClick(at: LocalPoint(100, 100), tolerance: 10)
+        env.handleRoutingClick(at: LocalPoint(100, 100), tolerance: 10, modifiers: .command)
         let first = env.routingSelectedNodeID!
-        env.handleRoutingClick(at: LocalPoint(300, 100), tolerance: 10)
+        env.handleRoutingClick(at: LocalPoint(300, 100), tolerance: 10, modifiers: .command)
         let second = env.routingSelectedNodeID!
-        check("빈 곳 클릭으로 노드 두 개 생성", env.routing.nodes.count == 2)
+        check("Command 클릭으로 노드 두 개 생성", env.routing.nodes.count == 2)
         env.handleRoutingClick(at: LocalPoint(102, 100), tolerance: 10)
         check("기존 핀 클릭은 선택하며 중복 생성하지 않음", env.routingSelectedNodeID == first && env.routing.nodes.count == 2)
         env.setRoutingTool(.connect)
@@ -107,7 +107,7 @@ enum RoutingSelfTest {
             env.updateRoutingFloor(secondFloor) { $0.anchors = calibration() }
         } catch { check("층 도면 불러오기", false) }
         env.setRoutingTool(.place)
-        env.handleRoutingClick(at: LocalPoint(100, 100), tolerance: 10)
+        env.handleRoutingClick(at: LocalPoint(100, 100), tolerance: 10, modifiers: .command)
         let third = env.routingSelectedNodeID!
         check("같은 위치의 노드를 층별로 따로 관리", env.routing.nodes(on: firstFloor).count == 2 &&
               env.routing.nodes(on: secondFloor).count == 1 && env.nearestRoutingNode(to: LocalPoint(100,100), tolerance: 10)?.id == third)
@@ -184,6 +184,7 @@ enum RoutingSelfTest {
         env.showRoutingScreen = false
         check("일반 IMDF 편집에서 Delete를 가로채지 않음", !monitor.handle(keyCode: 51))
         RoutingInteractionSelfTest.run(check: check)
+        RoutingCommandClickSelfTest.run(check: check)
         IMDFSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)
