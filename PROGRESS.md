@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-08 — 층 셀 선택·우클릭 삭제 확인·노드 색상
+
+- 구현 전에 기존 [UI 이슈 #16](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/16)에 요청과 완료 조건을 추가했다. `feat/#17-command-node-export`의 `ed9dd4c`에서 `feat/#16-floor-node-ui`를 만들었다.
+- 층 셀 전체에 클릭 영역을 지정하고 상시 휴지통 버튼을 없앴다. 우클릭의 `층 삭제…`를 선택하면 층 이름·노드 수·층간 연결 삭제 범위를 안내하는 alert가 뜨고 취소/삭제를 선택한다. 기존 층·노드·연결 삭제와 실행 취소를 재사용한다.
+- 노드 색상을 일반 통로·교차점 파랑, 출입구 초록, 계단 주황, 엘리베이터 보라, 목적지 분홍으로 구분한다. 카테고리 메뉴도 같은 색상을 표시한다. 저장·내보내기의 카테고리 문자열과 선택 광택·핀 크기·하단 ID는 유지한다.
+- 릴리즈 빌드 및 서명 검사 통과. 실제 C5 폴더·ZIP 포함 자체 검사 83/83 PASS, 기존 회귀 ALL PASS. UI에서 층 선택·우클릭 메뉴·삭제 alert·취소를 확인하고, 검증용 빈 층의 삭제 확정·실행 취소를 확인한 뒤 층 추가 자체도 되돌렸다.
+- 화면에서 파랑·초록·주황 핀과 하단 ID를 확인했다. 좌표 클릭 자동화의 `noWindowsAvailable` 오류 및 이후 사용자 화면 변경 감지로 셀의 빈 여백 클릭과 보라·분홍을 포함한 카테고리 변경의 실제 입력 검증은 미완료로 기록한다.
+- 최신 앱을 실행했다. 검증 후 자동 저장본의 routing 전체가 백업과 동일하며 기존 6개 층·노드 18개·연결 26개를 보존했다. 로그: `/tmp/imdfrnt-floor-node-routing-20261008.log`, `/tmp/imdfrnt-floor-node-regression-20261008.log`.
+
 ## 2026-10-07 — Command 클릭 노드 추가·클라이언트 출력 점검
 
 - 구현 전에 컨벤션에 맞춘 [이슈 #17](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/17)을 등록했다. 담당자 `logichoon-redo`, 라벨 `enhancement`, 작업 브랜치 `feat/#17-command-node-export`다.

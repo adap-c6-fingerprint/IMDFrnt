@@ -44,16 +44,17 @@ struct RoutingScreen: View {
             keyMonitor?.stop(); keyMonitor = nil
             env.routingConnectionDrag = nil
         }
-        .confirmationDialog("이 층의 도면·노드·연결을 삭제할까요?", isPresented: Binding(
+        .alert("\(deletingFloor?.name ?? "이 층")을 삭제할까요?", isPresented: Binding(
             get: { deletingFloor != nil }, set: { if !$0 { deletingFloor = nil } }
-        )) {
-            if let floor = deletingFloor {
-                Button("\(floor.name) 삭제 (노드 \(env.routing.nodes(on: floor.id).count)개)", role: .destructive) {
-                    env.removeRoutingFloor(floor.id)
-                    deletingFloor = nil
-                }
+        ), presenting: deletingFloor) { floor in
+            Button("취소", role: .cancel) { deletingFloor = nil }
+            Button("삭제", role: .destructive) {
+                env.removeRoutingFloor(floor.id)
+                deletingFloor = nil
             }
-        } message: { Text("이 층과 연결된 다른 층의 연결선도 함께 지웁니다. 실행취소로 복구할 수 있습니다.") }
+        } message: { floor in
+            Text("\(floor.name)의 도면과 노드 \(env.routing.nodes(on: floor.id).count)개를 삭제합니다. 다른 층으로 이어지는 연결선도 함께 삭제됩니다. 실행 취소로 복구할 수 있습니다.")
+        }
         .alert("길찾기 파일을 내보낼 수 없습니다", isPresented: Binding(
             get: { env.routingExportError != nil }, set: { if !$0 { env.routingExportError = nil } }
         )) {
@@ -81,21 +82,23 @@ struct RoutingScreen: View {
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(env.routing.floors.sorted { $0.ordinal < $1.ordinal }) { floor in
-                        HStack {
-                            Button { env.selectRoutingFloor(floor.id) } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(floor.name).font(.body.weight(.semibold))
-                                    Text("노드 \(env.routing.nodes(on: floor.id).count)개 · \(floor.svg.isEmpty ? "도면 없음" : floor.sourceName)")
-                                        .font(.caption2).lineLimit(1)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
-                                .background(env.currentRoutingFloor?.id == floor.id ? Color.accentColor.opacity(0.15) : Color.clear,
-                                            in: RoundedRectangle(cornerRadius: 8))
+                        Button { env.selectRoutingFloor(floor.id) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(floor.name).font(.body.weight(.semibold))
+                                Text("노드 \(env.routing.nodes(on: floor.id).count)개 · \(floor.svg.isEmpty ? "도면 없음" : floor.sourceName)")
+                                    .font(.caption2).lineLimit(1)
                             }
-                            .buttonStyle(.plain)
-                            Button { deletingFloor = floor } label: { Image(systemName: "trash") }
-                                .buttonStyle(.borderless).help("층 삭제")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(env.currentRoutingFloor?.id == floor.id ? Color.accentColor.opacity(0.15) : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) { deletingFloor = floor } label: {
+                                Label("층 삭제…", systemImage: "trash")
+                            }
                         }
                     }
                 }
@@ -236,11 +239,14 @@ private struct RoutingNodeEditor: View {
             Picker("카테고리", selection: Binding(get: { env.routing.node(node.id)?.category ?? "waypoint" }, set: { value in
                 env.updateRoutingNode(node.id, field: "category") { $0.category = value }
             })) {
-                Text("통로·교차점").tag("waypoint")
-                Text("출입구").tag("entrance")
-                Text("계단").tag("stairs")
-                Text("엘리베이터").tag("elevator")
-                Text("목적지").tag("destination")
+                ForEach(RoutingNodeCategory.allCases, id: \.self) { category in
+                    Label {
+                        Text(category.title)
+                    } icon: {
+                        Circle().fill(category.color).frame(width: 8, height: 8)
+                    }
+                    .tag(category.rawValue)
+                }
             }
             Text(String(format: "도면 좌표: %.1f, %.1f", node.point.x, node.point.y))
                 .font(.caption.monospacedDigit())

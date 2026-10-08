@@ -419,7 +419,7 @@ struct CanvasView: View {
                                                      center: p.cg, startRadius: 0, endRadius: glowRadius))
             }
             let circle = Path(ellipseIn: CGRect(x: p.x-r, y: p.y-r, width: 2*r, height: 2*r))
-            ctx.fill(circle, with: .color(env.canvasBackground.selection))
+            ctx.fill(circle, with: .color(RoutingNodeCategory.color(for: node.category)))
             ctx.stroke(circle, with: .color(env.canvasBackground.fill), lineWidth: 1 / s)
             var labels = ctx
             labels.translateBy(x: p.x, y: p.y)
