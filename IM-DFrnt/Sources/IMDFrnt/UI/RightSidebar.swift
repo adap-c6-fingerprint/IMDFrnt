@@ -141,7 +141,12 @@ struct RightSidebar: View {
             }
             .help("이 feature 빼고 다 보이게 하기")
 
-            Button { env.trash(f.id) } label: { Image(systemName: "trash") }
+            Button(role: .destructive) {
+                env.requestDeletion(title: "\(f.serialNumber)를 삭제할까요?",
+                                    message: "이 feature를 휴지통으로 보냅니다. 다른 폴리곤에서 빌려 쓰는 opening이면 해당 폴리곤이 열릴 수 있습니다. 휴지통에서 복원하거나 실행 취소로 되돌릴 수 있습니다.") {
+                    $0.trash(f.id)
+                }
+            } label: { Image(systemName: "trash").foregroundStyle(.red) }
                 .help("휴지통으로 보내기")
 
             Button { env.ungroup(f.id) } label: { Image(systemName: "rectangle.on.rectangle.slash") }

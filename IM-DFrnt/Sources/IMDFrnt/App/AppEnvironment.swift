@@ -141,6 +141,8 @@ final class AppEnvironment: ObservableObject {
     @Published var routingConnectionDrag: RoutingConnectionDrag?
     @Published var routingPendingAnchor: LocalPoint?
     @Published var routingExportError: String?
+    @Published var pendingDeletion: DeletionRequest?
+    var routingContextMenuIsOpen = false
     @Published var isImportingIMDF = false
     var routingDrawingCache: [UUID: (String, DrawingDocument)] = [:]
 
@@ -488,6 +490,7 @@ final class AppEnvironment: ObservableObject {
             routingConnectStart = nil
             routingConnectionDrag = nil
             routingPendingAnchor = nil
+            pendingDeletion = nil
             showRoutingScreen = false
             // 임시 문은 개체 id를 들고 있다. 다른 도면에 남겨두면 없는 개체를 가리킨다.
             // 도면이 바뀌면 게이트도 대여도 처음부터다. 남겨두면 새 도면에서 다른 type 메뉴가
@@ -1211,6 +1214,7 @@ final class AppEnvironment: ObservableObject {
         routingPendingAnchor = nil
         conflict = nil
         pendingClearSelection = nil
+        pendingDeletion = nil
         // 열려 있던 경고창은 되돌린 상태와 아귀가 안 맞을 수 있으니 함께 닫는다.
     }
 

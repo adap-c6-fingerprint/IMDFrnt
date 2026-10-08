@@ -299,18 +299,26 @@ extension AppEnvironment {
     }
 
     func deleteRoutingSelection() {
-        if let id = routingSelectedNodeID {
-            perform("노드와 연결 삭제") {
-                routing.removeNode(id)
-                selectRoutingNode(nil)
-                if routingConnectStart == id { routingConnectStart = nil }
-                if routingConnectionDrag?.from == id || routingConnectionDrag?.target == id { routingConnectionDrag = nil }
-            }
-        } else if let id = routingSelectedEdgeID {
-            perform("연결 삭제") {
-                routing.edges.removeAll { $0.id == id }
-                routingSelectedEdgeID = nil
-            }
+        if let id = routingSelectedNodeID { deleteRoutingNode(id) }
+        else if let id = routingSelectedEdgeID { deleteRoutingEdge(id) }
+    }
+
+    func deleteRoutingNode(_ id: UUID) {
+        guard routing.node(id) != nil else { return }
+        perform("노드와 연결 삭제") {
+            routing.removeNode(id)
+            if routingSelectedNodeID == id { selectRoutingNode(nil) }
+            if let selected = routingSelectedEdgeID, routing.edge(selected) == nil { routingSelectedEdgeID = nil }
+            if routingConnectStart == id { routingConnectStart = nil }
+            if routingConnectionDrag?.from == id || routingConnectionDrag?.target == id { routingConnectionDrag = nil }
+        }
+    }
+
+    func deleteRoutingEdge(_ id: UUID) {
+        guard routing.edge(id) != nil else { return }
+        perform("연결 삭제") {
+            routing.edges.removeAll { $0.id == id }
+            if routingSelectedEdgeID == id { routingSelectedEdgeID = nil }
         }
     }
 

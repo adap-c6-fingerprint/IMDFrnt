@@ -54,6 +54,9 @@ struct CanvasView: View {
                     canvas(doc: doc, viewport: geo.size)
                         .overlay { MarqueeOverlay(marquee: marquee, background: env.canvasBackground) }
                         .gesture(dragGesture(viewport: geo.size))
+                        .accessibilityChildren {
+                            if env.showRoutingScreen { routingAccessibilityElements }
+                        }
                         .onAppear { fit(doc: doc, viewport: geo.size) }
                         .onChange(of: doc.fingerprint) { _, _ in fit(doc: doc, viewport: geo.size) }
                         .onChange(of: env.routingFloorID) { _, _ in fit(doc: doc, viewport: geo.size) }
@@ -149,6 +152,27 @@ struct CanvasView: View {
     // MARK: 그리기
 
     private var displayedDocument: DrawingDocument? { env.showRoutingScreen ? env.routingDocument : env.document }
+
+    @ViewBuilder
+    private var routingAccessibilityElements: some View {
+        ForEach(env.routing.nodes(on: env.currentRoutingFloor?.id)) { node in
+            Button(node.label) {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                env.selectRoutingNode(node.id)
+            }
+            .accessibilityValue(env.routingSelectedNodeID == node.id ? "선택됨" : "")
+        }
+        ForEach(env.routing.edges.filter { edge in
+            env.routing.node(edge.from)?.floorID == env.currentRoutingFloor?.id ||
+                env.routing.node(edge.to)?.floorID == env.currentRoutingFloor?.id
+        }) { edge in
+            Button("연결 \(env.routing.node(edge.from)?.label ?? "") ↔ \(env.routing.node(edge.to)?.label ?? "")") {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                env.selectRoutingEdge(edge.id)
+            }
+            .accessibilityValue(env.routingSelectedEdgeID == edge.id ? "선택됨" : "")
+        }
+    }
 
     private func canvas(doc: DrawingDocument, viewport: CGSize) -> some View {
         Canvas { ctx, size in

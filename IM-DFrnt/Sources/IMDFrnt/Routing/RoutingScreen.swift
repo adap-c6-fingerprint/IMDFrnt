@@ -4,7 +4,6 @@ import SwiftUI
 struct RoutingScreen: View {
     @EnvironmentObject var env: AppEnvironment
     @State private var keyMonitor: RoutingKeyMonitor?
-    @State private var deletingFloor: RoutingFloor?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,17 +42,7 @@ struct RoutingScreen: View {
         .onDisappear {
             keyMonitor?.stop(); keyMonitor = nil
             env.routingConnectionDrag = nil
-        }
-        .alert("\(deletingFloor?.name ?? "이 층")을 삭제할까요?", isPresented: Binding(
-            get: { deletingFloor != nil }, set: { if !$0 { deletingFloor = nil } }
-        ), presenting: deletingFloor) { floor in
-            Button("취소", role: .cancel) { deletingFloor = nil }
-            Button("삭제", role: .destructive) {
-                env.removeRoutingFloor(floor.id)
-                deletingFloor = nil
-            }
-        } message: { floor in
-            Text("\(floor.name)의 도면과 노드 \(env.routing.nodes(on: floor.id).count)개를 삭제합니다. 다른 층으로 이어지는 연결선도 함께 삭제됩니다. 실행 취소로 복구할 수 있습니다.")
+            env.routingContextMenuIsOpen = false
         }
         .alert("길찾기 파일을 내보낼 수 없습니다", isPresented: Binding(
             get: { env.routingExportError != nil }, set: { if !$0 { env.routingExportError = nil } }
@@ -82,24 +71,12 @@ struct RoutingScreen: View {
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(env.routing.floors.sorted { $0.ordinal < $1.ordinal }) { floor in
-                        Button { env.selectRoutingFloor(floor.id) } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(floor.name).font(.body.weight(.semibold))
-                                Text("노드 \(env.routing.nodes(on: floor.id).count)개 · \(floor.svg.isEmpty ? "도면 없음" : floor.sourceName)")
-                                    .font(.caption2).lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(env.currentRoutingFloor?.id == floor.id ? Color.accentColor.opacity(0.15) : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) { deletingFloor = floor } label: {
-                                Label("층 삭제…", systemImage: "trash")
-                            }
-                        }
+                        RoutingFloorCell(floor: floor, nodeCount: env.routing.nodes(on: floor.id).count,
+                                         isSelected: env.currentRoutingFloor?.id == floor.id,
+                                         onSelect: { env.selectRoutingFloor(floor.id) },
+                                         onDelete: { env.requestRoutingFloorDeletion(floor.id) },
+                                         onMenuTracking: { env.routingContextMenuIsOpen = $0 })
+                            .frame(height: 53)
                     }
                 }
             }
@@ -285,8 +262,10 @@ private struct RoutingNodeEditor: View {
                 env.setRoutingTool(.connect)
                 env.routingConnectStart = node.id
             }
-            Button("노드 삭제", role: .destructive) { env.deleteRoutingSelection() }
-            Text("캔버스에서 핀 선택 후 Delete · ⌘Z로 복구")
+            Button(role: .destructive) { env.requestRoutingNodeDeletion(node.id) } label: {
+                Text("노드 삭제").foregroundStyle(.red)
+            }
+            Text("핀 선택 후 Delete → 삭제 확인 · ⌘Z로 복구")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .onAppear { metadata = node.metadataJSON }
@@ -314,8 +293,10 @@ private struct RoutingEdgeEditor: View {
                 env.updateRoutingEdge(edge.id) { $0.accessible = value }
             }))
             .disabled(edge.category == .stairs)
-            Button("연결 삭제", role: .destructive) { env.deleteRoutingSelection() }
-            Text("연결을 지워도 양 끝 노드는 남습니다.").font(.caption2).foregroundStyle(.secondary)
+            Button(role: .destructive) { env.requestRoutingEdgeDeletion(edge.id) } label: {
+                Text("연결 삭제").foregroundStyle(.red)
+            }
+            Text("연결 선택 후 Delete → 삭제 확인. 양 끝 노드는 남습니다.").font(.caption2).foregroundStyle(.secondary)
         }
     }
 }
@@ -350,9 +331,15 @@ private struct RoutingCalibrationEditor: View {
                                 .font(.caption2.monospacedDigit())
                         }
                         Spacer()
-                        Button { env.updateRoutingFloor(floor.id) { $0.anchors.remove(pair.id) } } label: {
-                            Image(systemName: "trash")
+                        Button(role: .destructive) {
+                            env.requestDeletion(title: "\(pair.label)을 삭제할까요?",
+                                                message: "이 층의 좌표 기준점 하나를 삭제합니다. 좌표 변환과 내보내기에 영향을 줄 수 있습니다. 실행 취소로 복구할 수 있습니다.") {
+                                $0.updateRoutingFloor(floor.id) { $0.anchors.remove(pair.id) }
+                            }
+                        } label: {
+                            Image(systemName: "trash").foregroundStyle(.red)
                         }.buttonStyle(.borderless)
+                            .help("좌표 기준점 삭제")
                     }.font(.caption)
                 }
             }
@@ -381,7 +368,8 @@ final class RoutingKeyMonitor {
 
     func handle(keyCode: UInt16, modifiers: NSEvent.ModifierFlags = [], textIsEditing: Bool = false,
                 hasModal: Bool = false) -> Bool {
-        guard let env, env.showRoutingScreen, !hasModal, !textIsEditing,
+        guard let env, env.showRoutingScreen, !env.routingContextMenuIsOpen,
+              env.pendingDeletion == nil, !hasModal, !textIsEditing,
               modifiers.intersection([.command, .control]).isEmpty else { return false }
         if keyCode == 53 {
             env.routingConnectionDrag = nil
@@ -392,7 +380,7 @@ final class RoutingKeyMonitor {
         }
         guard !modifiers.contains(.option) else { return false }
         if [51, 117].contains(keyCode), env.routingSelectedNodeID != nil || env.routingSelectedEdgeID != nil {
-            env.deleteRoutingSelection(); return true
+            env.requestRoutingSelectionDeletion(); return env.pendingDeletion != nil
         }
         return false
     }

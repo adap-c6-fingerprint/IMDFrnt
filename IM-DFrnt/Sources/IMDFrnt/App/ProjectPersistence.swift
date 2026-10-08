@@ -144,6 +144,7 @@ extension AppEnvironment {
         routingConnectStart = nil
         routingConnectionDrag = nil
         routingPendingAnchor = nil
+        pendingDeletion = nil
         showRoutingScreen = routing.imdfSourceName != nil
         routingTool = .place
 

@@ -56,6 +56,18 @@ struct RootView: View {
         .overlay { if env.closedPolygonNotice != nil { polygonNotice } }
         .onAppear { startMonitor() }
         .onDisappear { monitor?.stop() }
+        .alert(env.pendingDeletion?.title ?? "삭제할까요?", isPresented: Binding(
+            get: { env.pendingDeletion != nil },
+            set: { if !$0 { env.cancelDeletion() } }
+        ), presenting: env.pendingDeletion) { request in
+            Button("취소", role: .cancel) { env.cancelDeletion() }
+                .keyboardShortcut(.defaultAction)
+            Button(role: .destructive) { env.confirmDeletion(request.id) } label: {
+                Text("삭제").foregroundStyle(.red)
+            }
+        } message: { request in
+            Text(request.message)
+        }
         .alert("이미 저장된 개체입니다", isPresented: Binding(
             get: { env.conflict != nil },
             set: { if !$0 { env.conflict = nil } }

@@ -733,8 +733,14 @@ struct AnchorScreen: View {
                         // 숫자 칸은 줄바꿈되면 행 높이가 달라져 가로줄이 어긋난다.
                         // 좁아지면 줄이는 것은 라벨 칸 몫이다(위 `minWidth`).
 
-                        Button { env.anchors.remove(pair.id) } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) {
+                            env.requestDeletion(title: "\(pair.label)을 삭제할까요?",
+                                                message: "이 좌표 기준점을 삭제합니다. 도면의 좌표 변환과 내보내기에 영향을 줄 수 있습니다. 실행 취소로 복구할 수 있습니다.") {
+                                env in env.perform("좌표 기준점 삭제") { env.anchors.remove(pair.id) }
+                            }
+                        } label: { Image(systemName: "trash").foregroundStyle(.red) }
                             .buttonStyle(.borderless).controlSize(.mini)
+                            .help("좌표 기준점 삭제")
                     }
                     .font(.caption.monospacedDigit())
                     .background(env.outlierIndices.contains(i) ? Color.red.opacity(0.1) : .clear,

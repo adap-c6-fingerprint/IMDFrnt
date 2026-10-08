@@ -55,7 +55,9 @@ enum RoutingSelfTest {
         check("모달·명령 키 Delete는 노드를 지우지 않음", !monitor.handle(keyCode: 51, hasModal: true) &&
               !monitor.handle(keyCode: 51, modifiers: .command) && env.routing.nodes.count == 2)
         let beforeDelete = env.routing
-        check("Delete로 노드와 연결을 함께 삭제", monitor.handle(keyCode: 51) && env.routing.nodes.count == 1 && env.routing.edges.isEmpty)
+        check("Delete는 확인 전 노드와 연결을 유지", monitor.handle(keyCode: 51) && env.pendingDeletion != nil && env.routing == beforeDelete)
+        if let request = env.pendingDeletion { env.confirmDeletion(request.id) }
+        check("삭제 확인 후 노드와 연결을 함께 삭제", env.routing.nodes.count == 1 && env.routing.edges.isEmpty)
         env.undo()
         check("삭제 실행취소로 ID·연결·선택 복원", env.routing == beforeDelete && env.routingSelectedNodeID == first)
         env.redo()
@@ -185,6 +187,7 @@ enum RoutingSelfTest {
         check("일반 IMDF 편집에서 Delete를 가로채지 않음", !monitor.handle(keyCode: 51))
         RoutingInteractionSelfTest.run(check: check)
         RoutingCommandClickSelfTest.run(check: check)
+        DeletionSelfTest.run(check: check)
         IMDFSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)

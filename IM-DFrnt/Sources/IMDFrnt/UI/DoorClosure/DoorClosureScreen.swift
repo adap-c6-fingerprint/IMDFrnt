@@ -180,7 +180,12 @@ struct DoorClosureScreen: View {
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }
             Spacer()
-            Button { env.removeTemporaryDoor(door.id) } label: { Image(systemName: "trash") }
+            Button(role: .destructive) {
+                env.requestDeletion(title: "\(door.label)을 삭제할까요?",
+                                    message: "이 임시 문을 삭제합니다. 쓰인 문과 호는 다시 고를 수 있게 됩니다. 실행 취소로 복구할 수 있습니다.") {
+                    $0.removeTemporaryDoor(door.id)
+                }
+            } label: { Image(systemName: "trash").foregroundStyle(.red) }
                 .buttonStyle(.borderless)
                 .help("이 임시 문을 지웁니다. 쓰인 문·호는 다시 고를 수 있게 됩니다.")
         }
