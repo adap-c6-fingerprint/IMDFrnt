@@ -30,7 +30,7 @@ extension AppEnvironment {
     }
 
     func importIMDF() {
-        guard !isImportingIMDF else { return }
+        guard !isProjectBusy else { return }
         let panel = NSOpenPanel()
         panel.title = "IMDF 불러오기"
         panel.message = "IMDF ZIP 또는 폴더를 선택하세요. 폴더 안의 manifest.json이나 level.geojson도 열 수 있습니다."
@@ -48,7 +48,9 @@ extension AppEnvironment {
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                     return try IMDFImporter.load(url)
                 }.value
+                guard confirmUnsavedChanges(action: "다른 IMDF 불러오기") else { return }
                 try adoptIMDF(imported)
+                persist(showingBanner: false)
                 notify("\(imported.sourceName) — \(imported.floors.count)개 층을 불러왔습니다. 바로 노드를 찍을 수 있습니다.")
             } catch { notify("IMDF를 불러오지 못했습니다: \(error.localizedDescription)", isError: true) }
         }
@@ -70,11 +72,16 @@ extension AppEnvironment {
             auxiliary: AuxiliaryStore(), anchors: AnchorStore(), serials: SerialNumberAllocator(),
             ids: IDAssigner(), openingGate: OpeningGateStore(), borrow: BorrowRegistry())
         file.routing = graph
-        try adopt(file, from: nil)
+        let retainingEmptyProject = canFillEmptyProject
+        let previousURL = projectURL
+        let previousSaved = lastExplicitSavedProject
+        if retainingEmptyProject { file.projectID = projectID }
+        try adopt(file, from: retainingEmptyProject ? previousURL : nil)
         routingTool = .place
         canvasRotation = 0
         showRoutingScreen = true
-        lastSavedSnapshot = nil
+        lastExplicitSavedProject = retainingEmptyProject ? previousSaved : nil
+        lastRecoveryProject = nil
     }
 
     func selectRoutingFloor(_ id: UUID) {

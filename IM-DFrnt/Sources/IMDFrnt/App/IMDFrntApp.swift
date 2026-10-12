@@ -3,8 +3,20 @@ import SwiftUI
 
 @main
 struct IMDFrntApp: App {
-    @StateObject private var env = AppEnvironment()
+    @StateObject private var env: AppEnvironment
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    init() {
+        if let i = CommandLine.arguments.firstIndex(of: "--project-qa-directory"),
+           CommandLine.arguments.indices.contains(i + 1) {
+            let folder = URL(fileURLWithPath: CommandLine.arguments[i + 1], isDirectory: true)
+            let defaults = UserDefaults(suiteName: "com.imdfrnt.qa.\(folder.lastPathComponent)")!
+            _env = StateObject(wrappedValue: AppEnvironment(
+                recoveryURL: folder.appendingPathComponent("autosave.imdfrnt"), projectDefaults: defaults))
+        } else {
+            _env = StateObject(wrappedValue: AppEnvironment())
+        }
+    }
 
     var body: some Scene {
         WindowGroup("IM-DFrnt") {
@@ -12,6 +24,7 @@ struct IMDFrntApp: App {
                 .environmentObject(env)
                 .environmentObject(env.moves)
                 .frame(minWidth: 1180, minHeight: 720)
+                .background(ProjectWindowDelegateInstaller(delegate: delegate))
                 .onAppear {
                     delegate.env = env
                     // 종료 확인 팝업이 이 환경을 저장해야 하므로 델리게이트에 건네준다.
@@ -23,20 +36,26 @@ struct IMDFrntApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("새 프로젝트") { env.newProject() }
+                    .keyboardShortcut("n")
+                    .disabled(env.isProjectBusy)
+                Divider()
                 Button("IMDF 불러오기…") { env.importIMDF() }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
-                    .disabled(env.isImportingIMDF)
+                    .disabled(env.isProjectBusy)
                 Button("도면 열기…") { env.openFile() }
                     .keyboardShortcut("o")
+                    .disabled(env.isProjectBusy)
                 Divider()
                 Button("작업 열기…") { env.openProject() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
+                    .disabled(env.isProjectBusy)
                 Button("작업 저장") { env.saveProject() }
                     .keyboardShortcut("s")
-                    .disabled(!env.hasSomethingToPersist)
+                    .disabled(!env.hasSomethingToPersist || env.isProjectBusy)
                 Button("다른 이름으로 저장…") { env.saveProject(as: true) }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
-                    .disabled(!env.hasSomethingToPersist)
+                    .disabled(!env.hasSomethingToPersist || env.isProjectBusy)
                 Divider()
                 Button("작업 몫 나눠주기…") { env.shareSelectionAsAssignment() }
                     .disabled(!env.canShareAssignment)
@@ -87,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @MainActor weak var env: AppEnvironment?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ProjectSelfTest.runIfRequested()
         RoutingSelfTest.runIfRequested()
         _ = SelfTest.runIfRequested()
         // --selftest 인자가 있으면 여기서 점검 결과를 출력하고 종료한다.
@@ -94,8 +114,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
         // 번들 없이 `swift run`으로 띄울 때도 창이 앞으로 나오게 한다.
 
-        DispatchQueue.main.async { NSApp.windows.first?.delegate = self }
-        // 창 닫기 버튼도 종료 확인을 거쳐야 한다(신기능 1-1-2). 창은 지금 시점에 아직 없다.
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -116,12 +134,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard MainActor.assumeIsolated({ env.confirmTermination() }) else {
             return .terminateCancel
         }
-        // 저장은 끝났고, 배너("작업이 모두 저장되었어요!")를 읽을 시간만 남겨 둔다.
-        // 시스템 알림을 쓰지 않는 이유는 알림 권한을 요구하기 때문이다 —
-        // 종료 한 번 알리려고 권한을 묻는 것은 과하다.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            NSApp.reply(toApplicationShouldTerminate: true)
-        }
-        return .terminateLater
+        return .terminateNow
+    }
+}
+
+private struct ProjectWindowDelegateInstaller: NSViewRepresentable {
+    let delegate: AppDelegate
+
+    func makeNSView(context: Context) -> ProjectWindowDelegateView {
+        let view = ProjectWindowDelegateView()
+        view.owner = delegate
+        return view
+    }
+
+    func updateNSView(_ view: ProjectWindowDelegateView, context: Context) {
+        view.owner = delegate
+        view.window?.delegate = delegate
+    }
+}
+
+private final class ProjectWindowDelegateView: NSView {
+    weak var owner: AppDelegate?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.delegate = owner
     }
 }

@@ -7,7 +7,7 @@ import Foundation
 /// across distinct deliveries"를 요구한다 — 즉 두 번째 내보내기에서도 **같은 UUID**가 나와야 한다.
 /// 앱을 닫을 때 `IDAssigner`가 사라지면 다시 열었을 때 새 UUID가 발급되어 그 요건이 깨진다.
 /// 폐기 UUID 대장(`retired`)도 같은 이유로 함께 저장한다 — "MUST NOT be re-assigned".
-struct ProjectFile: Codable {
+struct ProjectFile: Codable, Equatable {
 
     static let currentVersion = 4
     static let fileExtension = "imdfrnt"
@@ -36,6 +36,8 @@ struct ProjectFile: Codable {
 
     var sourceName: String
     var svg: String
+    /// nil은 기존 파일의 도면 있음, false는 아직 도면을 넣지 않은 새 프로젝트다.
+    var hasDrawing: Bool?
     /// **SVG 원본을 통째로 담는다. 경로만 참조하지 않는다.**
     /// 도면 파일이 옮겨지거나 이름이 바뀌면 프로젝트가 통째로 열리지 않게 되는데,
     /// 이 앱의 작업 결과(수십~수백 개의 태깅)는 도면 파일 하나보다 훨씬 비싸다.
@@ -65,6 +67,18 @@ struct ProjectFile: Codable {
     // 전부 "지금 화면을 어떻게 보고 있는가"이지 작업 결과가 아니다. 저장하면 파일을 열 때마다
     // 남의 화면 상태가 따라와 오히려 방해가 되고, 실행취소 스택은 다른 세션의 칸을 되살려
     // 지금 문서에 없는 상태로 덮어쓸 위험이 있다.
+
+    func hasSameContents(as other: ProjectFile) -> Bool {
+        var lhs = self
+        var rhs = other
+        lhs.savedAt = rhs.savedAt
+        lhs.version = rhs.version
+        lhs.hasDrawing = lhs.hasDrawing ?? true
+        rhs.hasDrawing = rhs.hasDrawing ?? true
+        lhs.drawingFingerprint = rhs.drawingFingerprint
+        // UI 선택과 실행 시각은 저장해야 하는 수정사항이 아니다.
+        return lhs == rhs
+    }
 
     enum LoadError: LocalizedError {
         case unsupportedVersion(Int)

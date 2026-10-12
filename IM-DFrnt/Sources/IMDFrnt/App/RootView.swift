@@ -5,6 +5,16 @@ struct RootView: View {
     @State private var monitor: SelectModifierMonitor?
 
     var body: some View {
+        VStack(spacing: 0) {
+            ProjectFileToolbar()
+            Divider()
+            editorContent
+        }
+        .navigationTitle(env.projectDisplayName)
+        .navigationSubtitle(env.projectSaveStatus)
+    }
+
+    private var editorContent: some View {
         Group {
             if env.showRoutingScreen {
                 RoutingScreen()
@@ -42,7 +52,7 @@ struct RootView: View {
                 .overlay(alignment: .topTrailing) { sidebarToggle(.trailing) }
             }
         }
-        .disabled(env.isImportingIMDF)
+        .disabled(env.isProjectBusy)
         .overlay {
             if env.isImportingIMDF {
                 ProgressView("IMDF를 불러오는 중…").padding(24)

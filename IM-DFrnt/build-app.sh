@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="IM-DFrnt"
 BUNDLE_ID="com.imdfrnt.prototype"
-APP_DIR="$APP_NAME.app"
+APP_DIR="${1:-$APP_NAME.app}"
 
 # xcode-select가 CommandLineTools를 가리켜도 동작하도록 Xcode 툴체인을 직접 지정한다.
 XCODE_DEV="/Applications/Xcode.app/Contents/Developer"
@@ -41,6 +41,16 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.imdfrnt.project</string>
+            <key>UTTypeDescription</key><string>IM-DFrnt Project</string>
+            <key>UTTypeConformsTo</key><array><string>public.json</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict><key>public.filename-extension</key><array><string>imdfrnt</string></array></dict>
+        </dict>
+    </array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -56,6 +66,11 @@ PLIST
 echo "▸ 임시 서명(ad-hoc)"
 codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || echo "  (서명 생략 — 실행에는 지장 없음)"
 
-echo "✓ 완료: $(pwd)/$APP_DIR"
+if [[ "$APP_DIR" == /* ]]; then
+  APP_ABSOLUTE="$APP_DIR"
+else
+  APP_ABSOLUTE="$PWD/$APP_DIR"
+fi
+echo "✓ 완료: $APP_ABSOLUTE"
 echo "  실행:   open '$APP_DIR'"
-echo "  자체점검: ./$APP_DIR/Contents/MacOS/$APP_NAME --selftest"
+echo "  자체점검: $APP_ABSOLUTE/Contents/MacOS/$APP_NAME --selftest"

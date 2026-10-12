@@ -151,3 +151,15 @@
 - #4에 `duplicate` 라벨과 `Duplicate of #6` 및 관련 범위 설명을 남기고 닫았다. 기존 본문·검토 기록을 보존했다.
 - 활성 이슈의 #4 참조는 ‘통합 전 요청’으로 바꿨다. #4를 진행 중인 상위 작업으로 관리하지 않는다.
 - 닫힘·라벨·대체 이슈 링크를 GitHub API로 확인했다. 구현 상태와 정확도·runtime 측정 상태는 유지한다.
+
+## 2026-10-13 — #18 새 프로젝트 생성·기존 작업 저장
+
+- `feat/#18-new-project-save`를 #16이 머지된 `develop`의 `c32cc62`로 맞추고 구현 전 #18에 계획·담당자·라벨을 기록했다.
+- 파일 메뉴·⌘N으로 새 프로젝트를 만들고 document·feature·Anchor·routing·선택·임시 편집·Undo/Redo를 초기화한다. 새 UUID와 현재 schema version 4를 기록한다.
+- 도면 없는 프로젝트 저장/재열기를 지원한다. 빈 프로젝트에 도면·IMDF를 넣을 때 ID와 저장 위치를 유지한다.
+- 새 프로젝트·다른 입력 열기·창 닫기·종료에서 저장/저장하지 않음/취소를 확인한다. 저장 창 취소·파일 쓰기 실패는 기존 데이터를 유지한다.
+- 프로젝트 이름·저장 상태를 표시한다. 자동 저장은 복구본만 갱신하며 저장하지 않고 종료한 변경을 다음 실행에서 복원하지 않는다.
+- 최종 검사: Project 23/23 PASS, 실제 C5 IMDF 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드·서명 검사 통과. 사용자 복구 파일 SHA-256 보존 확인.
+- 정상 ZIP 입력은 실제 클라이언트 C5 IMDF 폴더를 압축해 검증했다. 처음 지정한 다운로드 ZIP은 IMDF의 level.geojson이 없는 다른 형식이라 거절됐으며 원본은 변경하지 않았다.
+- UI 도구의 `Sky Computer Use native pipe startup failed`로 실제 파일 메뉴·저장 대화상자·종료 입력과 캡처는 미확인이다. 완료로 표시하거나 이슈를 닫지 않는다.
+- 실행 앱: `/private/tmp/IM-DFrntIssue18Final.app`. 상세 사용법과 검사 절차: `docs/projects/PROJECT_LIFECYCLE.md`.

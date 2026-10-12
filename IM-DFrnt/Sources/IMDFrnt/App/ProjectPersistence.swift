@@ -2,51 +2,30 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
-/// 저장 루프 · 종료 처리 · 작업 공유(신기능 1항).
-///
-/// `AppEnvironment` 본체와 파일을 나눈 이유는 이 세 가지가 **하나의 이야기**이기 때문이다.
-/// 30초마다 저장하고, 닫을 때 마저 저장하고, 그 저장 형식(`.imdfrnt`)을 그대로 남에게 넘긴다.
 @MainActor
 extension AppEnvironment {
-
-    // MARK: 자동 저장 (신기능 1-1-1)
-
-    /// 30초. 명세가 정한 값이라 여기 한 곳에만 쓴다.
     static let autosaveInterval: TimeInterval = 30
+    static let lastProjectPathKey = "IMDFrnt.lastProjectPath"
 
-    /// 앱이 알아서 쥐고 있는 안전망 파일. 사용자가 저장 위치를 한 번도 안 정해도 여기 쌓인다.
-    /// **이것이 "cmd+Q로 끄면 도면이 다 없어진다"의 답이다** — 명시적 저장을 안 한 사용자가
-    /// 대다수인데, 저장 위치가 있어야만 저장한다면 안전망이 정작 필요한 사람에게 없다.
     static var autosaveURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("IM-DFrnt", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base.appendingPathComponent("autosave." + ProjectFile.fileExtension)
-    }
-
-    /// 확장자를 되돌리기 전(`.imdfproj`)에 쌓인 자동 저장본.
-    /// **이 자리를 안 봐주면 확장자를 바꾼 그 순간 사용자의 마지막 작업이 사라진다** —
-    /// 파일은 멀쩡히 있는데 앱이 다른 이름만 찾으니 "저장했다더니 없어졌다"가 된다.
-    static var interimAutosaveURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("IM-DFrnt", isDirectory: true)
+            .appendingPathComponent("autosave." + ProjectFile.fileExtension)
+    }
+
+    static var interimAutosaveURL: URL {
+        autosaveURL.deletingLastPathComponent()
             .appendingPathComponent("autosave." + ProjectFile.interimFileExtension)
     }
 
-    /// 자동 저장본이 원래 어느 파일에 속했는지. 복원한 뒤 `저장`이 엉뚱한 곳에 쓰지 않게 한다.
-    private static let lastProjectPathKey = "IMDFrnt.lastProjectPath"
-
     func startAutosaveLoop() {
-        guard autosaveTimer == nil else { return }
-        guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--routing-selftest") else { return }
-        // 같은 이유로 점검 중에는 저장 루프도 돌리지 않는다 — 점검이 사용자 파일을 덮어쓰면 안 된다.
-        let t = Timer.scheduledTimer(withTimeInterval: Self.autosaveInterval, repeats: true) { _ in
-            Task { @MainActor in self.autosaveTick() }
+        guard autosaveTimer == nil, !Self.isRunningSelfTests else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: Self.autosaveInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.autosaveTick() }
         }
-        t.tolerance = 5
-        // 정확히 30.000초일 필요가 없다. 여유를 주면 시스템이 다른 타이머와 묶어 깨워 전력을 아낀다.
-        RunLoop.main.add(t, forMode: .common)
-        autosaveTimer = t
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        autosaveTimer = timer
     }
 
     func stopAutosaveLoop() {
@@ -54,78 +33,49 @@ extension AppEnvironment {
         autosaveTimer = nil
     }
 
-    /// 루프 한 번. **화면에 아무것도 띄우지 않는다**(신기능 1-1-1: "저장 상황을 별도 표시하지 않음").
-    /// 30초마다 배너가 뜨면 그것만으로 작업이 방해된다.
     func autosaveTick() {
-        guard hasSomethingToPersist else { return }
-        guard snapshot != lastSavedSnapshot else { return }
-        // 바뀐 게 없으면 쓰지 않는다. 파일 시각만 계속 갱신되면
-        // 사용자가 파일 목록에서 "언제 뭘 했는지"를 읽을 수 없다.
+        guard !isProjectBusy, let file = makeProjectFile() else { return }
+        if let lastRecoveryProject, file.hasSameContents(as: lastRecoveryProject) { return }
         persist(showingBanner: false)
     }
 
-    /// 저장할 값이 있는가. `hasProjectContent`(태깅 결과가 있는가)보다 **넓다** —
-    /// 도면만 열어 둔 상태도 잃으면 안 되기 때문이다. 도면을 다시 찾아 여는 것 자체가 작업이다.
-    var hasSomethingToPersist: Bool { document != nil }
+    var hasSomethingToPersist: Bool { hasCreatedProject || document != nil || !routing.floors.isEmpty }
 
-    /// 지금 상태를 파일로 굳힌다. 안전망(자동 저장본)에는 **항상** 쓰고,
-    /// 사용자가 저장 위치를 정해 뒀으면 그쪽에도 같이 쓴다.
-    ///
-    /// 두 곳에 쓰는 이유: 안전망만 쓰면 사용자가 정한 파일이 낡고, 사용자 파일만 쓰면
-    /// 위치를 안 정한 사람에게 안전망이 없다. 둘 다 쓰면 어느 쪽으로 열어도 최신이다.
+    /// 자동 저장은 복구본만 갱신한다. 사용자가 저장한 파일은 명시적인 저장에서만 바꾼다.
     @discardableResult
     func persist(showingBanner: Bool) -> Bool {
         guard let file = makeProjectFile() else { return false }
         do {
-            let data = try file.encoded()
-            try data.write(to: Self.autosaveURL)
-            if let url = projectURL { try data.write(to: url) }
-
-            UserDefaults.standard.set(projectURL?.path, forKey: Self.lastProjectPathKey)
-            lastSavedSnapshot = snapshot
-            if showingBanner {
-                notify(projectURL.map { "작업을 저장했습니다: \($0.lastPathComponent)" }
-                       ?? "작업을 저장했습니다.")
-            }
+            try writeRecovery(file, projectURL: projectURL)
+            if showingBanner { notify("복구용 작업을 저장했습니다.") }
             return true
         } catch {
-            // 자동 저장 실패는 조용히 넘기면 안 된다. 안전망이 없는 줄 모르고 계속 작업하게 된다.
-            notify("저장 실패: \(error.localizedDescription)", isError: true)
+            notify("복구본 저장 실패: \(error.localizedDescription)", isError: true)
             return false
         }
     }
 
     func makeProjectFile() -> ProjectFile? {
-        guard let doc = document, let svg = loadedSVGText else { return nil }
-        var file = ProjectFile(sourceName: doc.sourceName, svg: svg,
-                               features: features, ownership: ownership,
-                               segmentation: segmentation, auxiliary: auxiliary,
-                               anchors: anchors, serials: serials, ids: ids,
-                               openingGate: openingGate, borrow: borrow)
+        guard hasSomethingToPersist, document == nil || loadedSVGText != nil else { return nil }
+        var file = ProjectFile(sourceName: document?.sourceName ?? "새 프로젝트", svg: loadedSVGText ?? "",
+            features: features, ownership: ownership, segmentation: segmentation, auxiliary: auxiliary,
+            anchors: anchors, serials: serials, ids: ids, openingGate: openingGate, borrow: borrow)
         file.projectID = projectID
+        file.hasDrawing = document != nil
         file.assignment = assignment
         file.doorClosures = doorClosures
-        file.drawingFingerprint = doc.fingerprint
+        file.drawingFingerprint = document?.fingerprint
         file.routing = routing.floors.isEmpty ? nil : routing
         return file
     }
 
-    // MARK: 파일 → 화면 (열기·복원이 함께 쓴다)
-
-    /// `ProjectFile` 하나를 지금 화면 상태로 갈아 끼운다.
-    /// **열기와 복원이 같은 코드를 타야 한다** — 둘이 갈리면 한쪽만 되살리는 항목이 생기고,
-    /// 그 차이는 "어제 작업이 일부만 돌아왔다"는 형태로 나중에야 드러난다.
+    /// 파싱이 성공한 뒤에만 현재 작업을 교체한다.
     func adopt(_ file: ProjectFile, from url: URL?) throws {
-        guard let svgData = file.svg.data(using: .utf8) else {
-            throw NSError(domain: "IMDFrnt", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "프로젝트에 담긴 도면을 읽지 못했습니다."])
-        }
-        let doc = try SVGParser.parse(data: svgData, sourceName: file.sourceName)
-
+        let doc = file.hasDrawing == false ? nil
+            : try SVGParser.parse(data: Data(file.svg.utf8), sourceName: file.sourceName)
+        resetProjectState(id: file.projectID)
         document = doc
-        loadedSVG = file.svg
-        layers.bootstrap()
-        // 레이어 목록은 저장하지 않으므로 기본 상태에서 다시 시작한다.
+        loadedSVG = file.hasDrawing == false ? nil : file.svg
         features = file.features
         ownership = file.ownership
         segmentation = file.segmentation
@@ -137,105 +87,52 @@ extension AppEnvironment {
         borrow = file.borrow
         doorClosures = file.doorClosures
         routing = file.routing ?? RoutingGraph()
-        routingDrawingCache = [:]
         routingFloorID = routing.floors.first?.id
-        routingSelectedNodeID = nil
-        routingSelectedEdgeID = nil
-        routingConnectStart = nil
-        routingConnectionDrag = nil
-        routingPendingAnchor = nil
-        pendingDeletion = nil
-        showRoutingScreen = routing.imdfSourceName != nil
-        routingTool = .place
-
-        projectID = file.projectID
+        showRoutingScreen = routing.imdfSourceName != nil || (doc == nil && !routing.floors.isEmpty)
         assignment = file.assignment
-        // 배정본이면 여기서 담당 몫이 켜진다. 이후 선택 판정이 전부 이 값을 본다.
-
-        selection = SelectionStore()
-        mode = .idle
-        expandedFeature = nil
-        undoStack.clear()
-        // 다른 세션의 실행취소 칸을 되살리면 지금 문서에 없는 상태로 덮인다.
-        resetPositions()
         projectURL = url
-
-        // 저장된 property type 레이어를 되살린다. 안 그러면 feature는 있는데
-        // 그것을 담을 레이어가 없어 우측 사이드바가 비어 보인다.
-        for type in Set(file.features.features.map(\.featureType)).sorted(by: {
-            $0.rawValue < $1.rawValue
-        }) {
+        for type in Set(file.features.features.map(\.featureType)).sorted(by: { $0.rawValue < $1.rawValue }) {
             _ = layers.addPropertyTypeLayer(type)
         }
-
-        lastSavedSnapshot = snapshot
-        // 방금 연 상태는 곧 저장된 상태다. 이걸 안 채우면 30초 뒤 루프가
-        // "바뀐 게 있다"고 오해해 아무 일도 안 했는데 파일 시각을 갱신한다.
+        lastExplicitSavedProject = makeProjectFile()
+        lastRecoveryProject = makeProjectFile()
     }
 
-    // MARK: 복원 (신기능 1-1-3의 "종료해도 작업이 모두 저장돼요"가 성립하려면 필요하다)
-
-    /// 앱을 켤 때 자동 저장본을 되살린다.
-    /// **저장만 하고 복원하지 않으면 사용자 입장에서는 저장이 없는 것과 같다.**
     func restoreAutosaveIfAvailable() {
-        guard document == nil else { return }
-        guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--routing-selftest") else { return }
-        // 자체점검은 **사용자의 실제 작업을 건드리면 안 된다.** SwiftUI의 `onAppear`가
-        // `applicationDidFinishLaunching`보다 먼저 도는 경우가 있어, 막지 않으면
-        // 점검을 돌릴 때마다 진짜 자동 저장본을 읽어 들인다. 점검 결과가 그날 작업 내용에
-        // 따라 달라지면 점검이 아니다.
-
-        // 새 이름을 먼저 보고, 없으면 확장자를 되돌리기 전 이름을 본다.
+        guard !hasSomethingToPersist, !Self.isRunningSelfTests else { return }
         let fm = FileManager.default
         let url: URL
-        if fm.fileExists(atPath: Self.autosaveURL.path) {
-            url = Self.autosaveURL
-        } else if fm.fileExists(atPath: Self.interimAutosaveURL.path) {
+        if fm.fileExists(atPath: recoveryURL.path) {
+            url = recoveryURL
+        } else if recoveryURLOverride == nil, fm.fileExists(atPath: Self.interimAutosaveURL.path) {
             url = Self.interimAutosaveURL
-            // 다음 저장부터는 새 이름으로 쌓인다(`persist`가 `autosaveURL`에 쓴다).
-        } else {
-            return
-        }
-
+        } else { return }
         do {
-            let file = try ProjectFile.decoded(from: try Data(contentsOf: url))
-            try adopt(file, from: nil)
-
-            // 저장 위치를 정해 뒀던 작업이면 그 자리를 되찾아 준다.
-            // 안 그러면 복원 직후의 `저장`이 "다른 이름으로 저장" 창을 띄운다.
-            if let path = UserDefaults.standard.string(forKey: Self.lastProjectPathKey),
-               FileManager.default.fileExists(atPath: path) {
-                projectURL = URL(fileURLWithPath: path)
-            }
-            notify("지난 작업을 이어서 엽니다 — \(file.sourceName)")
+            try restoreRecovery(from: url)
+            notify("지난 작업을 이어서 엽니다 — \(projectDisplayName)")
         } catch {
-            // 복원 실패로 앱이 안 뜨면 안 된다. 빈 화면으로 시작하되 이유는 알린다.
             notify("지난 작업을 불러오지 못했습니다: \(error.localizedDescription)", isError: true)
         }
     }
 
-    // MARK: 종료 (신기능 1-1-2, 1-1-3)
+    func restoreRecovery(from url: URL) throws {
+        let file = try ProjectFile.decoded(from: Data(contentsOf: url))
+        try adopt(file, from: nil)
+        lastExplicitSavedProject = file.hasDrawing == false && routing.floors.isEmpty ? makeProjectFile() : nil
+        if let path = projectDefaults.string(forKey: Self.lastProjectPathKey) {
+            let originalURL = URL(fileURLWithPath: path)
+            if let data = try? Data(contentsOf: originalURL),
+               let original = try? ProjectFile.decoded(from: data), original.projectID == file.projectID {
+                projectURL = originalURL
+                lastExplicitSavedProject = original
+            }
+        }
+    }
 
-    /// 종료 확인 팝업. 예/아니오만 있고, '저장 안 함'은 **일부러 두지 않았다** —
-    /// 명세가 "종료해도 작업이 모두 저장돼요"라고 약속하므로 저장을 건너뛰는 길이 있으면 거짓말이 된다.
-    /// 되돌리고 싶으면 cmd+z가 있고, 다른 결과를 남기고 싶으면 '다른 이름으로 저장'이 있다.
     func confirmTermination() -> Bool {
-        if isTerminationConfirmed { return true }
-        guard hasSomethingToPersist else { return true }
-        // 열어 둔 도면이 없으면 물을 것이 없다. 빈 앱을 닫는 데 확인을 받으면 성가시기만 하다.
-
-        let alert = NSAlert()
-        alert.messageText = "IM-DFrnt를 종료하시겠어요?"
-        alert.informativeText = "종료해도 작업이 모두 저장돼요."
-        alert.addButton(withTitle: "예")
-        alert.addButton(withTitle: "아니오")
-        let answer = alert.runModal()
-        guard answer == .alertFirstButtonReturn else { return false }
-
-        isTerminationConfirmed = true
-        persist(showingBanner: false)
-        notify("IM-DFrnt: 작업이 모두 저장되었어요!")
-        // 사라지는 알림으로 보여준다. 실제 종료는 `AppDelegate`가 잠깐 미뤄 이 배너를 읽을 시간을 준다.
+        guard !isProjectBusy, NSApp.modalWindow == nil else { return false }
+        guard confirmUnsavedChanges(action: "앱 종료", discardRecovery: true) else { return false }
+        stopAutosaveLoop()
         return true
     }
 
