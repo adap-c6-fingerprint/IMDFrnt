@@ -6,7 +6,9 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if env.showAnchorScreen {
+            if env.showRoutingScreen {
+                RoutingScreen()
+            } else if env.showAnchorScreen {
                 AnchorScreen()
                 // 명세 9항: Anchor 지정은 시트가 아니라 전체 화면 전환이다.
             } else if env.showDoorClosureScreen {
@@ -40,6 +42,13 @@ struct RootView: View {
                 .overlay(alignment: .topTrailing) { sidebarToggle(.trailing) }
             }
         }
+        .disabled(env.isImportingIMDF)
+        .overlay {
+            if env.isImportingIMDF {
+                ProgressView("IMDF를 불러오는 중…").padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
         .environment(\.canvasBackground, env.canvasBackground)
         // 상단바 색은 시스템 외관이 아니라 캔버스 배경을 따라야 한다(디버깅 10번).
         // `ButtonStyle`은 `@EnvironmentObject`를 못 받으므로 여기서 한 번 흘려보낸다.
@@ -47,6 +56,18 @@ struct RootView: View {
         .overlay { if env.closedPolygonNotice != nil { polygonNotice } }
         .onAppear { startMonitor() }
         .onDisappear { monitor?.stop() }
+        .alert(env.pendingDeletion?.title ?? "삭제할까요?", isPresented: Binding(
+            get: { env.pendingDeletion != nil },
+            set: { if !$0 { env.cancelDeletion() } }
+        ), presenting: env.pendingDeletion) { request in
+            Button("취소", role: .cancel) { env.cancelDeletion() }
+                .keyboardShortcut(.defaultAction)
+            Button(role: .destructive) { env.confirmDeletion(request.id) } label: {
+                Text("삭제").foregroundStyle(.red)
+            }
+        } message: { request in
+            Text(request.message)
+        }
         .alert("이미 저장된 개체입니다", isPresented: Binding(
             get: { env.conflict != nil },
             set: { if !$0 { env.conflict = nil } }

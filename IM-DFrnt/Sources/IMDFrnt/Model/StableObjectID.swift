@@ -45,7 +45,11 @@ extension DrawingDocument {
     /// 도면 지문. 두 파일이 **같은 도면**을 두고 작업한 것인지 확인하는 데 쓴다(신기능 1-2-6).
     /// 개체 id 전체에서 뽑으므로, 도면이 조금이라도 다르면 값이 달라진다.
     var fingerprint: String {
-        let joined = objects.map(\.id.uuidString).joined(separator: ",")
+        var joined = objects.map(\.id.uuidString).joined(separator: ",")
+        for raster in rasterImages {
+            let t = raster.transform, r = raster.rect
+            joined += "|image:\(raster.digest)|\(r.origin.x),\(r.origin.y),\(r.width),\(r.height)|\(t.a),\(t.b),\(t.c),\(t.d),\(t.tx),\(t.ty)"
+        }
         return SHA256.hash(data: Data(joined.utf8))
             .map { String(format: "%02x", $0) }.joined()
     }

@@ -131,6 +131,21 @@ enum AuxiliaryOpacity {
 @MainActor
 final class AppEnvironment: ObservableObject {
 
+    @Published var routing = RoutingGraph()
+    @Published var showRoutingScreen = false
+    @Published var routingFloorID: UUID?
+    @Published var routingSelectedNodeID: UUID?
+    @Published var routingSelectedEdgeID: UUID?
+    @Published var routingTool: RoutingTool = .place
+    @Published var routingConnectStart: UUID?
+    @Published var routingConnectionDrag: RoutingConnectionDrag?
+    @Published var routingPendingAnchor: LocalPoint?
+    @Published var routingExportError: String?
+    @Published var pendingDeletion: DeletionRequest?
+    var routingContextMenuIsOpen = false
+    @Published var isImportingIMDF = false
+    var routingDrawingCache: [UUID: (String, DrawingDocument)] = [:]
+
     // MARK: 문서와 상태
 
     @Published var document: DrawingDocument? {
@@ -433,12 +448,17 @@ final class AppEnvironment: ObservableObject {
 
     func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "svg") ?? .xml]
+        panel.allowedContentTypes = [UTType(filenameExtension: "svg") ?? .xml, .png, .jpeg]
+        panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.title = "SVG 도면 열기"
+        panel.title = "도면 열기 (SVG·PNG·JPG)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            load(data: try Data(contentsOf: url), name: url.lastPathComponent)
+            let data = try Data(contentsOf: url)
+            let image = ["png", "jpg", "jpeg"].contains(url.pathExtension.lowercased())
+            let svg = try image ? DrawingImageImporter.embeddedSVG(from: data)
+                : DrawingImageImporter.embedLocalImages(in: data, relativeTo: url)
+            load(data: svg, name: url.lastPathComponent)
         } catch {
             notify("파일을 읽지 못했습니다: \(error.localizedDescription)", isError: true)
         }
@@ -461,6 +481,17 @@ final class AppEnvironment: ObservableObject {
             openingGate = OpeningGateStore()
             borrow = BorrowRegistry()
             doorClosures = DoorClosureStore()
+            anchors = AnchorStore()
+            routing = RoutingGraph()
+            routingDrawingCache = [:]
+            routingFloorID = nil
+            routingSelectedNodeID = nil
+            routingSelectedEdgeID = nil
+            routingConnectStart = nil
+            routingConnectionDrag = nil
+            routingPendingAnchor = nil
+            pendingDeletion = nil
+            showRoutingScreen = false
             // 임시 문은 개체 id를 들고 있다. 다른 도면에 남겨두면 없는 개체를 가리킨다.
             // 도면이 바뀌면 게이트도 대여도 처음부터다. 남겨두면 새 도면에서 다른 type 메뉴가
             // 이미 열려 있어 opening 선행 태깅이 통째로 건너뛰어진다.
@@ -1152,7 +1183,10 @@ final class AppEnvironment: ObservableObject {
                        anchors: anchors, doorClosures: doorClosures, serials: serials,
                        ids: ids, expandedFeatures: expandedFeatures,
                        focusedFeature: focusedFeature,
-                       faceSelection: faceSelection)
+                       faceSelection: faceSelection,
+                       routing: routing, routingFloorID: routingFloorID,
+                       routingSelectedNodeID: routingSelectedNodeID,
+                       routingSelectedEdgeID: routingSelectedEdgeID)
     }
 
     private func restore(_ s: EditorSnapshot) {
@@ -1171,8 +1205,16 @@ final class AppEnvironment: ObservableObject {
         expandedFeatures = s.expandedFeatures
         focusedFeature = s.focusedFeature
         faceSelection = s.faceSelection
+        routing = s.routing
+        routingFloorID = s.routingFloorID
+        routingSelectedNodeID = s.routingSelectedNodeID
+        routingSelectedEdgeID = s.routingSelectedEdgeID
+        routingConnectStart = nil
+        routingConnectionDrag = nil
+        routingPendingAnchor = nil
         conflict = nil
         pendingClearSelection = nil
+        pendingDeletion = nil
         // 열려 있던 경고창은 되돌린 상태와 아귀가 안 맞을 수 있으니 함께 닫는다.
     }
 
@@ -1899,6 +1941,24 @@ final class AppEnvironment: ObservableObject {
         pendingAnchorLocal = nil
     }
 
+    /// 검토 화면에서 확정한 건물 외곽 매칭만 한 번에 저장한다. 실행 취소도 한 단계다.
+    func addAutoAnchorProposal(_ proposal: AutoAnchorProposal) {
+        guard anchors.pairs.isEmpty else {
+            notify("기존 Anchor가 있습니다. 자동 후보를 적용하기 전에 기존 쌍을 확인하세요.", isError: true)
+            return
+        }
+        guard proposal.canApply, proposal.pairs.count >= AnchorStore.minimumPairs,
+              (try? GeoAffineTransform.fit(from: proposal.pairs)) != nil else {
+            notify("도면과 건물 외곽의 정합이 불확실해 후보를 적용할 수 없습니다.", isError: true)
+            return
+        }
+        perform("자동 Anchor 후보 적용") {
+            anchors.pairs.append(contentsOf: proposal.pairs)
+        }
+        pendingAnchorLocal = nil
+        notify("건물 외곽을 기준으로 Anchor \(proposal.pairs.count)쌍을 추가했습니다. 지도 겹쳐보기와 잔차를 확인하세요.")
+    }
+
     /// 도면 쪽 마커 드래그.
     func updateAnchorLocal(_ id: AnchorID, to p: LocalPoint) {
         guard let i = anchors.pairs.firstIndex(where: { $0.id == id }) else { return }
@@ -1953,6 +2013,7 @@ final class AppEnvironment: ObservableObject {
     // MARK: 내보내기 (명세 7-4)
 
     func export() {
+        if showRoutingScreen { exportRoutingGraph(); return }
         guard let doc = document, let type = layers.activePropertyType else {
             notify("먼저 property type 레이어를 선택하세요.", isError: true)
             return

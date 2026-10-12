@@ -12,6 +12,7 @@ final class SVGParser: NSObject, XMLParserDelegate {
     }
 
     private var objects: [VectorObject] = []
+    private var rasterImages: [DrawingRasterImage] = []
     private var transformStack: [CGAffineTransform] = [.identity]
     private var styleStack: [StyleResolver.Inherited] = [StyleResolver.Inherited()]
     private var canvasSize = CGSize(width: 1000, height: 800)
@@ -30,10 +31,10 @@ final class SVGParser: NSObject, XMLParserDelegate {
             throw p.failure ?? Failure(message: "SVG XML을 읽지 못했습니다: \(xml.parserError?.localizedDescription ?? "알 수 없는 오류")")
         }
         if let f = p.failure { throw f }
-        guard !p.objects.isEmpty else {
+        guard !p.objects.isEmpty || !p.rasterImages.isEmpty else {
             throw Failure(message: "그릴 수 있는 벡터 개체를 찾지 못했습니다.")
         }
-        return DrawingDocument(objects: p.objects, canvasSize: p.canvasSize, sourceName: sourceName)
+        return DrawingDocument(objects: p.objects, canvasSize: p.canvasSize, sourceName: sourceName, rasterImages: p.rasterImages)
     }
 
     // MARK: - XMLParserDelegate
@@ -52,6 +53,27 @@ final class SVGParser: NSObject, XMLParserDelegate {
 
         let mergedStyle = StyleResolver.merge(styleStack.last ?? .init(), attributes: attributeDict)
         styleStack.append(mergedStyle)
+
+        if name == "image" {
+            do {
+                guard let href = attributeDict["href"] ?? attributeDict["xlink:href"] else {
+                    throw Failure(message: "SVG 이미지에 원본 경로가 없습니다.")
+                }
+                let (image, digest) = try DrawingImageImporter.embeddedImage(href)
+                func number(_ key: String, fallback: Double = 0) -> Double {
+                    Double(attributeDict[key]?.replacingOccurrences(of: "px", with: "") ?? "") ?? fallback
+                }
+                let rect = CGRect(x: number("x"), y: number("y"),
+                                  width: number("width", fallback: Double(image.width)),
+                                  height: number("height", fallback: Double(image.height)))
+                guard rect.width > 0, rect.height > 0 else { throw Failure(message: "SVG 이미지 크기가 올바르지 않습니다.") }
+                rasterImages.append(DrawingRasterImage(image: image, rect: rect, transform: combined, digest: digest))
+            } catch {
+                failure = Failure(message: String(describing: error))
+                parser.abortParsing()
+            }
+            return
+        }
 
         guard Self.drawableElements.contains(name) else { return }
 

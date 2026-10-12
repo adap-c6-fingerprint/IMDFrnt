@@ -9,7 +9,7 @@ import Foundation
 /// 폐기 UUID 대장(`retired`)도 같은 이유로 함께 저장한다 — "MUST NOT be re-assigned".
 struct ProjectFile: Codable {
 
-    static let currentVersion = 2
+    static let currentVersion = 4
     static let fileExtension = "imdfrnt"
     /// 버전 2에서 바뀐 것은 **개체를 가리키는 방식**이다 — id를 도면 내용에서 결정적으로 뽑는다(신기능 1-2-6).
     /// 이건 형식이 아니라 **뜻**을 바꾸므로 버전 1 파일은 열지 않고 거절한다(아래 `decoded`).
@@ -57,6 +57,8 @@ struct ProjectFile: Codable {
     /// 그 작업량이 통째로 날아간다. 기본값을 둬서 이 필드가 없는 파일도 그대로 열린다.
 
     var drawingFingerprint: String?
+    /// Optional so existing version 2 projects decode without losing their work.
+    var routing: RoutingGraph?
     /// 저장 시점 도면의 지문. 합칠 때 같은 도면인지 확인하는 두 번째 자물쇠다(신기능 1-2-6).
 
     // 담지 않는 것: 선택 상태·펼친 feature·레이어 목록·사이드바 폭·실행취소 스택.
