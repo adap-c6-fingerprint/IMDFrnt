@@ -3,10 +3,9 @@ import Foundation
 
 @MainActor
 enum DocumentOpeningSelfTest {
-    static func runIfRequested() -> Bool {
-        guard CommandLine.arguments.contains("--document-open-selftest") else { return false }
-        Task { await run() }
-        return true
+    static func runIfRequested() async {
+        guard CommandLine.arguments.contains("--document-open-selftest") else { return }
+        await run()
     }
 
     private static func run() async {
@@ -15,6 +14,7 @@ enum DocumentOpeningSelfTest {
             count += 1; if !value { failures += 1 }
             print("[\(value ? "PASS" : "FAIL")] \(title)")
         }
+        check("문서 검사는 NSApplication 초기화 없이 실행", NSApp == nil)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("IMDFrntDocumentOpen-\(UUID())")
         let suite = "IMDFrntDocumentOpen.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
@@ -104,11 +104,11 @@ enum DocumentOpeningSelfTest {
             check("여러 파일 요청은 부분 교체 없이 거절", result == .failed && fresh.projectID == first.projectID)
 
             let delegate = AppDelegate()
-            delegate.application(NSApplication.shared, open: [firstURL])
+            delegate.openDocuments([firstURL])
             let connected = environment("delegate")
             delegate.connectEnvironment(connected)
             for _ in 0..<100 where connected.projectURL == nil { try? await Task.sleep(for: .milliseconds(10)) }
-            check("AppDelegate 초기 URL 이벤트를 실제 프로젝트 열기에 연결", connected.projectID == first.projectID && connected.projectURL == firstURL)
+            check("AppDelegate 공통 파일 요청을 실제 프로젝트 열기에 연결", connected.projectID == first.projectID && connected.projectURL == firstURL)
             delegate.connectEnvironment(connected)
             check("화면 재등장은 요청 프로젝트를 복구본으로 덮어쓰지 않음", connected.projectID == first.projectID)
 

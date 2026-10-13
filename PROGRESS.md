@@ -192,3 +192,13 @@
 - 통합 코드 검증: Building 37/37 PASS, Document open 23/23 PASS, Project 23/23 PASS, 실제 C5 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드·서명 통과. 사용자 복구 파일 SHA-256 보존 확인.
 - 남은 UI 확인은 완료로 표시하지 않는다. #20 참고 레이어·투명도, #21 DraftShape 마우스 작도는 후속 범위다.
 - 로그: `/private/tmp/imdfrnt-integrated-building.log`, `imdfrnt-integrated-document-open.log`, `imdfrnt-integrated-project.log`, `imdfrnt-integrated-routing.log`, `imdfrnt-integrated-regression.log`.
+
+## 2026-10-13 — PR #23 리뷰 후속: UUID·검사 진입·빌드 경고
+
+- [기존 #19에 후속 목표와 완료 조건](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/19#issuecomment-6140485244)을 먼저 기록했다.
+- non-optional UUID의 항상 참인 nil 비교를 제거했다. 발급 대장과 재열기 대장에서 optional UUID를 실제로 꺼내고, 기록이 없으면 실패하며 원래 UUID와 같은지 비교한다.
+- 검사가 AppKit/LaunchServices 초기화 뒤에 시작해 리뷰 환경에서 exit 134로 재현되지 못한 피드백을 반영했다. CLI 검사 분기를 SwiftUI 앱 시작 전 진입점으로 옮기고 문서 검사의 NSApplication 초기화 의존성을 제거했다. 일반 앱은 SwiftUI 앱 진입점으로 연결한다.
+- deprecated `onChange` 5곳을 두 인자 API로 변경했다. Release 빌드 로그 경고 없음, ad-hoc 서명 검사 통과.
+- 기본 sandbox CLI 실행으로 5개 모드 모두 exit 0: 기본 Building 27/27·Document open 24/24·Project 23/23·Routing 100/100·기존 회귀 ALL PASS. 실제 C5 폴더·ZIP·기존 v4 입력을 포함하면 Building 37/37·Routing 104/104 PASS. 사용자 원본 복구 파일 SHA-256 유지.
+- `IM-DFrnt/run-self-tests.sh`가 모드별 종료 코드·전체 로그·환경·바이너리 SHA-256을 남긴다. 문서 CLI 검사는 공통 요청 처리와 선언·입출력을 확인하며 실제 Finder 이벤트·UI 버튼 입력은 별도 검증이다.
+- [재현 명령과 검증 범위](docs/projects/SELF_TESTS.md). UI 도구 연결은 다시 `Sky Computer Use native pipe startup failed`로 실패했으며 건물·층 관리 UI 확인은 완료로 표시하지 않는다.

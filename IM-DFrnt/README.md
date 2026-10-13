@@ -40,10 +40,11 @@ swift build && ./.build/debug/IMDFrnt
 
 ```bash
 ./IM-DFrnt.app/Contents/MacOS/IM-DFrnt --selftest
+./run-self-tests.sh ./IM-DFrnt.app
 ```
 
 파싱·기하·변환·직렬화·상호작용 계층을 점검하고 결과를 출력한 뒤 종료합니다.
-UI를 눌러보지 않고 회귀를 확인하는 용도입니다. 현재 전 항목 통과.
+UI를 눌러보지 않고 회귀를 확인하는 용도입니다. CLI 검사는 SwiftUI/NSApplication 초기화 전에 실행됩니다. 스크립트는 5종 검사의 종료 코드와 전체 로그를 남깁니다. [Self-test 재현 및 검증 범위](../docs/projects/SELF_TESTS.md)를 참고하세요.
 
 ### Xcode로 열기
 

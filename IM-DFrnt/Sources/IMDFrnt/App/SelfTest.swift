@@ -1134,8 +1134,11 @@ enum SelfTest {
         guard let unitF = pEnv.features.features(ofType: .unit).first else {
             print("[FAIL] unit 없음"); exit(1)
         }
-        let uuidBefore = pEnv.ids.id(for: unitF.id)
-        // 한 번 내보낸 셈 치고 UUID를 발급받는다.
+        // 한 번 내보낸 셈 치고 UUID를 발급받고, 대장에 실제 기록됐는지 확인한다.
+        let issuedUUID = pEnv.ids.id(for: unitF.id)
+        guard let uuidBefore = pEnv.ids.peek(unitF.id), uuidBefore == issuedUUID else {
+            print("[FAIL] 프로젝트: 발급 UUID가 대장에 없음"); exit(1)
+        }
 
         let saved = ProjectFile(sourceName: pDoc.sourceName, svg: SampleFloorplan.svg,
                                 features: pEnv.features, ownership: pEnv.ownership,
@@ -1159,8 +1162,11 @@ enum SelfTest {
         check("프로젝트: 일련번호 대장이 그대로", reopened.serials == pEnv.serials,
               "안 담기면 다시 열고 저장할 때 unit-001부터 다시 매겨져 번호가 겹친다")
 
+        guard let uuidAfter = reopened.ids.peek(unitF.id) else {
+            print("[FAIL] 프로젝트: 재열기 후 UUID 기록이 없음"); exit(1)
+        }
         check("프로젝트: UUID가 유지된다",
-              reopened.ids.peek(unitF.id) == uuidBefore && uuidBefore != nil,
+              uuidAfter == uuidBefore,
               "IMDF 스펙 MUST — 다시 내보내도 같은 id여야 한다")
 
         var retiredIDs = pEnv.ids

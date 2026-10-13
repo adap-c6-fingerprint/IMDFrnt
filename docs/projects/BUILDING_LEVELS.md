@@ -46,6 +46,8 @@ cd IM-DFrnt
 /private/tmp/IM-DFrntIssue19.app/Contents/MacOS/IM-DFrnt --selftest -ApplePersistenceIgnoreState YES
 ```
 
+검사는 SwiftUI/NSApplication 초기화 전에 CLI 진입점에서 시작한다. 5종 검사와 종료 코드·로그를 함께 확인하려면 `./run-self-tests.sh /private/tmp/IM-DFrntIssue19.app`를 실행한다. [Self-test 재현](SELF_TESTS.md)에 실행 조건·입력별 검사 수·리뷰 환경의 재현 실패와 수정 내용을 기록했다.
+
 Building 검사는 독립적인 임시 폴더·UserDefaults에서 저장·재열기·복구, 층별 태깅·기준점·노드, 층간 연결, Footprint geometry 수정과 삭제 확인, Undo/Redo, 기존 형식 이전을 검사한다. 실제 IMDF 입력이 지정되면 파일·Feature·geometry·properties의 왕복 보존도 검사한다. `--legacy-test-input /path/to/old.imdfrnt`로 기존 파일을 읽기 전용으로 이전·왕복 검증할 수 있다. 테스트 모드에서는 실제 사용자 복구본을 읽거나 자동 저장하지 않는다.
 
 UI 시험은 독립된 복구 경로에서 실행할 수 있다.

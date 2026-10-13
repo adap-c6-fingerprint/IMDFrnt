@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-@main
 struct IMDFrntApp: App {
     @StateObject private var env: AppEnvironment
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -114,6 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        openDocuments(urls)
+    }
+
+    func openDocuments(_ urls: [URL]) {
         documentOpener.enqueue(urls)
     }
 
@@ -124,12 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if DocumentOpeningSelfTest.runIfRequested() { return }
-        BuildingSelfTest.runIfRequested()
-        ProjectSelfTest.runIfRequested()
-        RoutingSelfTest.runIfRequested()
-        _ = SelfTest.runIfRequested()
-        // --selftest 인자가 있으면 여기서 점검 결과를 출력하고 종료한다.
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
         // 번들 없이 `swift run`으로 띄울 때도 창이 앞으로 나오게 한다.

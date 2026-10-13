@@ -38,7 +38,9 @@ cd IM-DFrnt
 /private/tmp/IM-DFrntIssue18.app/Contents/MacOS/IM-DFrnt --selftest
 ```
 
-프로젝트 검사는 임시 폴더와 독립적인 UserDefaults에서 파일을 실제로 쓰고 읽는다. 새 ID·초기화·빈 프로젝트·기존 전체 데이터·수정/Undo 상태·원본을 바꾸지 않는 자동 저장·복구·폐기·저장 실패·저장 창 취소 결과·이전 형식 호환을 검사한다. 세 검사 모드에서는 실제 사용자 복구본을 읽거나 자동 저장하지 않는다.
+검사는 SwiftUI/NSApplication 초기화 전에 CLI 진입점에서 시작한다. 5종 검사와 종료 코드·로그를 함께 확인하려면 `./run-self-tests.sh /private/tmp/IM-DFrntIssue18.app`를 실행한다. [Self-test 재현](SELF_TESTS.md)에 실행 조건·입력별 검사 수·리뷰 환경의 재현 실패와 수정 내용을 기록했다.
+
+프로젝트 검사는 임시 폴더와 독립적인 UserDefaults에서 파일을 실제로 쓰고 읽는다. 새 ID·초기화·빈 프로젝트·기존 전체 데이터·수정/Undo 상태·원본을 바꾸지 않는 자동 저장·복구·폐기·저장 실패·저장 창 취소 결과·이전 형식 호환을 검사한다. 모든 검사 모드에서는 실제 사용자 복구본을 읽거나 자동 저장하지 않는다. 문서 열기 CLI 검사는 AppDelegate의 공통 요청 처리 경로를 확인하며 실제 Finder 이벤트·버튼 입력은 별도 UI 검증이다.
 
 사용자 작업을 건드리지 않는 UI 시험은 아래처럼 별도 복구 경로로 실행할 수 있다.
 
