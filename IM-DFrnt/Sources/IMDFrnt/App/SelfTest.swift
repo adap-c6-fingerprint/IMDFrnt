@@ -1915,7 +1915,7 @@ enum SelfTest {
         check("저장: 확장자는 .imdfrnt", ProjectFile.fileExtension == "imdfrnt",
               ProjectFile.fileExtension)
         check("저장: 버전 1과 확장자가 같으므로 version 필드가 유일한 판별 수단",
-              ProjectFile.currentVersion == 4,
+              ProjectFile.currentVersion == 5,
               "확장자를 되돌려서 파일 이름만으로는 옛 파일을 구분할 수 없다")
         check("저장: 자동 저장 주기 30초",
               abs(AppEnvironment.autosaveInterval - 30) < 1e-9,
@@ -2323,7 +2323,7 @@ enum SelfTest {
         // 저장 파일에 실린다 — 수십 개를 찍는 작업이라 앱을 닫았다고 사라지면 안 된다
         dc.doorClosures.insert(saved)
         if let f = dc.makeProjectFile(), let round = try? ProjectFile.decoded(from: f.encoded()) {
-            check("문닫기: 작업 파일에 실려 왕복한다", round.doorClosures.count == 1,
+            check("문닫기: 작업 파일에 실려 왕복한다", round.commonProject().levels.first?.editing.doorClosures.count == 1,
               "도면 전체를 훑으며 수십 개를 찍는 작업이라 저장 안 하면 통째로 날아간다")
         } else {
             check("문닫기: 작업 파일에 실려 왕복한다", false, "직렬화 실패")

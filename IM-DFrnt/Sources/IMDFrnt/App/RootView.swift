@@ -10,6 +10,7 @@ struct RootView: View {
             Divider()
             editorContent
         }
+        .sheet(isPresented: $env.showBuildingManager) { BuildingManager().environmentObject(env) }
         .navigationTitle(env.projectDisplayName)
         .navigationSubtitle(env.projectSaveStatus)
     }
@@ -67,7 +68,7 @@ struct RootView: View {
         .onAppear { startMonitor() }
         .onDisappear { monitor?.stop() }
         .alert(env.pendingDeletion?.title ?? "삭제할까요?", isPresented: Binding(
-            get: { env.pendingDeletion != nil },
+            get: { env.pendingDeletion != nil && !env.showBuildingManager },
             set: { if !$0 { env.cancelDeletion() } }
         ), presenting: env.pendingDeletion) { request in
             Button("취소", role: .cancel) { env.cancelDeletion() }

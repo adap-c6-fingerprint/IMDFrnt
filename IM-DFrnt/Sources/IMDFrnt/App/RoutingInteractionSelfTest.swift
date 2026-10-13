@@ -59,10 +59,14 @@ enum RoutingInteractionSelfTest {
 
         let first = UUID(uuidString: "12345678-0000-0000-0000-000000000001")!
         let second = UUID(uuidString: "12345678-1111-0000-0000-000000000002")!
-        env.routing.nodes[0].id = first
-        env.routing.nodes[1].id = second
-        env.routing.edges[0].from = first
-        env.routing.edges[0].to = second
+        // Update node IDs and endpoint references atomically; intermediate graphs
+        // with dangling endpoints cannot be partitioned into Level ownership.
+        var graph = env.routing
+        graph.nodes[0].id = first
+        graph.nodes[1].id = second
+        graph.edges[0].from = first
+        graph.edges[0].to = second
+        env.routing = graph
         let labels = env.routing.nodeDisplayIDs
         check("짧은 ID가 겹쳐도 핀의 표시 ID로 구분 가능", labels[first] != labels[second] &&
               labels[first]?.hasPrefix("12345678") == true && labels[second]?.hasPrefix("12345678") == true)

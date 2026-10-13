@@ -111,7 +111,7 @@ enum DeletionSelfTest {
             let requestID = env.pendingDeletion!.id
             try env.adopt(restored, from: nil)
             env.confirmDeletion(requestID)
-            check("문서 재열기는 미확정 삭제 요청을 폐기", env.pendingDeletion == nil && env.routing == file.routing)
+            check("문서 재열기는 미확정 삭제 요청을 폐기", env.pendingDeletion == nil && env.routing == file.commonProject().routingGraph)
         } catch { check("삭제 알림 저장·문서 전환 검증", false) }
         env.selectRoutingNode(nil)
         check("선택 없는 Delete는 알림을 띄우지 않음", !monitor.handle(keyCode: 51) && env.pendingDeletion == nil)

@@ -39,7 +39,7 @@ enum ProjectSelfTest {
             env.showDoorClosureScreen = true
             env.doorDraftPoints = [LocalPoint(1, 2)]
             try env.createNewProject()
-            check("새 ID·현재 schema version으로 빈 프로젝트 생성", env.projectID != oldID && env.makeProjectFile()?.version == 4)
+            check("새 ID·현재 schema version으로 빈 프로젝트 생성", env.projectID != oldID && env.makeProjectFile()?.version == ProjectFile.currentVersion)
             check("문서·태깅·Anchor·routing·임시 상태·Undo 초기화", env.document == nil && env.loadedSVG == nil &&
                   env.features.features.isEmpty && env.anchors.pairs.isEmpty && env.routing == RoutingGraph() &&
                   env.selection.isEmpty && env.assignment == nil && !env.canUndo && !env.canRedo &&
@@ -69,8 +69,8 @@ enum ProjectSelfTest {
             let originalBytes = try Data(contentsOf: destination)
             let file = try ProjectFile.decoded(from: originalBytes)
             try reopened.adopt(file, from: destination)
-            check("도면·feature·Anchor·노드·엣지·메타데이터 완전 재열기", !file.features.features.isEmpty && file.routing?.nodes.count == 2 &&
-                  file.routing?.edges.count == 1 && reopened.makeProjectFile()!.hasSameContents(as: file) &&
+            check("도면·feature·Anchor·노드·엣지·메타데이터 완전 재열기", !file.buildingProject!.levels[0].editing.features.features.isEmpty && file.commonProject().routingGraph.nodes.count == 2 &&
+                  file.commonProject().routingGraph.edges.count == 1 && reopened.makeProjectFile()!.hasSameContents(as: file) &&
                   reopened.routing.node(first)?.metadataJSON == "{\"kind\":\"entry\"}")
             env.selectRoutingNode(first)
             env.selectRoutingFloor(env.routing.floors[0].id)
@@ -84,7 +84,7 @@ enum ProjectSelfTest {
             env.redo()
             env.autosaveTick()
             check("자동 저장은 복구본만 갱신하고 원본·미저장 상태 보존", try Data(contentsOf: destination) == originalBytes &&
-                  ProjectFile.decoded(from: Data(contentsOf: backup)).routing?.node(first)?.name == "변경" && env.hasUnsavedChanges)
+                  ProjectFile.decoded(from: Data(contentsOf: backup)).commonProject().routingGraph.node(first)?.name == "변경" && env.hasUnsavedChanges)
             try reopened.restoreRecovery(from: backup)
             check("복구 시 원본 저장 위치와 미저장 변경 구분", reopened.projectURL == destination && reopened.hasUnsavedChanges && reopened.routing.node(first)?.name == "변경")
             let beforeCancel = env.makeProjectFile()!
@@ -108,15 +108,15 @@ enum ProjectSelfTest {
             do { try broken.createNewProject(); check("복구본 쓰기 실패 시 새 프로젝트로 교체하지 않음", false) }
             catch { check("복구본 쓰기 실패 시 새 프로젝트로 교체하지 않음", broken.document != nil && broken.projectID == brokenID) }
             var invalid = file
-            invalid.svg = "broken"
+            invalid.buildingProject!.levels[0].info.svg = "broken"
             do { try env.adopt(invalid, from: nil); check("잘못된 프로젝트를 열어도 현재 데이터 보존", false) }
             catch { check("잘못된 프로젝트를 열어도 현재 데이터 보존", env.makeProjectFile()!.hasSameContents(as: beforeCancel)) }
-            var legacyJSON = try JSONSerialization.jsonObject(with: originalBytes) as! [String: Any]
+            var legacyJSON = try JSONSerialization.jsonObject(with: file.legacyEditorView().encoded()) as! [String: Any]
             legacyJSON.removeValue(forKey: "hasDrawing")
             legacyJSON["version"] = 3
             let legacy = try ProjectFile.decoded(from: JSONSerialization.data(withJSONObject: legacyJSON))
             try reopened.adopt(legacy, from: destination)
-            check("기존 hasDrawing 없는 파일과 버전 3 호환", reopened.document != nil && reopened.routing == env.lastExplicitSavedProject!.routing && !reopened.hasUnsavedChanges)
+            check("기존 hasDrawing 없는 파일과 버전 3 호환", reopened.document != nil && reopened.routing == env.lastExplicitSavedProject!.commonProject().routingGraph && !reopened.hasUnsavedChanges)
             try env.createNewProject()
             let bytesAfterNew = try Data(contentsOf: destination)
             check("새 프로젝트 생성은 이전 파일을 덮어쓰지 않음", env.projectID != blankID && bytesAfterNew == originalBytes)

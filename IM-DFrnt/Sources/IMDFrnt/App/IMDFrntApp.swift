@@ -106,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @MainActor weak var env: AppEnvironment?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        BuildingSelfTest.runIfRequested()
         ProjectSelfTest.runIfRequested()
         RoutingSelfTest.runIfRequested()
         _ = SelfTest.runIfRequested()

@@ -146,7 +146,7 @@ struct RoutingScreen: View {
     }
 }
 
-private struct RoutingFloorEditor: View {
+struct RoutingFloorEditor: View {
     @EnvironmentObject var env: AppEnvironment
     let floor: RoutingFloor
     @State private var levelID = ""
@@ -156,6 +156,9 @@ private struct RoutingFloorEditor: View {
             Text("현재 층").font(.headline)
             TextField("층 이름", text: Binding(get: { env.routing.floor(floor.id)?.name ?? "" }, set: { value in
                 env.updateRoutingFloor(floor.id, field: "name") { $0.name = value }
+            }))
+            TextField("층 짧은 이름", text: Binding(get: { env.routing.floor(floor.id)?.shortName ?? "" }, set: { value in
+                env.updateRoutingFloor(floor.id, field: "shortName") { $0.shortName = value }
             }))
             HStack {
                 Text("층 번호").font(.caption)
@@ -177,22 +180,19 @@ private struct RoutingFloorEditor: View {
                 Button("좌표 기준점 설정") { env.setRoutingTool(.calibrate) }
                     .controlSize(.small)
             }
-            DisclosureGroup("클라이언트 층 ID") {
+            DisclosureGroup("Level ID") {
                 VStack(alignment: .leading, spacing: 6) {
-                    if floor.imdfCoordinates != nil {
-                        Text(floor.id.uuidString.lowercased()).font(.caption.monospaced()).textSelection(.enabled)
-                        Text("불러온 IMDF의 level ID입니다.").font(.caption2).foregroundStyle(.secondary)
-                    } else {
-                        TextField("level UUID", text: $levelID).font(.caption.monospaced())
-                        Button("층 ID 적용") {
-                            guard let id = UUID(uuidString: levelID) else {
-                                env.notify("올바른 UUID를 입력하세요.", isError: true); return
-                            }
-                            env.assignRoutingLevelID(floor.id, newID: id)
+                    TextField("level UUID", text: $levelID).font(.caption.monospaced())
+                    Button("층 ID 적용") {
+                        guard let id = UUID(uuidString: levelID) else {
+                            env.notify("올바른 UUID를 입력하세요.", isError: true); return
                         }
-                        Text("level.geojson의 ID와 일치시켜야 클라이언트의 층과 연결됩니다. 층 목록 가져오기로 자동 지정할 수 있습니다.")
-                            .font(.caption2).foregroundStyle(.secondary)
+                        env.assignRoutingLevelID(floor.id, newID: id)
                     }
+                    Text(floor.imdfCoordinates != nil
+                         ? "IMDF의 원본 층 ID입니다. 변경하면 도형·노드의 참조도 함께 갱신됩니다."
+                         : "클라이언트 level.geojson의 ID와 일치시켜야 해당 층에 연결됩니다.")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }.padding(.top, 6)
             }
         }

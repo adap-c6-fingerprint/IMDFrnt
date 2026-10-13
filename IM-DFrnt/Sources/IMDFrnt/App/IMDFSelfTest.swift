@@ -77,7 +77,7 @@ enum IMDFSelfTest {
             legacy.openSample()
             legacy.enterRoutingScreen()
             let oldProject = legacy.makeProjectFile()!
-            var old = try JSONSerialization.jsonObject(with: oldProject.encoded()) as! [String: Any]
+            var old = try JSONSerialization.jsonObject(with: oldProject.legacyEditorView().encoded()) as! [String: Any]
             old["version"] = 3
             var graph = old["routing"] as! [String: Any]
             graph.removeValue(forKey: "imdfSourceName")

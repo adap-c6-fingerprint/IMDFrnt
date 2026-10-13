@@ -17,15 +17,8 @@ extension AppEnvironment {
     }
 
     func enterRoutingScreen() {
-        if routing.floors.isEmpty, let doc = document, let svg = loadedSVGText {
-            perform("길찾기 작업 시작") {
-                let floor = RoutingFloor(name: "1층", ordinal: 0, sourceName: doc.sourceName,
-                                         svg: svg, anchors: anchors)
-                routing.floors.append(floor)
-                routingFloorID = floor.id
-            }
-        }
-        routingFloorID = currentRoutingFloor?.id
+        if buildingProject.levels.isEmpty { _ = addProjectLevel() }
+        storeActiveLevel()
         showRoutingScreen = true
     }
 
@@ -57,21 +50,8 @@ extension AppEnvironment {
     }
 
     func adoptIMDF(_ imported: ImportedIMDF) throws {
-        guard let first = imported.floors.first else { throw IMDFImporter.Failure(message: "IMDF에 층이 없습니다.") }
-        var graph = RoutingGraph()
-        graph.imdfSourceName = imported.sourceName
-        graph.layoutVersion = imported.layoutVersion
-        graph.floors = imported.floors.map {
-            RoutingFloor(id: $0.id, name: $0.name, ordinal: $0.ordinal,
-                         sourceName: imported.sourceName, svg: $0.svg,
-                         imdfCoordinates: imported.coordinates)
-        }
-        // Open as a separate project so Save cannot overwrite an earlier source drawing project.
-        var file = ProjectFile(sourceName: imported.sourceName, svg: first.svg,
-            features: FeatureStore(), ownership: OwnershipRegistry(), segmentation: SegmentationStore(),
-            auxiliary: AuxiliaryStore(), anchors: AnchorStore(), serials: SerialNumberAllocator(),
-            ids: IDAssigner(), openingGate: OpeningGateStore(), borrow: BorrowRegistry())
-        file.routing = graph
+        var file = ProjectFile.empty()
+        file.buildingProject = try BuildingProject.importing(imported)
         let retainingEmptyProject = canFillEmptyProject
         let previousURL = projectURL
         let previousSaved = lastExplicitSavedProject
@@ -85,14 +65,7 @@ extension AppEnvironment {
     }
 
     func selectRoutingFloor(_ id: UUID) {
-        guard routing.floor(id) != nil else { return }
-        routingFloorID = id
-        routingConnectionDrag = nil
-        routingSelectedNodeID = nil
-        routingSelectedEdgeID = nil
-        routingPendingAnchor = nil
-        if currentRoutingFloor?.imdfCoordinates != nil && routingTool == .calibrate { routingTool = .place }
-        // Keep the first connection endpoint while the user changes floors.
+        selectProjectLevel(id)
     }
 
     func setRoutingTool(_ tool: RoutingTool) {
@@ -105,41 +78,16 @@ extension AppEnvironment {
     }
 
     func addRoutingFloor() {
-        let ordinal = (routing.floors.map(\.ordinal).max() ?? -1) + 1
-        perform("층 추가") {
-            let floor = RoutingFloor(name: "\(ordinal + 1)층", ordinal: ordinal)
-            routing.floors.append(floor)
-            selectRoutingFloor(floor.id)
-        }
+        _ = addProjectLevel()
     }
 
-    func removeRoutingFloor(_ id: UUID) {
-        perform("층과 길찾기 노드 삭제") {
-            routing.removeFloor(id)
-            routingConnectStart = nil
-            routingConnectionDrag = nil
-            routingSelectedNodeID = nil
-            routingSelectedEdgeID = nil
-            routingFloorID = routing.floors.first?.id
-        }
-    }
+    func removeRoutingFloor(_ id: UUID) { removeProjectLevel(id) }
 
     func updateRoutingFloor(_ id: UUID, field: String? = nil, _ change: (inout RoutingFloor) -> Void) {
-        guard let index = routing.floors.firstIndex(where: { $0.id == id }) else { return }
-        perform("층 정보 편집", coalescingKey: field.map { "floor:\(id):\($0)" }) { change(&routing.floors[index]) }
+        updateProjectLevel(id, field: field, change)
     }
 
-    func assignRoutingLevelID(_ old: UUID, newID: UUID) {
-        guard old == newID || routing.floor(newID) == nil else {
-            notify("이미 다른 층에서 사용하는 ID입니다.", isError: true); return
-        }
-        guard let index = routing.floors.firstIndex(where: { $0.id == old }) else { return }
-        perform("클라이언트 층 ID 지정") {
-            routing.floors[index].id = newID
-            for i in routing.nodes.indices where routing.nodes[i].floorID == old { routing.nodes[i].floorID = newID }
-            routingFloorID = newID
-        }
-    }
+    func assignRoutingLevelID(_ old: UUID, newID: UUID) { renameProjectLevelID(old, to: newID) }
 
     func importRoutingDrawing() {
         guard let floor = currentRoutingFloor else { return }
@@ -159,19 +107,32 @@ extension AppEnvironment {
         let svg = try isImage ? DrawingImageImporter.embeddedSVG(from: data)
             : DrawingImageImporter.embedLocalImages(in: data, relativeTo: sourceURL)
         let doc = try SVGParser.parse(data: svg, sourceName: name)
-        guard let index = routing.floors.firstIndex(where: { $0.id == id }) else { return }
-        // Replacing a drawing removes its old coordinate calibration; existing nodes remain editable.
-        perform("층 도면 불러오기") {
-            if routing.floors[index].svg != String(decoding: svg, as: UTF8.self) {
-                routing.floors[index].anchors = AnchorStore()
-                routing.floors[index].imdfCoordinates = nil
-            }
-            routing.floors[index].svg = String(decoding: svg, as: UTF8.self)
-            routing.floors[index].sourceName = name
-            routingPendingAnchor = nil
+        guard let index = buildingProject.levels.firstIndex(where: { $0.id == id }) else { return }
+        let text = String(decoding: svg, as: UTF8.self)
+        guard buildingProject.levels[index].info.svg != text else { return }
+        // IMDF display geometry is authoritative. A separate SVG reference layer
+        // will be added in #20; replacing its projection here would move nodes.
+        guard buildingProject.levels[index].info.imdfCoordinates == nil else {
+            throw IMDFImporter.Failure(message: "이 층에는 IMDF 도형이 있습니다. 현재는 SVG 도면을 교체할 수 없습니다.")
         }
-        routingDrawingCache[id] = (String(decoding: svg, as: UTF8.self), doc)
-        notify("\(name)을 \(routing.floors[index].name)에 불러왔습니다.")
+        let hasWork = !buildingProject.levels[index].editing.features.features.isEmpty || !routing.nodes(on: id).isEmpty
+        if hasWork && !Self.isRunningSelfTests {
+            let alert = NSAlert()
+            alert.messageText = "\(buildingProject.levels[index].info.name)의 도면을 교체할까요?"
+            alert.informativeText = "기존 SVG 태깅과 좌표 기준점은 초기화됩니다. 노드는 유지되므로 새 도면에 맞는 위치와 좌표를 확인하세요."
+            alert.addButton(withTitle: "취소"); alert.addButton(withTitle: "교체")
+            guard alert.runModal() == .alertSecondButtonReturn else { return }
+        }
+        perform("층 도면 불러오기") {
+            storeActiveLevel()
+            buildingProject.levels[index].info.anchors = AnchorStore()
+            buildingProject.levels[index].info.svg = text
+            buildingProject.levels[index].info.sourceName = name
+            buildingProject.levels[index].editing = LevelEditingState()
+            if routingFloorID == id { try? loadLevelEditor(id) }
+        }
+        routingDrawingCache[id] = (text, doc)
+        notify("\(name)을 \(buildingProject.levels[index].info.name)에 불러왔습니다.")
     }
 
     func nearestRoutingNode(to point: LocalPoint, tolerance: Double) -> RoutingNode? {
@@ -357,14 +318,12 @@ extension AppEnvironment {
     func adoptRoutingLevels(_ floors: [RoutingFloor]) {
         guard !floors.isEmpty else { return }
         perform("클라이언트 층 목록 가져오기") {
+            storeActiveLevel()
             for floor in floors {
-                if let i = routing.floors.firstIndex(where: { $0.id == floor.id || $0.ordinal == floor.ordinal }) {
-                    let oldID = routing.floors[i].id
-                    routing.floors[i].id = floor.id
-                    routing.floors[i].ordinal = floor.ordinal
-                    routing.floors[i].name = floor.name
-                    for n in routing.nodes.indices where routing.nodes[n].floorID == oldID { routing.nodes[n].floorID = floor.id }
-                } else { routing.floors.append(floor) }
+                if let existing = buildingProject.levels.first(where: { $0.id == floor.id || $0.info.ordinal == floor.ordinal }) {
+                    renameProjectLevelID(existing.id, to: floor.id)
+                    updateProjectLevel(floor.id) { $0.ordinal = floor.ordinal; $0.name = floor.name }
+                } else { buildingProject.levels.append(ProjectLevel(info: floor)) }
             }
             selectRoutingFloor(routing.floors.first!.id)
         }

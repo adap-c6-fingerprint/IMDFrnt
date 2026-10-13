@@ -131,7 +131,17 @@ enum AuxiliaryOpacity {
 @MainActor
 final class AppEnvironment: ObservableObject {
 
-    @Published var routing = RoutingGraph()
+    @Published var buildingProject = BuildingProject()
+    @Published var showBuildingManager = false
+    var routing: RoutingGraph {
+        get { projectContents.routingGraph }
+        set {
+            var project = projectContents
+            project.applyRouting(newValue)
+            buildingProject = project
+            if let floor = newValue.floor(routingFloorID) { anchors = floor.anchors }
+        }
+    }
     @Published var showRoutingScreen = false
     @Published var routingFloorID: UUID?
     @Published var routingSelectedNodeID: UUID?
@@ -465,7 +475,8 @@ final class AppEnvironment: ObservableObject {
         assignment = nil
         layers = LayerStore()
         layers.bootstrap()
-        routing = RoutingGraph()
+        buildingProject = BuildingProject()
+        showBuildingManager = false
         routingDrawingCache = [:]
         routingFloorID = nil
         routingSelectedNodeID = nil
@@ -541,6 +552,20 @@ final class AppEnvironment: ObservableObject {
     func load(data: Data, name: String, confirmingReplacement: Bool = false) {
         do {
             let doc = try SVGParser.parse(data: data, sourceName: name)
+            if hasCreatedProject && buildingProject.levels.isEmpty {
+                let info = ProjectLevelInfo(name: "1층", ordinal: 0, sourceName: name, svg: String(decoding: data, as: UTF8.self))
+                perform("첫 층 도면 불러오기") {
+                    buildingProject.levels.append(ProjectLevel(info: info))
+                    try? loadLevelEditor(info.id)
+                }
+                notify("\(name) — 개체 \(doc.objects.count)개를 읽었습니다.")
+                return
+            }
+            if hasCreatedProject && !buildingProject.levels.isEmpty {
+                let target = routingFloorID ?? buildingProject.levels[0].id
+                try setRoutingDrawing(target, data: data, name: name)
+                return
+            }
             if confirmingReplacement && !confirmUnsavedChanges(action: "다른 도면 열기") { return }
             let retainingEmptyProject = canFillEmptyProject
             let previousID = projectID
@@ -549,6 +574,9 @@ final class AppEnvironment: ObservableObject {
             resetProjectState(id: retainingEmptyProject ? previousID : UUID())
             document = doc
             loadedSVG = String(data: data, encoding: .utf8)
+            let info = ProjectLevelInfo(name: "1층", ordinal: 0, sourceName: name, svg: loadedSVG ?? "")
+            buildingProject.levels = [ProjectLevel(info: info)]
+            routingFloorID = info.id
             if retainingEmptyProject {
                 projectURL = previousURL
                 lastExplicitSavedProject = previousSaved
@@ -1232,12 +1260,17 @@ final class AppEnvironment: ObservableObject {
                        ids: ids, expandedFeatures: expandedFeatures,
                        focusedFeature: focusedFeature,
                        faceSelection: faceSelection,
+                       buildingProject: projectContents,
                        routing: routing, routingFloorID: routingFloorID,
                        routingSelectedNodeID: routingSelectedNodeID,
                        routingSelectedEdgeID: routingSelectedEdgeID)
     }
 
     private func restore(_ s: EditorSnapshot) {
+        let restoredSVG = s.buildingProject.levels.first { $0.id == s.routingFloorID }?.info.svg
+        let needsDocument = routingFloorID != s.routingFloorID || (loadedSVG ?? "") != (restoredSVG ?? "")
+        buildingProject = s.buildingProject
+        if needsDocument { try? loadLevelEditor(s.routingFloorID) }
         layers = s.layers
         features = s.features
         ownership = s.ownership
@@ -1253,7 +1286,6 @@ final class AppEnvironment: ObservableObject {
         expandedFeatures = s.expandedFeatures
         focusedFeature = s.focusedFeature
         faceSelection = s.faceSelection
-        routing = s.routing
         routingFloorID = s.routingFloorID
         routingSelectedNodeID = s.routingSelectedNodeID
         routingSelectedEdgeID = s.routingSelectedEdgeID

@@ -137,12 +137,12 @@ enum RoutingSelfTest {
             let reopened = AppEnvironment()
             try reopened.adopt(decoded, from: nil)
             check("프로젝트 재열기에 층별 도면·노드·연결·메타데이터 유지", reopened.routing == env.routing)
-            var legacy = try JSONSerialization.jsonObject(with: file.encoded()) as! [String: Any]
+            var legacy = try JSONSerialization.jsonObject(with: file.legacyEditorView().encoded()) as! [String: Any]
             legacy["version"] = 2
             legacy.removeValue(forKey: "routing")
             let old = try ProjectFile.decoded(from: JSONSerialization.data(withJSONObject: legacy))
             try reopened.adopt(old, from: nil)
-            check("노드 기능 이전 버전 2 작업 열기", reopened.document != nil && reopened.routing.floors.isEmpty)
+            check("노드 기능 이전 버전 2 작업 열기", reopened.document != nil && reopened.routing.floors.count == 1 && reopened.routing.nodes.isEmpty)
             let importedID = UUID()
             let levelJSON: [String: Any] = ["type": "FeatureCollection", "features": [
                 ["feature_type": "level", "id": importedID.uuidString,

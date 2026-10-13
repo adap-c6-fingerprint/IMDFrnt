@@ -163,3 +163,15 @@
 - 정상 ZIP 입력은 실제 클라이언트 C5 IMDF 폴더를 압축해 검증했다. 처음 지정한 다운로드 ZIP은 IMDF의 level.geojson이 없는 다른 형식이라 거절됐으며 원본은 변경하지 않았다.
 - UI 도구의 `Sky Computer Use native pipe startup failed`로 실제 파일 메뉴·저장 대화상자·종료 입력과 캡처는 미확인이다. 완료로 표시하거나 이슈를 닫지 않는다.
 - 실행 앱: `/private/tmp/IM-DFrntIssue18Final.app`. 상세 사용법과 검사 절차: `docs/projects/PROJECT_LIFECYCLE.md`.
+
+## 2026-10-13 — #19 공통 건물·Level 관리
+
+- [#19](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/19)에 구현 시작·완료 조건을 먼저 기록하고 `feat/#19-building-level-management`를 #18 브랜치에서 생성했다. #18은 아직 develop에 병합되지 않아 이 브랜치는 #18에 의존한다.
+- `.imdfrnt` 버전 5에서 건물 전역 IMDF 정보와 공통 Level을 저장한다. 각 층이 도면·GeoJSON Feature·기존 태깅·기준점·노드·층 내부 엣지를 가지며 층간 엣지는 프로젝트에 보관한다. RoutingGraph는 기존 노드 화면·내보내기용 호환 뷰다.
+- 상단 공통 층 선택과 건물·층 관리 화면을 추가했다. 이름·shortName·ordinal·Level UUID 편집, 중복 차단, 확인 후 층 삭제 및 Undo/Redo를 지원한다. 첫 SVG 입력과 복구에서 이미 작성한 건물 정보를 보존한다.
+- IMDF 폴더·ZIP의 JSON/GeoJSON과 manifest, 원본 Feature ID·geometry·properties·참조·unknown fields·collection header를 보존한다. 화면용 SVG는 재열기 시 실제 geometry로 재구성하며 기존 노드 좌표 변환을 유지한다. 기존 v4 노드 전용 파일에 없던 원본 Feature 메타데이터를 SVG에서 복원하는 기능은 포함하지 않는다.
+- 건물·Venue·주소 properties와 Manifest의 JSON 편집, 실제 위경도 Polygon/MultiPolygon으로 Footprint 생성·수정·삭제·미리보기와 Undo/Redo를 추가했다. SVG 참고 레이어 표시/투명도는 #20, 독립 DraftShape 마우스 작도는 #21에서 진행한다. 전체 IMDF ZIP 내보내기 UI는 후속 범위다.
+- 최종 검증: Building 37/37 PASS, Project 23/23 PASS, 실제 C5 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS. C5 6개 층·unit 167개·건물 1개·Footprint 2개와 원본 GeoJSON 왕복을 확인했다.
+- 사용자 실제 v4 복구본의 6개 층·노드 72개·연결 87개를 읽기 전용으로 이전해 데이터·UUID·메타데이터·연결 및 클라이언트 GeoJSON 출력 바이트가 동일함을 확인했다. 원본 복구 파일 SHA-256은 검사 전과 같다.
+- 앱: `/private/tmp/IM-DFrntIssue19.app`. 로그: `/private/tmp/imdfrnt19-building-final.log`, `imdfrnt19-project-final.log`, `imdfrnt19-routing-final.log`, `imdfrnt19-regression-final.log`. 실제 UI 입력 검증은 `Sky Computer Use native pipe startup failed`로 미완료여서 이슈를 열어 둔다.
+- [사용법과 저장 구조](docs/projects/BUILDING_LEVELS.md).

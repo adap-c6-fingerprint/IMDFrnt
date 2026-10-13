@@ -6,6 +6,8 @@ SVG 도면에서 IMDF GeoJSON을 반자동으로 추출하는 macOS 앱의 **UI 
 
 `파일 → 새 프로젝트`(⌘N)로 빈 `.imdfrnt` 작업을 시작하고 ⌘S로 저장할 수 있다. 프로젝트 이름·저장 상태를 표시하며, 수정한 작업을 교체하거나 종료할 때 저장·저장하지 않음·취소를 확인한다. 자동 저장은 복구본을 보존한다. [프로젝트 생성·저장](../docs/projects/PROJECT_LIFECYCLE.md).
 
+상단 **건물·층 관리**에서 공통 Level과 건물 전역 정보·Footprint를 관리한다. 도면 편집과 노드 편집은 같은 층을 사용하며 SVG·GeoJSON·태깅·노드·엣지를 층별로 저장한다. 새 IMDF 가져오기는 원본 Feature ID·geometry·properties를 보존한다. [건물과 Level 관리](../docs/projects/BUILDING_LEVELS.md).
+
 명세: `02) Projects/06) Challenge 6/02) FP-to-IMDF 자동화/00) FP-to-IMDF 새버전 (반자동화).md`
 아키텍처: 같은 폴더 `03) FTI 아키텍쳐.md`
 

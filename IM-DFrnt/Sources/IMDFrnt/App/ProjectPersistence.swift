@@ -57,43 +57,29 @@ extension AppEnvironment {
 
     func makeProjectFile() -> ProjectFile? {
         guard hasSomethingToPersist, document == nil || loadedSVGText != nil else { return nil }
-        var file = ProjectFile(sourceName: document?.sourceName ?? "새 프로젝트", svg: loadedSVGText ?? "",
-            features: features, ownership: ownership, segmentation: segmentation, auxiliary: auxiliary,
-            anchors: anchors, serials: serials, ids: ids, openingGate: openingGate, borrow: borrow)
+        var file = ProjectFile.empty()
         file.projectID = projectID
-        file.hasDrawing = document != nil
         file.assignment = assignment
-        file.doorClosures = doorClosures
-        file.drawingFingerprint = document?.fingerprint
-        file.routing = routing.floors.isEmpty ? nil : routing
+        file.buildingProject = projectContents
         return file
     }
 
     /// 파싱이 성공한 뒤에만 현재 작업을 교체한다.
     func adopt(_ file: ProjectFile, from url: URL?) throws {
-        let doc = file.hasDrawing == false ? nil
-            : try SVGParser.parse(data: Data(file.svg.utf8), sourceName: file.sourceName)
+        try file.validateLegacyRouting()
+        var project = file.commonProject()
+        try project.validate()
+        try project.refreshIMDFDisplays()
+        // Parse every embedded drawing before resetting the previous project.
+        for level in project.levels where !level.info.svg.isEmpty {
+            _ = try SVGParser.parse(data: Data(level.info.svg.utf8), sourceName: level.info.sourceName)
+        }
         resetProjectState(id: file.projectID)
-        document = doc
-        loadedSVG = file.hasDrawing == false ? nil : file.svg
-        features = file.features
-        ownership = file.ownership
-        segmentation = file.segmentation
-        auxiliary = file.auxiliary
-        anchors = file.anchors
-        serials = file.serials
-        ids = file.ids
-        openingGate = file.openingGate
-        borrow = file.borrow
-        doorClosures = file.doorClosures
-        routing = file.routing ?? RoutingGraph()
-        routingFloorID = routing.floors.first?.id
-        showRoutingScreen = routing.imdfSourceName != nil || (doc == nil && !routing.floors.isEmpty)
+        buildingProject = project
+        try loadLevelEditor(file.assignment?.levelID ?? project.levels.first?.id)
+        showRoutingScreen = project.imdfSourceName != nil
         assignment = file.assignment
         projectURL = url
-        for type in Set(file.features.features.map(\.featureType)).sorted(by: { $0.rawValue < $1.rawValue }) {
-            _ = layers.addPropertyTypeLayer(type)
-        }
         lastExplicitSavedProject = makeProjectFile()
         lastRecoveryProject = makeProjectFile()
     }
@@ -118,7 +104,7 @@ extension AppEnvironment {
     func restoreRecovery(from url: URL) throws {
         let file = try ProjectFile.decoded(from: Data(contentsOf: url))
         try adopt(file, from: nil)
-        lastExplicitSavedProject = file.hasDrawing == false && routing.floors.isEmpty ? makeProjectFile() : nil
+        lastExplicitSavedProject = projectContents == BuildingProject() ? makeProjectFile() : nil
         if let path = projectDefaults.string(forKey: Self.lastProjectPathKey) {
             let originalURL = URL(fileURLWithPath: path)
             if let data = try? Data(contentsOf: originalURL),
@@ -168,6 +154,7 @@ extension AppEnvironment {
                                       objectIDs: ids,
                                       bounds: Assignment.bounds(of: ids, in: doc),
                                       createdAt: Date())
+        file!.assignment?.levelID = routingFloorID
 
         let panel = NSSavePanel()
         let base = (doc.sourceName as NSString).deletingPathExtension
@@ -255,6 +242,11 @@ extension AppEnvironment {
             report.rejectedFiles.append((name, "도면이 달라졌습니다. 배정한 뒤 원본 도면을 바꿔 열면 개체가 서로 어긋납니다."))
             return
         }
+        if let levelID = a.levelID, levelID != routingFloorID {
+            report.rejectedFiles.append((name, "현재 선택된 층의 배정본이 아닙니다."))
+            return
+        }
+        let file = file.legacyEditorView(levelID: a.levelID)
 
         var accepted = 0
         for f in file.features.features where !f.isInTrash {

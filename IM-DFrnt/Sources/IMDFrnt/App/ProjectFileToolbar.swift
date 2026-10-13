@@ -28,6 +28,19 @@ struct ProjectFileToolbar: View {
                 .foregroundStyle(env.hasUnsavedChanges ? Color.orange : Color.secondary)
                 .accessibilityIdentifier("project-save-status")
             Spacer()
+            if !env.buildingProject.levels.isEmpty {
+                Picker("층", selection: Binding(get: { env.routingFloorID }, set: { id in
+                    if let id { env.selectProjectLevel(id) }
+                })) {
+                    ForEach(env.buildingProject.levels.sorted { $0.info.ordinal < $1.info.ordinal }) {
+                        Text($0.info.name).tag(Optional($0.id))
+                    }
+                }.frame(width: 170)
+            }
+            Button("건물·층 관리") {
+                if !env.hasCreatedProject { env.newProject() }
+                if env.hasCreatedProject { env.showBuildingManager = true }
+            }.disabled(env.isProjectBusy)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

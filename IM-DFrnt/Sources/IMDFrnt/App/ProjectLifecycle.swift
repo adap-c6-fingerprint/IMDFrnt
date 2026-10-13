@@ -7,7 +7,7 @@ enum UnsavedProjectChoice { case save, discard, cancel }
 extension AppEnvironment {
     var isProjectBusy: Bool { isImportingIMDF || isProjectActionInProgress }
     var recoveryURL: URL { recoveryURLOverride ?? Self.autosaveURL }
-    var canFillEmptyProject: Bool { hasCreatedProject && document == nil && routing.floors.isEmpty }
+    var canFillEmptyProject: Bool { hasCreatedProject && projectContents == BuildingProject() }
 
     var projectDisplayName: String {
         if let projectURL { return projectURL.deletingPathExtension().lastPathComponent }
@@ -27,7 +27,7 @@ extension AppEnvironment {
     }
 
     static var isRunningSelfTests: Bool {
-        ["--selftest", "--routing-selftest", "--project-selftest"].contains {
+        ["--selftest", "--routing-selftest", "--project-selftest", "--building-selftest"].contains {
             CommandLine.arguments.contains($0)
         }
     }
@@ -127,6 +127,7 @@ extension ProjectFile {
             auxiliary: AuxiliaryStore(), anchors: AnchorStore(), serials: SerialNumberAllocator(),
             ids: IDAssigner(), openingGate: OpeningGateStore(), borrow: BorrowRegistry())
         file.hasDrawing = false
+        file.buildingProject = BuildingProject()
         return file
     }
 }
