@@ -27,7 +27,7 @@ extension AppEnvironment {
     }
 
     static var isRunningSelfTests: Bool {
-        ["--selftest", "--routing-selftest", "--project-selftest", "--building-selftest"].contains {
+        ["--selftest", "--routing-selftest", "--project-selftest", "--document-open-selftest", "--building-selftest"].contains {
             CommandLine.arguments.contains($0)
         }
     }

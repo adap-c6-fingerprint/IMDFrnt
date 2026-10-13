@@ -164,6 +164,15 @@
 - UI 도구의 `Sky Computer Use native pipe startup failed`로 실제 파일 메뉴·저장 대화상자·종료 입력과 캡처는 미확인이다. 완료로 표시하거나 이슈를 닫지 않는다.
 - 실행 앱: `/private/tmp/IM-DFrntIssue18Final.app`. 상세 사용법과 검사 절차: `docs/projects/PROJECT_LIFECYCLE.md`.
 
+## 2026-10-13 — #18 리뷰 보완: Finder 프로젝트 열기
+
+- [#18에 리뷰 보완 목표와 완료 조건](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/18#issuecomment-6137561168)을 먼저 기록했다. `.imdfrnt` UTI만 있고 앱의 프로젝트 문서 타입과 외부 파일 이벤트가 없던 P2 지적을 수정했다.
+- `.imdfrnt`·이전 `.imdfproj`를 Editor/Owner 문서로 등록하고 SVG·PNG·JPEG 연결을 유지한다. 환경 연결 전 요청을 대기하고, 파일 메뉴와 Finder의 검증·미저장 확인·복구 처리를 공유한다.
+- 현재 프로젝트 재요청은 미저장 편집을 유지하며 가져오기·모달 중에는 기다린다. 여러 파일 요청은 부분 교체 없이 거절한다.
+- 문서 열기 23/23 PASS, 프로젝트 23/23 PASS, 실제 C5 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드 통과. 일반 설치 경로의 별도 번들 ID·복구 경로에서 기본 파일 연결과 앱 시작/실행 중의 실제 시스템 파일 전달을 확인했다. 검증용 등록과 앱은 정리했다.
+- Finder UI의 물리적 더블클릭과 저장 확인 버튼 입력은 도구 연결 오류로 미확인이다. 시스템 파일 전달 검증과 구분한다.
+- Finder 수정은 #18 브랜치/PR에서만 커밋한다. #19는 갱신된 #18을 기준으로 #19 기능 커밋만 비교하도록 유지한다.
+- 로그: `/private/tmp/imdfrnt-finder18-open-test.log`, `imdfrnt-finder18-project-test.log`, `imdfrnt-finder18-routing-test.log`, `imdfrnt-finder18-regression-test.log`.
 ## 2026-10-13 — #19 공통 건물·Level 관리
 
 - [#19](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/19)에 구현 시작·완료 조건을 먼저 기록하고 `feat/#19-building-level-management`를 #18 브랜치에서 생성했다. #18은 아직 develop에 병합되지 않아 이 브랜치는 #18에 의존한다.
@@ -175,3 +184,11 @@
 - 사용자 실제 v4 복구본의 6개 층·노드 72개·연결 87개를 읽기 전용으로 이전해 데이터·UUID·메타데이터·연결 및 클라이언트 GeoJSON 출력 바이트가 동일함을 확인했다. 원본 복구 파일 SHA-256은 검사 전과 같다.
 - 앱: `/private/tmp/IM-DFrntIssue19.app`. 로그: `/private/tmp/imdfrnt19-building-final.log`, `imdfrnt19-project-final.log`, `imdfrnt19-routing-final.log`, `imdfrnt19-regression-final.log`. 실제 UI 입력 검증은 `Sky Computer Use native pipe startup failed`로 미완료여서 이슈를 열어 둔다.
 - [사용법과 저장 구조](docs/projects/BUILDING_LEVELS.md).
+
+## 2026-10-13 — 팀 리뷰 요청에 따른 #18·#19 통합 PR
+
+- 리뷰어는 stacked PR을 없애고 #18 변경을 포함한 하나의 PR로 다시 리뷰해 달라고 요청했다. 사용자가 통합 PR 방향을 선택해 이전 이슈별 PR 유지 방안을 변경했다.
+- #18 생성·저장 및 Finder 수정, #19 건물·공통 Level 관리 커밋을 보존하고 PR #23의 기준을 develop로 변경한다. PR #24는 PR #23으로 대체한다. #18 브랜치와 분리 전 #19 로컬 백업을 유지한다.
+- 통합 코드 검증: Building 37/37 PASS, Document open 23/23 PASS, Project 23/23 PASS, 실제 C5 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드·서명 통과. 사용자 복구 파일 SHA-256 보존 확인.
+- 남은 UI 확인은 완료로 표시하지 않는다. #20 참고 레이어·투명도, #21 DraftShape 마우스 작도는 후속 범위다.
+- 로그: `/private/tmp/imdfrnt-integrated-building.log`, `imdfrnt-integrated-document-open.log`, `imdfrnt-integrated-project.log`, `imdfrnt-integrated-routing.log`, `imdfrnt-integrated-regression.log`.

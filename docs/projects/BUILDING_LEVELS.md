@@ -4,6 +4,8 @@
 
 브랜치: `feat/#19-building-level-management` (#18 브랜치에서 시작).
 
+리뷰 요청을 반영해 #18 프로젝트 생성·저장/Finder 열기와 #19 공통 건물·Level 관리 변경을 [PR #23](https://github.com/adap-c6-fingerprint/IMDFrnt/pull/23)에 통합한다. PR의 기준 브랜치는 develop이며, #18 PR #24는 통합 PR로 대체한다. 이슈별 변경 커밋과 기존 브랜치는 보존한다.
+
 ## 사용 순서
 
 1. 새 프로젝트를 만들고 상단 **건물·층 관리**에서 건물과 층을 추가한다. 각 층의 이름·짧은 이름·ordinal·Level UUID를 편집할 수 있다. UUID와 ordinal 중복은 차단한다.
