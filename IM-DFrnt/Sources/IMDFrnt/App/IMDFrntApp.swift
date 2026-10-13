@@ -26,11 +26,7 @@ struct IMDFrntApp: App {
                 .frame(minWidth: 1180, minHeight: 720)
                 .background(ProjectWindowDelegateInstaller(delegate: delegate))
                 .onAppear {
-                    delegate.env = env
-                    // 종료 확인 팝업이 이 환경을 저장해야 하므로 델리게이트에 건네준다.
-                    // `@NSApplicationDelegateAdaptor`는 SwiftUI 환경을 못 받는다.
-                    env.restoreAutosaveIfAvailable()
-                    env.startAutosaveLoop()
+                    delegate.connectEnvironment(env)
                 }
         }
         .windowToolbarStyle(.unified)
@@ -101,11 +97,34 @@ struct IMDFrntApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
-    @MainActor weak var env: AppEnvironment?
+    weak var env: AppEnvironment?
+    private let documentOpener = DocumentOpenCoordinator()
+
+    func connectEnvironment(_ environment: AppEnvironment) {
+        guard env !== environment else { return }
+        env = environment
+        // Preserve old recovery before processing a launch-time document request.
+        // The shared opener then confirms unsaved work instead of overwriting it.
+        environment.restoreAutosaveIfAvailable()
+        documentOpener.attach(environment)
+        environment.startAutosaveLoop()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        documentOpener.enqueue(urls)
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        documentOpener.enqueue(filenames.map { URL(fileURLWithPath: $0) }) {
+            sender.reply(toOpenOrPrint: $0.applicationReply)
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if DocumentOpeningSelfTest.runIfRequested() { return }
         ProjectSelfTest.runIfRequested()
         RoutingSelfTest.runIfRequested()
         _ = SelfTest.runIfRequested()

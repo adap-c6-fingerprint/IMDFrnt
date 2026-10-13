@@ -25,10 +25,15 @@
 
 ## 검증
 
+Finder 연결: 앱은 `.imdfrnt`·이전 `.imdfproj`를 프로젝트 문서 타입의 Editor/Owner로 등록한다. `/Applications` 또는 `~/Applications` 같은 일반 설치 경로에서 Finder 연결에 사용할 수 있다. `/private/tmp` 테스트 앱은 기본 연결 후보에서 제외될 수 있다. 기존에 다른 기본 앱을 지정했다면 Finder의 정보 가져오기 → 다음으로 열기에서 변경할 수 있다.
+
+앱 시작 전 파일 요청은 환경 연결 후 처리한다. 이전 복구 작업을 먼저 확인하고 미저장 변경은 저장/폐기/취소를 거친다. 같은 프로젝트를 다시 열면 현재 미저장 편집을 유지한다. 가져오기·모달 중에는 요청을 대기시키며, 여러 파일을 한 번에 전달하면 부분 교체 없이 거절한다. 파일 메뉴와 외부 열기는 같은 검증·저장 위치·복구 처리를 사용한다.
+
 ```sh
 cd IM-DFrnt
 ./build-app.sh /private/tmp/IM-DFrntIssue18.app
 /private/tmp/IM-DFrntIssue18.app/Contents/MacOS/IM-DFrnt --project-selftest
+/private/tmp/IM-DFrntIssue18.app/Contents/MacOS/IM-DFrnt --document-open-selftest
 /private/tmp/IM-DFrntIssue18.app/Contents/MacOS/IM-DFrnt --routing-selftest
 /private/tmp/IM-DFrntIssue18.app/Contents/MacOS/IM-DFrnt --selftest
 ```
@@ -44,3 +49,5 @@ open -n /private/tmp/IM-DFrntIssue18.app --args --project-qa-directory /private/
 2026-10-12: UI 자동화 연결이 `Sky Computer Use native pipe startup failed`로 실패해 실제 메뉴·파일 대화상자·창 닫기의 입력 검증과 최종 화면 캡처는 미완료다. 자동 검사 통과와 실제 UI 확인을 구분하며 #18 이슈는 열어 둔다.
 
 2026-10-13 최종 검사: 프로젝트 23/23 PASS, 실제 C5 IMDF 폴더·ZIP을 포함한 노드 편집 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드·서명 검사 통과. ZIP은 클라이언트의 실제 C5 IMDF 폴더를 압축해 검증했다. 사용자 복구 파일 SHA-256이 검사 전과 같음을 확인했다. 로그는 `/private/tmp/imdfrnt18-project-final.log`, `imdfrnt18-routing-final.log`, `imdfrnt18-regression-final.log`에 기록했다.
+
+Finder 리뷰 보완: 문서 열기 23/23 PASS, 프로젝트 23/23 PASS, Routing 104/104 PASS, 기존 회귀 ALL PASS. 별도 번들 ID·복구 경로에서 앱 시작 시/실행 중의 시스템 파일 전달을 확인했다. 일반 설치 경로에서는 기본 연결 앱 조회와 `open file.imdfrnt`가 실제 프로젝트를 여는 것도 확인했다. 테스트 앱 등록·설치는 정리했다. Finder UI의 물리적 더블클릭과 저장 확인 버튼 입력은 자동화 연결 오류로 별도 미확인이다.

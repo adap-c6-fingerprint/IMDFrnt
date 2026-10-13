@@ -613,7 +613,6 @@ final class AppEnvironment: ObservableObject {
     func openProject() {
         guard !isProjectBusy else { return }
         isProjectActionInProgress = true
-        defer { isProjectActionInProgress = false }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType(filenameExtension: ProjectFile.fileExtension) ?? .json,
                                      UTType(filenameExtension: ProjectFile.interimFileExtension) ?? .json]
@@ -621,17 +620,10 @@ final class AppEnvironment: ObservableObject {
         // 버전 1 파일은 확장자가 같아 여기서 걸러지지 않고, `ProjectFile.decoded`가 이유를 말하며 거절한다.
         panel.allowsMultipleSelection = false
         panel.title = "저장한 작업 열기"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            let file = try ProjectFile.decoded(from: try Data(contentsOf: url))
-            guard confirmUnsavedChanges(action: "다른 프로젝트 열기") else { return }
-            try adopt(file, from: url)
-            persist(showingBanner: false)
-            notify("\(url.lastPathComponent) — feature \(features.features.count)개, Anchor \(anchors.pairs.count)쌍을 불러왔습니다.")
-        } catch {
-            notify("열기 실패: \(error.localizedDescription)", isError: true)
-        }
+        let response = panel.runModal()
+        isProjectActionInProgress = false
+        guard response == .OK, let url = panel.url else { return }
+        openDocument(at: url)
     }
 
     // MARK: 진행률 (명세 3-1) — 전역 하나만 둔다

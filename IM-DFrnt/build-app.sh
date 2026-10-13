@@ -48,11 +48,17 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
             <key>UTTypeDescription</key><string>IM-DFrnt Project</string>
             <key>UTTypeConformsTo</key><array><string>public.json</string></array>
             <key>UTTypeTagSpecification</key>
-            <dict><key>public.filename-extension</key><array><string>imdfrnt</string></array></dict>
+            <dict><key>public.filename-extension</key><array><string>imdfrnt</string><string>imdfproj</string></array></dict>
         </dict>
     </array>
     <key>CFBundleDocumentTypes</key>
     <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>IM-DFrnt Project</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSItemContentTypes</key><array><string>com.imdfrnt.project</string></array>
+        </dict>
         <dict>
             <key>CFBundleTypeName</key><string>Drawing</string>
             <key>CFBundleTypeRole</key><string>Editor</string>
