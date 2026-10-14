@@ -437,8 +437,8 @@ struct PropertySlotRow: View {
     }
 
     private func textField(_ placeholder: String,
-                           get: @escaping () -> String,
-                           set: @escaping (String) -> Void) -> some View {
+                           get: @escaping @MainActor @Sendable () -> String,
+                           set: @escaping @MainActor @Sendable (String) -> Void) -> some View {
         TextField(placeholder, text: Binding(get: get, set: set))
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)

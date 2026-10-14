@@ -10,9 +10,9 @@ import Foundation
 ///
 /// **원본 좌표 기준이다.** 화면에서 옮긴 개체(이동은 화면 전용, 명세 2-3)는 격자와 어긋나므로,
 /// 후보를 받는 쪽에서 이동한 개체를 항상 더해야 한다 — `candidates(...)`에 그 규칙을 넣어 뒀다.
-struct SpatialIndex {
+struct SpatialIndex: Sendable {
 
-    struct Cell: Hashable { let x: Int; let y: Int }
+    struct Cell: Hashable, Sendable { let x: Int; let y: Int }
 
     private(set) var cellSize: Double = 0
     private var buckets: [Cell: [VectorObjectID]] = [:]

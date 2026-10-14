@@ -44,7 +44,7 @@ enum StableObjectID {
 extension DrawingDocument {
     /// 도면 지문. 두 파일이 **같은 도면**을 두고 작업한 것인지 확인하는 데 쓴다(신기능 1-2-6).
     /// 개체 id 전체에서 뽑으므로, 도면이 조금이라도 다르면 값이 달라진다.
-    var fingerprint: String {
+    static func makeFingerprint(objects: [VectorObject], rasterImages: [DrawingRasterImage]) -> String {
         var joined = objects.map(\.id.uuidString).joined(separator: ",")
         for raster in rasterImages {
             let t = raster.transform, r = raster.rect

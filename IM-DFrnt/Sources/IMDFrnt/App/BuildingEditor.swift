@@ -28,12 +28,25 @@ extension AppEnvironment {
         let level = buildingProject.levels.first { $0.id == id }
         // Validate before replacing the current editor; corrupt input cannot
         // silently clear the user's active document.
-        let doc = try level.flatMap { level -> DrawingDocument? in
-            guard !level.info.svg.isEmpty else { return nil }
-            return try SVGParser.parse(data: Data(level.info.svg.utf8), sourceName: level.info.sourceName)
+        let prepared = try level.map { level in
+            let input = LevelDrawingInput(level)
+            return try levelDrawingCache.cached(input) ?? PreparedLevelDrawing.make(input)
         }
+        cancelLevelDrawingLoads()
+        installLevelMetadata(level)
+        if let prepared { levelDrawingCache.insert(prepared); installLevelDrawing(prepared) }
+    }
+
+    /// Publish cheap editing/Level data first; no SVG parsing occurs here.
+    func installLevelMetadata(_ level: ProjectLevel?) {
+        isInstallingLevelDrawing = true
+        defer { isInstallingLevelDrawing = false }
+        clearLevelInteraction()
         routingFloorID = level?.id
-        document = doc
+        document = nil
+        clearDocumentIndexesForLoading()
+        renderCache.invalidateAll()
+        closedPolygonFaces = []; totalPolygonCount = 0; vanishedPolygonCount = 0
         loadedSVG = level?.info.svg.isEmpty == false ? level?.info.svg : nil
         let editing = level?.editing ?? LevelEditingState()
         features = editing.features; ownership = editing.ownership
@@ -45,7 +58,83 @@ extension AppEnvironment {
         for type in Set(features.features.map(\.featureType)).sorted(by: { $0.rawValue < $1.rawValue }) {
             _ = layers.addPropertyTypeLayer(type)
         }
-        clearLevelInteraction()
+    }
+
+    func installLevelDrawing(_ prepared: PreparedLevelDrawing) {
+        isInstallingLevelDrawing = true
+        installPreparedIndexes(prepared)
+        isInstallingLevelDrawing = false
+        loadingLevelID = nil
+        drawingLoadError = nil
+        refreshCanvasReferences()
+    }
+
+    func cancelLevelDrawingLoads() {
+        levelDrawingRequest = UUID()
+        levelDrawingTask?.cancel(); levelDrawingTask = nil
+        levelPrefetchTask?.cancel(); levelPrefetchTask = nil
+        loadingLevelID = nil; drawingLoadError = nil
+    }
+
+    func beginLevelDrawingLoad(_ id: UUID?) {
+        cancelLevelDrawingLoads()
+        let level = buildingProject.levels.first { $0.id == id }
+        installLevelMetadata(level)
+        refreshCanvasReferences()
+        guard let level else { return }
+        let input = LevelDrawingInput(level)
+        if input.svg.isEmpty {
+            if let prepared = try? PreparedLevelDrawing.make(input) {
+                levelDrawingCache.insert(prepared); installLevelDrawing(prepared)
+            }
+            prefetchAdjacentLevels(to: level.id)
+            return
+        }
+        if let prepared = levelDrawingCache.cached(input) {
+            installLevelDrawing(prepared)
+            prefetchAdjacentLevels(to: level.id)
+            return
+        }
+        loadingLevelID = level.id
+        let request = levelDrawingRequest
+        levelDrawingTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let prepared = try await levelDrawingCache.load(input)
+                guard !Task.isCancelled, levelDrawingRequest == request, routingFloorID == input.levelID else { return }
+                guard let current = projectContents.levels.first(where: { $0.id == input.levelID }), LevelDrawingInput(current) == input else {
+                    storeActiveLevel()
+                    beginLevelDrawingLoad(routingFloorID); return
+                }
+                installLevelDrawing(prepared)
+                levelDrawingTask = nil
+                prefetchAdjacentLevels(to: input.levelID)
+            } catch {
+                guard !Task.isCancelled, levelDrawingRequest == request else { return }
+                loadingLevelID = nil; levelDrawingTask = nil
+                drawingLoadError = "도면을 열지 못했습니다: \(error.localizedDescription)"
+                notify(drawingLoadError!, isError: true)
+            }
+        }
+    }
+
+    func prefetchAdjacentLevels(to id: UUID) {
+        let levels = projectContents.levels.sorted { $0.info.ordinal < $1.info.ordinal }
+        guard let i = levels.firstIndex(where: { $0.id == id }) else { return }
+        let neighbors = [i + 1, i - 1].filter { levels.indices.contains($0) }.map { LevelDrawingInput(levels[$0]) }
+        let request = levelDrawingRequest
+        levelPrefetchTask = Task { [weak self] in
+            guard let self else { return }
+            for input in neighbors {
+                guard !Task.isCancelled, levelDrawingRequest == request else { return }
+                _ = try? await levelDrawingCache.load(input)
+            }
+        }
+    }
+
+    func waitForLevelDrawing() async {
+        while let task = levelDrawingTask { await task.value }
+        await canvasReferenceTask?.value
     }
 
     func clearLevelInteraction() {
@@ -59,11 +148,9 @@ extension AppEnvironment {
     }
 
     func selectProjectLevel(_ id: UUID) {
-        guard id != routingFloorID, buildingProject.levels.contains(where: { $0.id == id }) else { return }
-        let before = projectContents
+        guard id != routingFloorID || drawingLoadError != nil, buildingProject.levels.contains(where: { $0.id == id }) else { return }
         storeActiveLevel()
-        do { try loadLevelEditor(id) }
-        catch { buildingProject = before; notify("층 도면을 열지 못했습니다: \(error.localizedDescription)", isError: true) }
+        beginLevelDrawingLoad(id)
         if currentRoutingFloor?.imdfCoordinates != nil && routingTool == .calibrate { routingTool = .place }
         // The connection start is retained for stairs/elevator across Levels.
     }
@@ -75,7 +162,7 @@ extension AppEnvironment {
         let info = ProjectLevelInfo(name: "\(ordinal + 1)층", ordinal: ordinal)
         perform("층 추가") {
             buildingProject.levels.append(ProjectLevel(info: info))
-            try? loadLevelEditor(info.id)
+            beginLevelDrawingLoad(info.id)
         }
         hasCreatedProject = true
         return info.id
@@ -86,6 +173,7 @@ extension AppEnvironment {
         perform("층과 도면·노드 삭제") {
             storeActiveLevel()
             let removed = buildingProject.levels.first { $0.id == id }!
+            levelDrawingCache.invalidate(id)
             var graph = routing; graph.removeFloor(id)
             buildingProject.applyRouting(graph)
             // Shared Features are indivisible. Remove only this Level reference,
@@ -104,7 +192,7 @@ extension AppEnvironment {
             // Footprint references must not point to a deleted Level.
             let deletedUnits = Set((removed.geoJSON["unit.geojson"] ?? []).compactMap { $0["id"]?.string?.lowercased() })
             pruneGlobalReferences(deletedUnits: deletedUnits)
-            if routingFloorID == id { try? loadLevelEditor(buildingProject.levels.first?.id) }
+            if routingFloorID == id { beginLevelDrawingLoad(buildingProject.levels.first?.id) }
             routingConnectStart = nil
         }
     }
@@ -159,7 +247,8 @@ extension AppEnvironment {
                 buildingProject.globalGeoJSON[name] = buildingProject.globalGeoJSON[name]?.map { rewriteLevelID($0, old: old, new: new) }
             }
             if routingFloorID == old { routingFloorID = new }
-            routingDrawingCache.removeValue(forKey: old)
+            levelDrawingCache.invalidate(old)
+            if routingFloorID == new { beginLevelDrawingLoad(new) }
         }
     }
 

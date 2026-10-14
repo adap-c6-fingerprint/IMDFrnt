@@ -10,7 +10,7 @@ cd IM-DFrnt
 ./run-self-tests.sh /private/tmp/IM-DFrntReviewFollowup.app
 ```
 
-스크립트는 5개 모드를 별도 프로세스로 실행한다. 각 종료 코드, 전체 stdout/stderr, macOS 버전·아키텍처·검사한 실행 파일의 SHA-256을 출력된 로그 폴더에 기록한다. 검사 진입 표시와 PASS 요약이 없거나 실패가 있으면 스크립트도 실패한다. 파일은 보존되므로 리뷰어가 원문 로그를 확인할 수 있다.
+스크립트는 도면 로딩 검사를 포함한 6개 모드를 별도 프로세스로 실행한다. 각 종료 코드, 전체 stdout/stderr, macOS 버전·아키텍처·검사한 실행 파일의 SHA-256을 출력된 로그 폴더에 기록한다. 검사 진입 표시와 PASS 요약이 없거나 실패가 있으면 스크립트도 실패한다. 파일은 보존되므로 리뷰어가 원문 로그를 확인할 수 있다.
 
 개별 실행도 가능하다. `open --args` 대신 번들 안의 실행 파일을 직접 호출해야 종료 코드와 stdout/stderr를 확인할 수 있다. 문서 타입 검사는 빌드된 앱의 Info.plist를 읽으므로 `.app` 실행 파일을 사용한다.
 
@@ -20,6 +20,7 @@ cd IM-DFrnt
 /private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --project-selftest
 /private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --document-open-selftest
 /private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --routing-selftest
+/private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --drawing-loading-selftest
 ```
 
 실제 입력에 대한 추가 검사는 선택 사항이다. 지정한 원본은 읽기 전용이며 이전한 내용은 검사 전용 임시 경로에 쓴다.
@@ -32,6 +33,8 @@ cd IM-DFrnt
 ```
 
 ## 검사 진입과 범위
+
+도면 로딩 검사는 메타데이터 우선 표시, 비동기 응답, 마지막 선택, 캐시 및 층별 데이터 보존과 참고 레이어 저장을 검사한다. `--drawing-test-svg /path/to/drawing.svg` 또는 `--drawing-test-project /path/to/project.imdfrnt`로 실제 입력을 지정할 수 있다. 원본은 읽기 전용으로 사용한다. 선택 로직 측정과 실제 화면 검증의 범위는 [층별 도면](LEVEL_DRAWINGS.md)에 기록한다.
 
 기존 병합 커밋 `61022bf6`에서는 `applicationDidFinishLaunching`에서 검사를 시작했다. AppKit/LaunchServices 초기화가 exit 134로 실패하면 검사 코드에 도달하지 못한다는 리뷰 피드백을 받았다. 현재 `IMDFrntMain`은 CLI 인자를 먼저 확인해 SwiftUI 앱과 NSApplication을 만들기 전에 검사를 실행한다. 첫 로그는 `== CLI self-test: before AppKit application startup ==`다. 일반 앱 실행은 기존 SwiftUI [`App.main()`](https://developer.apple.com/documentation/swiftui/app/main())으로 연결한다.
 

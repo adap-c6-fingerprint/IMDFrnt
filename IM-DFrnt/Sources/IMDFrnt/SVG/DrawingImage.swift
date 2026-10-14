@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 /// Image pixels stay visible in drawing coordinates; they are never converted
 /// to invented vector shapes. The original image is embedded in project SVG.
-struct DrawingRasterImage {
+struct DrawingRasterImage: Sendable {
     let image: CGImage
     let rect: CGRect
     let transform: CGAffineTransform

@@ -8,15 +8,16 @@ enum IMDFrntMain {
     static func main() {
         if AppEnvironment.isRunningSelfTests {
             print("== CLI self-test: before AppKit application startup ==")
-            if CommandLine.arguments.contains("--document-open-selftest") {
-                Task { await DocumentOpeningSelfTest.runIfRequested() }
-                dispatchMain()
+            Task {
+                await DrawingLoadingSelfTest.runIfRequested()
+                await DocumentOpeningSelfTest.runIfRequested()
+                await BuildingSelfTest.runIfRequested()
+                ProjectSelfTest.runIfRequested()
+                await RoutingSelfTest.runIfRequested()
+                _ = SelfTest.runIfRequested()
+                exit(1)
             }
-            BuildingSelfTest.runIfRequested()
-            ProjectSelfTest.runIfRequested()
-            RoutingSelfTest.runIfRequested()
-            _ = SelfTest.runIfRequested()
-            exit(1)
+            dispatchMain()
         }
         IMDFrntApp.main()
     }

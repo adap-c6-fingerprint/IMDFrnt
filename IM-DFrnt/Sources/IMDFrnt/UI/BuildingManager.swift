@@ -58,6 +58,7 @@ struct BuildingManager: View {
                             }
                         }
                         GroupBox("건물 Footprint") { FootprintEditor().padding(6) }
+                        GroupBox("도면 레이어") { DrawingLayersPanel().padding(6) }
                         GroupBox("Manifest") { ManifestEditor().padding(6) }
                     }.padding()
                 }.frame(minWidth: 470, idealWidth: 600)

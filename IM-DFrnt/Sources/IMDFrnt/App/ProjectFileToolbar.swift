@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProjectFileToolbar: View {
     @EnvironmentObject var env: AppEnvironment
+    @State private var showDrawingLayers = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -36,6 +37,11 @@ struct ProjectFileToolbar: View {
                         Text($0.info.name).tag(Optional($0.id))
                     }
                 }.frame(width: 170)
+            }
+            if env.activeLevel != nil {
+                Button { showDrawingLayers.toggle() } label: { Label("도면 레이어", systemImage: "square.3.layers.3d") }
+                    .popover(isPresented: $showDrawingLayers) { DrawingLayersPanel().padding(16).frame(width: 310) }
+                    .disabled(env.isProjectBusy)
             }
             Button("건물·층 관리") {
                 if !env.hasCreatedProject { env.newProject() }

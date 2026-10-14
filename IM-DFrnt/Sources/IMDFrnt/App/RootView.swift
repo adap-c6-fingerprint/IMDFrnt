@@ -7,6 +7,10 @@ struct RootView: View {
     var body: some View {
         VStack(spacing: 0) {
             ProjectFileToolbar()
+            if !env.buildingProject.levels.isEmpty {
+                Divider()
+                LevelTabBar()
+            }
             Divider()
             editorContent
         }

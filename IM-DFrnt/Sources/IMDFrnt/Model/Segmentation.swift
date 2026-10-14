@@ -2,7 +2,7 @@ import Foundation
 
 /// 선분화 결과를 담는 파생 모델. 원본 `VectorObject`를 대체하지 않고 옆에 붙는다.
 /// 그래서 "선분화 해제"와 "곡선 개체 단위 선택"이 가능하다(명세 3-3-3, 8-4-4).
-struct Segmentation: Hashable, Codable {
+struct Segmentation: Hashable, Codable, Sendable {
     let sourceObjectID: VectorObjectID
     let segments: [LineSegment]
     let tolerance: Double

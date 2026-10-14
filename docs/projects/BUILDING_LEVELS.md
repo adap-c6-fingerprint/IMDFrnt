@@ -32,7 +32,7 @@ IMDF에서 만든 SVG는 표시용 캐시다. 재열기 시 실제 GeoJSON geome
 
 ## 후속 범위
 
-- #20: IMDF 도형과 독립된 SVG 참고 레이어, 건물 Footprint 배경, 표시·숨김과 투명도. 현재 IMDF 도형이 있는 층의 표시 SVG 교체는 차단한다.
+- #20: IMDF 도형과 독립된 SVG 참고 레이어, 건물 Footprint 배경, 표시·숨김과 불투명도, 도면 캐싱·비동기 로딩·메타데이터 탭바를 추가했다. [사용법과 검증](LEVEL_DRAWINGS.md)을 참고한다.
 - #21: 마우스로 독립 DraftShape를 작성하고 꼭짓점을 편집하는 도구. 이번 Footprint 입력은 geometry JSON 편집이며 마우스 작도 도구를 대체하지 않는다.
 
 ## 검증
@@ -56,4 +56,4 @@ UI 시험은 독립된 복구 경로에서 실행할 수 있다.
 open -n /private/tmp/IM-DFrntIssue19.app --args --project-qa-directory /private/tmp/IMDFrnt19UI -ApplePersistenceIgnoreState YES
 ```
 
-실제 UI 클릭 검증은 자동화 연결의 `Sky Computer Use native pipe startup failed` 오류로 미완료다. 데이터·명령 검증과 실제 UI 검증을 구분하고 #19를 열어 둔다.
+#18·#19는 사용자 수동 테스트 후 닫혔다. #20의 실제 UI 검증은 [층별 도면 검증](LEVEL_DRAWINGS.md)에 별도로 기록한다.

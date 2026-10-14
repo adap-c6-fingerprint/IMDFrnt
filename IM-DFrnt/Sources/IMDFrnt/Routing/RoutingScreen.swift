@@ -166,9 +166,7 @@ struct RoutingFloorEditor: View {
                     env.updateRoutingFloor(floor.id, field: "ordinal") { $0.ordinal = value }
                 }), format: .number)
             }
-            if floor.imdfCoordinates == nil {
-                Button("이 층 도면 불러오기…") { env.importRoutingDrawing() }
-            }
+            Button(floor.imdfCoordinates == nil ? "이 층 도면 불러오기…" : "참고 도면 불러오기…") { env.importRoutingDrawing() }
             Text(floor.sourceName.isEmpty ? "SVG·PNG·JPG 도면을 불러오세요." : floor.sourceName)
                 .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
             let configured = floor.hasGeographicCoordinates

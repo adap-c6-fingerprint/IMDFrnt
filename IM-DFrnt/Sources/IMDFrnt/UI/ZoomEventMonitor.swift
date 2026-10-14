@@ -30,7 +30,7 @@ final class ZoomEventMonitor: ObservableObject {
         token = nil
     }
 
-    deinit {
+    isolated deinit {
         if let token { NSEvent.removeMonitor(token) }
     }
 

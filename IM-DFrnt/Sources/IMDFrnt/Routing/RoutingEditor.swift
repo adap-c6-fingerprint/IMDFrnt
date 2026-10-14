@@ -4,16 +4,12 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension AppEnvironment {
-    var currentRoutingFloor: RoutingFloor? { routing.floor(routingFloorID) ?? routing.floors.first }
+    var currentRoutingFloor: RoutingFloor? { activeLevel?.info ?? buildingProject.levels.first?.info }
     var selectedRoutingNode: RoutingNode? { routing.node(routingSelectedNodeID) }
     var selectedRoutingEdge: RoutingEdge? { routing.edge(routingSelectedEdgeID) }
 
     var routingDocument: DrawingDocument? {
-        guard let floor = currentRoutingFloor, !floor.svg.isEmpty else { return nil }
-        if let cached = routingDrawingCache[floor.id], cached.0 == floor.svg { return cached.1 }
-        guard let doc = try? SVGParser.parse(data: Data(floor.svg.utf8), sourceName: floor.sourceName) else { return nil }
-        routingDrawingCache[floor.id] = (floor.svg, doc)
-        return doc
+        document
     }
 
     func enterRoutingScreen() {
@@ -42,7 +38,15 @@ extension AppEnvironment {
                     return try IMDFImporter.load(url)
                 }.value
                 guard confirmUnsavedChanges(action: "다른 IMDF 불러오기") else { return }
-                try adoptIMDF(imported)
+                let retainingEmptyProject = canFillEmptyProject
+                let previousURL = projectURL, previousSaved = lastExplicitSavedProject
+                var file = ProjectFile.empty()
+                file.buildingProject = try BuildingProject.importing(imported)
+                if retainingEmptyProject { file.projectID = projectID }
+                try await adoptProjectAsync(file, from: retainingEmptyProject ? previousURL : nil)
+                routingTool = .place; canvasRotation = 0; showRoutingScreen = true
+                lastExplicitSavedProject = retainingEmptyProject ? previousSaved : nil
+                lastRecoveryProject = nil
                 persist(showingBanner: false)
                 notify("\(imported.sourceName) — \(imported.floors.count)개 층을 불러왔습니다. 바로 노드를 찍을 수 있습니다.")
             } catch { notify("IMDF를 불러오지 못했습니다: \(error.localizedDescription)", isError: true) }
@@ -97,31 +101,33 @@ extension AppEnvironment {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try setRoutingDrawing(floor.id, data: Data(contentsOf: url), name: url.lastPathComponent, sourceURL: url)
-        } catch { notify("도면을 불러오지 못했습니다: \(error.localizedDescription)", isError: true) }
+        Task { await importDrawingAsync(at: url) }
     }
 
     func setRoutingDrawing(_ id: UUID, data: Data, name: String, sourceURL: URL? = nil) throws {
         let isImage = ["png", "jpg", "jpeg"].contains((name as NSString).pathExtension.lowercased())
         let svg = try isImage ? DrawingImageImporter.embeddedSVG(from: data)
             : DrawingImageImporter.embedLocalImages(in: data, relativeTo: sourceURL)
-        let doc = try SVGParser.parse(data: svg, sourceName: name)
-        guard let index = buildingProject.levels.firstIndex(where: { $0.id == id }) else { return }
-        let text = String(decoding: svg, as: UTF8.self)
-        guard buildingProject.levels[index].info.svg != text else { return }
-        // IMDF display geometry is authoritative. A separate SVG reference layer
-        // will be added in #20; replacing its projection here would move nodes.
-        guard buildingProject.levels[index].info.imdfCoordinates == nil else {
-            throw IMDFImporter.Failure(message: "이 층에는 IMDF 도형이 있습니다. 현재는 SVG 도면을 교체할 수 없습니다.")
+        let prepared = try PreparedLevelDrawing.make(LevelDrawingInput(levelID: id, svg: String(decoding: svg, as: UTF8.self), sourceName: name))
+        try applyRoutingDrawing(prepared)
+    }
+
+    @discardableResult
+    func applyRoutingDrawing(_ prepared: PreparedLevelDrawing) throws -> DocumentOpenResult {
+        let id = prepared.input.levelID, name = prepared.input.sourceName
+        guard let index = buildingProject.levels.firstIndex(where: { $0.id == id }) else { return .failed }
+        let text = prepared.input.svg
+        if buildingProject.levels[index].info.imdfCoordinates != nil {
+            applyReferenceDrawing(prepared); return .opened
         }
-        let hasWork = !buildingProject.levels[index].editing.features.features.isEmpty || !routing.nodes(on: id).isEmpty
+        guard buildingProject.levels[index].info.svg != text else { return .opened }
+        let hasWork = !projectContents.levels[index].editing.features.features.isEmpty || !routing.nodes(on: id).isEmpty
         if hasWork && !Self.isRunningSelfTests {
             let alert = NSAlert()
             alert.messageText = "\(buildingProject.levels[index].info.name)의 도면을 교체할까요?"
             alert.informativeText = "기존 SVG 태깅과 좌표 기준점은 초기화됩니다. 노드는 유지되므로 새 도면에 맞는 위치와 좌표를 확인하세요."
             alert.addButton(withTitle: "취소"); alert.addButton(withTitle: "교체")
-            guard alert.runModal() == .alertSecondButtonReturn else { return }
+            guard alert.runModal() == .alertSecondButtonReturn else { return .cancelled }
         }
         perform("층 도면 불러오기") {
             storeActiveLevel()
@@ -129,10 +135,11 @@ extension AppEnvironment {
             buildingProject.levels[index].info.svg = text
             buildingProject.levels[index].info.sourceName = name
             buildingProject.levels[index].editing = LevelEditingState()
-            if routingFloorID == id { try? loadLevelEditor(id) }
+            levelDrawingCache.insert(prepared)
+            if routingFloorID == id { beginLevelDrawingLoad(id) }
         }
-        routingDrawingCache[id] = (text, doc)
         notify("\(name)을 \(buildingProject.levels[index].info.name)에 불러왔습니다.")
+        return .opened
     }
 
     func nearestRoutingNode(to point: LocalPoint, tolerance: Double) -> RoutingNode? {

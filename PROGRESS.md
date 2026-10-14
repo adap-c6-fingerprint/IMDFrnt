@@ -1,5 +1,16 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-14 — #20 층별 도면·#26 전환 버퍼링
+
+- 구현 전 #20·서브 이슈 #26에 작업 목적과 완료 조건을 기록하고, 병합된 develop에서 `feat/#20-level-drawing-management`를 만들었다. #18·#19는 닫힌 상태를 유지한다.
+- 실제 사용자 테스트 프로젝트의 SVG(3,442개/1,563개 개체)를 확인했다. Light SVG의 기존 전환 로직은 매번 5.29~5.34초가 걸렸다. 캐시된 실제 층 재전환은 약 0.3~0.5ms이며 재파싱·파생 계산이 증가하지 않는다. 화면 첫 프레임까지의 시간이 아닌 선택 명령·도면 모델 적용 시간이다.
+- 최초 준비는 약 5.3초이고 백그라운드에서 수행한다. 메인 액터의 10ms 간격 확인 작업이 424회 실행되어 응답성을 확인했다. 도면보다 먼저 층 메타데이터·탭바를 적용하고 마지막 선택만 반영한다.
+- SVG/이미지 읽기·파싱과 도면 색인·Path·다각형 진행률을 캐싱했다. 도면 캐시는 최대 6개/추정 128 MiB, 준비 작업은 최대 2개이며 인접 층을 미리 준비한다. 교체·삭제·Undo·프로젝트 교체에서 오래된 비동기 결과를 막고 로딩 중 이전 층 색인을 비운다.
+- IMDF 위의 SVG 참고 레이어와 건물 Footprint 배경을 분리했다. SVG 원문·파일명·층별 표시/불투명도와 건물 전역 Footprint 표시 설정을 v5의 선택적 필드로 저장한다. 원본 IMDF geometry·투영·노드 좌표와 기존 파일 이전을 유지한다. 참고 도면 삭제는 빨간 버튼·확인·취소·Undo를 지원한다.
+- Swift 6 언어 모드 Release 빌드·ad-hoc 서명·diff 검사를 통과했다. 원래 UI 코드의 actor/Sendable 경고를 정리했고 최종 빌드 경고는 없다. SVG ALL PASS, Building 34/34, Project 23/23, Document open 24/24, Routing 102/102, Drawing Loading 30/30으로 6개 모드 모두 종료 코드 0이다. C5 폴더와 실제 사용자 테스트 프로젝트를 읽기 전용으로 사용했다.
+- 로그: `/private/var/folders/y_/53_320qj4pqcgw5hp41cgr2m0000gp/T/imdfrnt-self-tests.AhTbpG`. 앱: `/Users/dd/Applications/IM-DFrntIssue20.app`. [사용법과 수동 확인](docs/projects/LEVEL_DRAWINGS.md)을 기록했다.
+- UI 자동화가 `Sky Computer Use native pipe startup failed`로 연결되지 않고 테스트 창도 조회하지 못했다. 실행 프로세스와 모델·명령 검증을 실제 버튼 입력·화면 검증으로 해석하지 않는다. 원본 복구본과 분리한 QA 복사본으로 앱을 실행하며 실제 탭·Picker·레이어·삭제 알림 확인은 미완료로 남긴다.
+
 ## 2026-10-08 — 삭제 확인 통일·선택 엣지 Delete
 
 - 구현 전에 기존 [UI 이슈 #16](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/16)에 요청과 완료 조건을 추가하고 `feat/#16-floor-node-ui`에서 이어서 진행했다.

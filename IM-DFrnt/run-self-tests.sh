@@ -18,7 +18,7 @@ echo "Logs: $log_directory"
 } > "$log_directory/environment.txt"
 
 failures=0
-for mode in selftest building-selftest project-selftest document-open-selftest routing-selftest; do
+for mode in selftest building-selftest project-selftest document-open-selftest routing-selftest drawing-loading-selftest; do
   log_file="$log_directory/$mode.log"
   "$app_binary" "--$mode" "$@" > "$log_file" 2>&1
   status=$?
@@ -35,5 +35,5 @@ for mode in selftest building-selftest project-selftest document-open-selftest r
   fi
 done
 
-echo "Result: $((5 - failures))/5 modes passed; logs: $log_directory"
+echo "Result: $((6 - failures))/6 modes passed; logs: $log_directory"
 [[ $failures -eq 0 ]]

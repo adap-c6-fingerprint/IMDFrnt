@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 enum RoutingSelfTest {
-    static func runIfRequested() {
+    static func runIfRequested() async {
         guard CommandLine.arguments.contains("--routing-selftest") else { return }
         var failures = 0, count = 0
         func check(_ name: String, _ valid: Bool) {
@@ -116,9 +116,11 @@ enum RoutingSelfTest {
         env.updateRoutingNode(first, field: "category") { $0.category = "stairs" }
         env.updateRoutingNode(third, field: "category") { $0.category = "stairs" }
         env.selectRoutingFloor(firstFloor)
+        await env.waitForLevelDrawing()
         env.setRoutingTool(.connect)
         env.handleRoutingClick(at: LocalPoint(100,100), tolerance: 10)
         env.selectRoutingFloor(secondFloor)
+        await env.waitForLevelDrawing()
         check("층을 바꿔도 연결 시작 노드 유지", env.routingConnectStart == first)
         env.handleRoutingClick(at: LocalPoint(100,100), tolerance: 10)
         check("층간 계단 연결 및 접근성", env.routing.edges.count == 2 && env.selectedRoutingEdge?.category == .stairs &&
