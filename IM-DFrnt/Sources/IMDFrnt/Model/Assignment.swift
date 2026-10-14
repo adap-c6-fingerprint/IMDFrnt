@@ -35,6 +35,8 @@ struct Assignment: Codable, Equatable, Identifiable {
     /// `objectIDs`가 정본이고 이 값은 그로부터 유도된다 — 둘이 어긋나면 `objectIDs`를 따른다.
 
     var createdAt: Date
+    /// Nil for old single-drawing assignments.
+    var levelID: UUID?
 
     var isEmpty: Bool { objectIDs.isEmpty }
 

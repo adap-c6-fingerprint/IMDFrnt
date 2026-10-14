@@ -1,10 +1,11 @@
 import Foundation
 
 /// Editor coordinates and drawings stay in the project. Client export uses WGS 84.
-struct RoutingFloor: Identifiable, Equatable, Codable {
+struct ProjectLevelInfo: Identifiable, Equatable, Codable {
     var id: UUID = UUID()
     var name: String
     var ordinal: Int
+    var shortName: String?
     var sourceName: String = ""
     var svg: String = ""
     var anchors = AnchorStore()
@@ -22,6 +23,8 @@ struct RoutingFloor: Identifiable, Equatable, Codable {
         return Georeferencer(pairs: anchors.pairs).geoPoint(for: point)
     }
 }
+
+typealias RoutingFloor = ProjectLevelInfo
 
 struct RoutingNode: Identifiable, Equatable, Codable {
     var id: UUID = UUID()

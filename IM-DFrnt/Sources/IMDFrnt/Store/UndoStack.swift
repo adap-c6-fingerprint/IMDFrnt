@@ -30,6 +30,7 @@ struct EditorSnapshot: Equatable {
     var expandedFeatures: Set<FeatureGroupID>
     var focusedFeature: FeatureGroupID?
     var faceSelection: Set<String>
+    var buildingProject = BuildingProject()
     var routing = RoutingGraph()
     var routingFloorID: UUID?
     var routingSelectedNodeID: UUID?

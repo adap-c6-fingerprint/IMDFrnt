@@ -7,9 +7,9 @@ import Foundation
 /// across distinct deliveries"를 요구한다 — 즉 두 번째 내보내기에서도 **같은 UUID**가 나와야 한다.
 /// 앱을 닫을 때 `IDAssigner`가 사라지면 다시 열었을 때 새 UUID가 발급되어 그 요건이 깨진다.
 /// 폐기 UUID 대장(`retired`)도 같은 이유로 함께 저장한다 — "MUST NOT be re-assigned".
-struct ProjectFile: Codable {
+struct ProjectFile: Codable, Equatable {
 
-    static let currentVersion = 4
+    static let currentVersion = 5
     static let fileExtension = "imdfrnt"
     /// 버전 2에서 바뀐 것은 **개체를 가리키는 방식**이다 — id를 도면 내용에서 결정적으로 뽑는다(신기능 1-2-6).
     /// 이건 형식이 아니라 **뜻**을 바꾸므로 버전 1 파일은 열지 않고 거절한다(아래 `decoded`).
@@ -36,6 +36,8 @@ struct ProjectFile: Codable {
 
     var sourceName: String
     var svg: String
+    /// nil은 기존 파일의 도면 있음, false는 아직 도면을 넣지 않은 새 프로젝트다.
+    var hasDrawing: Bool?
     /// **SVG 원본을 통째로 담는다. 경로만 참조하지 않는다.**
     /// 도면 파일이 옮겨지거나 이름이 바뀌면 프로젝트가 통째로 열리지 않게 되는데,
     /// 이 앱의 작업 결과(수십~수백 개의 태깅)는 도면 파일 하나보다 훨씬 비싸다.
@@ -58,6 +60,8 @@ struct ProjectFile: Codable {
 
     var drawingFingerprint: String?
     /// Optional so existing version 2 projects decode without losing their work.
+    var buildingProject: BuildingProject?
+    /// Versions 2–4 only; v5 stores routing within common Levels.
     var routing: RoutingGraph?
     /// 저장 시점 도면의 지문. 합칠 때 같은 도면인지 확인하는 두 번째 자물쇠다(신기능 1-2-6).
 
@@ -65,6 +69,16 @@ struct ProjectFile: Codable {
     // 전부 "지금 화면을 어떻게 보고 있는가"이지 작업 결과가 아니다. 저장하면 파일을 열 때마다
     // 남의 화면 상태가 따라와 오히려 방해가 되고, 실행취소 스택은 다른 세션의 칸을 되살려
     // 지금 문서에 없는 상태로 덮어쓸 위험이 있다.
+
+    enum CodingKeys: String, CodingKey {
+        case version, savedAt, projectID, assignment, sourceName, svg, hasDrawing,
+             features, ownership, segmentation, auxiliary, anchors, serials, ids,
+             openingGate, borrow, doorClosures, drawingFingerprint, routing, buildingProject
+    }
+
+    func hasSameContents(as other: ProjectFile) -> Bool {
+        projectID == other.projectID && assignment == other.assignment && commonProject().semanticContents == other.commonProject().semanticContents
+    }
 
     enum LoadError: LocalizedError {
         case unsupportedVersion(Int)
@@ -106,6 +120,46 @@ struct ProjectFile: Codable {
             // 저장된 태깅이 가리키는 개체가 도면에 하나도 없는 상태로 열리는데, 화면에는
             // "feature는 있는데 아무 개체도 안 잡힌 상태"로 보인다 — 조용한 데이터 손실이다.
         }
+        try file.validateLegacyRouting()
         return file
+    }
+}
+
+extension ProjectFile {
+    func validateLegacyRouting() throws {
+        guard buildingProject == nil, let graph = routing else { return }
+        let floors = Set(graph.floors.map(\.id)), nodes = Set(graph.nodes.map(\.id))
+        guard floors.count == graph.floors.count, Set(graph.floors.map(\.ordinal)).count == graph.floors.count,
+              nodes.count == graph.nodes.count, graph.nodes.allSatisfy({ floors.contains($0.floorID) }),
+              Set(graph.edges.map(\.id)).count == graph.edges.count,
+              graph.edges.allSatisfy({ nodes.contains($0.from) && nodes.contains($0.to) }) else {
+            throw IMDFImporter.Failure(message: "기존 프로젝트의 층·노드·연결 참조가 올바르지 않습니다. 현재 작업은 유지됩니다.")
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        guard version <= Self.currentVersion else { throw LoadError.unsupportedVersion(version) }
+        guard version >= 2 else { throw LoadError.legacyObjectIDs }
+        savedAt = try c.decode(Date.self, forKey: .savedAt)
+        projectID = try c.decode(UUID.self, forKey: .projectID)
+        assignment = try c.decodeIfPresent(Assignment.self, forKey: .assignment)
+        sourceName = try c.decode(String.self, forKey: .sourceName)
+        svg = try c.decode(String.self, forKey: .svg)
+        hasDrawing = try c.decodeIfPresent(Bool.self, forKey: .hasDrawing)
+        features = try c.decode(FeatureStore.self, forKey: .features)
+        ownership = try c.decode(OwnershipRegistry.self, forKey: .ownership)
+        segmentation = try c.decode(SegmentationStore.self, forKey: .segmentation)
+        auxiliary = try c.decode(AuxiliaryStore.self, forKey: .auxiliary)
+        anchors = try c.decode(AnchorStore.self, forKey: .anchors)
+        serials = try c.decode(SerialNumberAllocator.self, forKey: .serials)
+        ids = try c.decode(IDAssigner.self, forKey: .ids)
+        openingGate = try c.decode(OpeningGateStore.self, forKey: .openingGate)
+        borrow = try c.decode(BorrowRegistry.self, forKey: .borrow)
+        doorClosures = try c.decodeIfPresent(DoorClosureStore.self, forKey: .doorClosures) ?? DoorClosureStore()
+        drawingFingerprint = try c.decodeIfPresent(String.self, forKey: .drawingFingerprint)
+        routing = try c.decodeIfPresent(RoutingGraph.self, forKey: .routing)
+        buildingProject = try c.decodeIfPresent(BuildingProject.self, forKey: .buildingProject)
     }
 }

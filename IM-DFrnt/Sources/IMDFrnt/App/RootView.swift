@@ -5,6 +5,17 @@ struct RootView: View {
     @State private var monitor: SelectModifierMonitor?
 
     var body: some View {
+        VStack(spacing: 0) {
+            ProjectFileToolbar()
+            Divider()
+            editorContent
+        }
+        .sheet(isPresented: $env.showBuildingManager) { BuildingManager().environmentObject(env) }
+        .navigationTitle(env.projectDisplayName)
+        .navigationSubtitle(env.projectSaveStatus)
+    }
+
+    private var editorContent: some View {
         Group {
             if env.showRoutingScreen {
                 RoutingScreen()
@@ -42,7 +53,7 @@ struct RootView: View {
                 .overlay(alignment: .topTrailing) { sidebarToggle(.trailing) }
             }
         }
-        .disabled(env.isImportingIMDF)
+        .disabled(env.isProjectBusy)
         .overlay {
             if env.isImportingIMDF {
                 ProgressView("IMDF를 불러오는 중…").padding(24)
@@ -57,7 +68,7 @@ struct RootView: View {
         .onAppear { startMonitor() }
         .onDisappear { monitor?.stop() }
         .alert(env.pendingDeletion?.title ?? "삭제할까요?", isPresented: Binding(
-            get: { env.pendingDeletion != nil },
+            get: { env.pendingDeletion != nil && !env.showBuildingManager },
             set: { if !$0 { env.cancelDeletion() } }
         ), presenting: env.pendingDeletion) { request in
             Button("취소", role: .cancel) { env.cancelDeletion() }

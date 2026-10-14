@@ -49,7 +49,7 @@ extension AppEnvironment {
     func requestRoutingFloorDeletion(_ id: UUID) {
         guard let floor = routing.floor(id) else { return }
         requestDeletion(title: "\(floor.name)을 삭제할까요?",
-                        message: "\(floor.name)의 도면과 노드 \(routing.nodes(on: id).count)개를 삭제합니다. 다른 층으로 이어지는 연결선도 함께 삭제됩니다. 실행 취소로 복구할 수 있습니다.") {
+                        message: "\(floor.name)의 도면·도형·태깅과 노드 \(routing.nodes(on: id).count)개를 삭제합니다. 다른 층으로 이어지는 연결선도 함께 삭제됩니다. 실행 취소로 복구할 수 있습니다.") {
             guard $0.routing.floor(id) != nil else { return }
             $0.removeRoutingFloor(id)
         }

@@ -4,6 +4,10 @@ SVG 도면에서 IMDF GeoJSON을 반자동으로 추출하는 macOS 앱의 **UI 
 
 길찾기 노드는 `IMDF 불러오기…`(⌘⇧I)에서 완성된 IMDF ZIP·폴더를 연 뒤 ⌘ Command+클릭으로 찍는다. 일반 클릭은 선택이며 ⌥ Option+핀 드래그로 연결한다. 층별 공간·UUID·위경도를 가져오므로 SVG 준비나 별도 좌표 기준점이 필요 없다. 노드 정보 편집·연결·Delete·실행취소·프로젝트 저장·클라이언트용 GeoJSON(JSON) 내보내기를 지원한다. SVG·PNG·JPG 도면을 쓰는 기존 흐름도 유지한다. [사용법과 클라이언트 파일 계약](../docs/routing/NODE_EDITOR.md).
 
+`파일 → 새 프로젝트`(⌘N)로 빈 `.imdfrnt` 작업을 시작하고 ⌘S로 저장할 수 있다. 프로젝트 이름·저장 상태를 표시하며, 수정한 작업을 교체하거나 종료할 때 저장·저장하지 않음·취소를 확인한다. 자동 저장은 복구본을 보존한다. [프로젝트 생성·저장](../docs/projects/PROJECT_LIFECYCLE.md).
+
+상단 **건물·층 관리**에서 공통 Level과 건물 전역 정보·Footprint를 관리한다. 도면 편집과 노드 편집은 같은 층을 사용하며 SVG·GeoJSON·태깅·노드·엣지를 층별로 저장한다. 새 IMDF 가져오기는 원본 Feature ID·geometry·properties를 보존한다. [건물과 Level 관리](../docs/projects/BUILDING_LEVELS.md).
+
 명세: `02) Projects/06) Challenge 6/02) FP-to-IMDF 자동화/00) FP-to-IMDF 새버전 (반자동화).md`
 아키텍처: 같은 폴더 `03) FTI 아키텍쳐.md`
 
@@ -36,10 +40,11 @@ swift build && ./.build/debug/IMDFrnt
 
 ```bash
 ./IM-DFrnt.app/Contents/MacOS/IM-DFrnt --selftest
+./run-self-tests.sh ./IM-DFrnt.app
 ```
 
 파싱·기하·변환·직렬화·상호작용 계층을 점검하고 결과를 출력한 뒤 종료합니다.
-UI를 눌러보지 않고 회귀를 확인하는 용도입니다. 현재 전 항목 통과.
+UI를 눌러보지 않고 회귀를 확인하는 용도입니다. CLI 검사는 SwiftUI/NSApplication 초기화 전에 실행됩니다. 스크립트는 5종 검사의 종료 코드와 전체 로그를 남깁니다. [Self-test 재현 및 검증 범위](../docs/projects/SELF_TESTS.md)를 참고하세요.
 
 ### Xcode로 열기
 
@@ -169,7 +174,7 @@ Anchor 쌍 하나는 방정식 2개(x·y)를 줍니다. 어파인 변환은 미�
 
 | 항목 | 이유 |
 |---|---|
-| **프로젝트 파일 저장/열기 (`.ftiproj`)** | UI 우선 범위 밖. 현재 상태는 앱을 닫으면 사라집니다. `ProjectFile` 설계는 아키텍처 문서 2.3절에 있고, 무엇을 저장하고(선분화·Anchor·UUID 대장) 무엇을 저장하지 않는지(임시 이동 좌표)는 코드 주석에 반영해 뒀습니다. |
+| **프로젝트 파일 저장/열기 (`.imdfrnt`)** | 새 프로젝트·전체 작업 저장/열기·미저장 확인과 복구본 자동 저장을 지원합니다. 임시 개체 이동 좌표·화면 선택·실행취소 기록은 파일에 저장하지 않습니다. |
 | **속성 필터 레이어의 부분 표시** | 레이어 생성과 목록 표시까지만 구현했고, 캔버스가 그 레이어의 부분집합만 그리는 렌더링은 미구현입니다. 현재는 필터 조건이 무엇인지 레이어 이름으로만 보입니다. |
 | **CSS `<style>` 블록 셀렉터** | 인라인 `style` 속성과 프레젠테이션 속성만 해석합니다. 아키텍처 문서 0.2절의 미해결 항목 그대로. |
 | **`manifest.json` 생성** | property type 목록에 `manifest`가 있으나 피처 파일이 아니라 세트 메타데이터라, 개별 geojson 내보내기와 흐름이 다릅니다. |

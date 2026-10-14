@@ -151,3 +151,54 @@
 - #4에 `duplicate` 라벨과 `Duplicate of #6` 및 관련 범위 설명을 남기고 닫았다. 기존 본문·검토 기록을 보존했다.
 - 활성 이슈의 #4 참조는 ‘통합 전 요청’으로 바꿨다. #4를 진행 중인 상위 작업으로 관리하지 않는다.
 - 닫힘·라벨·대체 이슈 링크를 GitHub API로 확인했다. 구현 상태와 정확도·runtime 측정 상태는 유지한다.
+
+## 2026-10-13 — #18 새 프로젝트 생성·기존 작업 저장
+
+- `feat/#18-new-project-save`를 #16이 머지된 `develop`의 `c32cc62`로 맞추고 구현 전 #18에 계획·담당자·라벨을 기록했다.
+- 파일 메뉴·⌘N으로 새 프로젝트를 만들고 document·feature·Anchor·routing·선택·임시 편집·Undo/Redo를 초기화한다. 새 UUID와 현재 schema version 4를 기록한다.
+- 도면 없는 프로젝트 저장/재열기를 지원한다. 빈 프로젝트에 도면·IMDF를 넣을 때 ID와 저장 위치를 유지한다.
+- 새 프로젝트·다른 입력 열기·창 닫기·종료에서 저장/저장하지 않음/취소를 확인한다. 저장 창 취소·파일 쓰기 실패는 기존 데이터를 유지한다.
+- 프로젝트 이름·저장 상태를 표시한다. 자동 저장은 복구본만 갱신하며 저장하지 않고 종료한 변경을 다음 실행에서 복원하지 않는다.
+- 최종 검사: Project 23/23 PASS, 실제 C5 IMDF 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드·서명 검사 통과. 사용자 복구 파일 SHA-256 보존 확인.
+- 정상 ZIP 입력은 실제 클라이언트 C5 IMDF 폴더를 압축해 검증했다. 처음 지정한 다운로드 ZIP은 IMDF의 level.geojson이 없는 다른 형식이라 거절됐으며 원본은 변경하지 않았다.
+- UI 도구의 `Sky Computer Use native pipe startup failed`로 실제 파일 메뉴·저장 대화상자·종료 입력과 캡처는 미확인이다. 완료로 표시하거나 이슈를 닫지 않는다.
+- 실행 앱: `/private/tmp/IM-DFrntIssue18Final.app`. 상세 사용법과 검사 절차: `docs/projects/PROJECT_LIFECYCLE.md`.
+
+## 2026-10-13 — #18 리뷰 보완: Finder 프로젝트 열기
+
+- [#18에 리뷰 보완 목표와 완료 조건](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/18#issuecomment-6137561168)을 먼저 기록했다. `.imdfrnt` UTI만 있고 앱의 프로젝트 문서 타입과 외부 파일 이벤트가 없던 P2 지적을 수정했다.
+- `.imdfrnt`·이전 `.imdfproj`를 Editor/Owner 문서로 등록하고 SVG·PNG·JPEG 연결을 유지한다. 환경 연결 전 요청을 대기하고, 파일 메뉴와 Finder의 검증·미저장 확인·복구 처리를 공유한다.
+- 현재 프로젝트 재요청은 미저장 편집을 유지하며 가져오기·모달 중에는 기다린다. 여러 파일 요청은 부분 교체 없이 거절한다.
+- 문서 열기 23/23 PASS, 프로젝트 23/23 PASS, 실제 C5 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드 통과. 일반 설치 경로의 별도 번들 ID·복구 경로에서 기본 파일 연결과 앱 시작/실행 중의 실제 시스템 파일 전달을 확인했다. 검증용 등록과 앱은 정리했다.
+- Finder UI의 물리적 더블클릭과 저장 확인 버튼 입력은 도구 연결 오류로 미확인이다. 시스템 파일 전달 검증과 구분한다.
+- Finder 수정은 #18 브랜치/PR에서만 커밋한다. #19는 갱신된 #18을 기준으로 #19 기능 커밋만 비교하도록 유지한다.
+- 로그: `/private/tmp/imdfrnt-finder18-open-test.log`, `imdfrnt-finder18-project-test.log`, `imdfrnt-finder18-routing-test.log`, `imdfrnt-finder18-regression-test.log`.
+## 2026-10-13 — #19 공통 건물·Level 관리
+
+- [#19](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/19)에 구현 시작·완료 조건을 먼저 기록하고 `feat/#19-building-level-management`를 #18 브랜치에서 생성했다. #18은 아직 develop에 병합되지 않아 이 브랜치는 #18에 의존한다.
+- `.imdfrnt` 버전 5에서 건물 전역 IMDF 정보와 공통 Level을 저장한다. 각 층이 도면·GeoJSON Feature·기존 태깅·기준점·노드·층 내부 엣지를 가지며 층간 엣지는 프로젝트에 보관한다. RoutingGraph는 기존 노드 화면·내보내기용 호환 뷰다.
+- 상단 공통 층 선택과 건물·층 관리 화면을 추가했다. 이름·shortName·ordinal·Level UUID 편집, 중복 차단, 확인 후 층 삭제 및 Undo/Redo를 지원한다. 첫 SVG 입력과 복구에서 이미 작성한 건물 정보를 보존한다.
+- IMDF 폴더·ZIP의 JSON/GeoJSON과 manifest, 원본 Feature ID·geometry·properties·참조·unknown fields·collection header를 보존한다. 화면용 SVG는 재열기 시 실제 geometry로 재구성하며 기존 노드 좌표 변환을 유지한다. 기존 v4 노드 전용 파일에 없던 원본 Feature 메타데이터를 SVG에서 복원하는 기능은 포함하지 않는다.
+- 건물·Venue·주소 properties와 Manifest의 JSON 편집, 실제 위경도 Polygon/MultiPolygon으로 Footprint 생성·수정·삭제·미리보기와 Undo/Redo를 추가했다. SVG 참고 레이어 표시/투명도는 #20, 독립 DraftShape 마우스 작도는 #21에서 진행한다. 전체 IMDF ZIP 내보내기 UI는 후속 범위다.
+- 최종 검증: Building 37/37 PASS, Project 23/23 PASS, 실제 C5 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS. C5 6개 층·unit 167개·건물 1개·Footprint 2개와 원본 GeoJSON 왕복을 확인했다.
+- 사용자 실제 v4 복구본의 6개 층·노드 72개·연결 87개를 읽기 전용으로 이전해 데이터·UUID·메타데이터·연결 및 클라이언트 GeoJSON 출력 바이트가 동일함을 확인했다. 원본 복구 파일 SHA-256은 검사 전과 같다.
+- 앱: `/private/tmp/IM-DFrntIssue19.app`. 로그: `/private/tmp/imdfrnt19-building-final.log`, `imdfrnt19-project-final.log`, `imdfrnt19-routing-final.log`, `imdfrnt19-regression-final.log`. 실제 UI 입력 검증은 `Sky Computer Use native pipe startup failed`로 미완료여서 이슈를 열어 둔다.
+- [사용법과 저장 구조](docs/projects/BUILDING_LEVELS.md).
+
+## 2026-10-13 — 팀 리뷰 요청에 따른 #18·#19 통합 PR
+
+- 리뷰어는 stacked PR을 없애고 #18 변경을 포함한 하나의 PR로 다시 리뷰해 달라고 요청했다. 사용자가 통합 PR 방향을 선택해 이전 이슈별 PR 유지 방안을 변경했다.
+- #18 생성·저장 및 Finder 수정, #19 건물·공통 Level 관리 커밋을 보존하고 PR #23의 기준을 develop로 변경한다. PR #24는 PR #23으로 대체한다. #18 브랜치와 분리 전 #19 로컬 백업을 유지한다.
+- 통합 코드 검증: Building 37/37 PASS, Document open 23/23 PASS, Project 23/23 PASS, 실제 C5 폴더·ZIP 포함 Routing 104/104 PASS, 기존 회귀 ALL PASS, 릴리즈 빌드·서명 통과. 사용자 복구 파일 SHA-256 보존 확인.
+- 남은 UI 확인은 완료로 표시하지 않는다. #20 참고 레이어·투명도, #21 DraftShape 마우스 작도는 후속 범위다.
+- 로그: `/private/tmp/imdfrnt-integrated-building.log`, `imdfrnt-integrated-document-open.log`, `imdfrnt-integrated-project.log`, `imdfrnt-integrated-routing.log`, `imdfrnt-integrated-regression.log`.
+
+## 2026-10-13 — PR #23 리뷰 후속: UUID·검사 진입·빌드 경고
+
+- [기존 #19에 후속 목표와 완료 조건](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/19#issuecomment-6140485244)을 먼저 기록했다.
+- non-optional UUID의 항상 참인 nil 비교를 제거했다. 발급 대장과 재열기 대장에서 optional UUID를 실제로 꺼내고, 기록이 없으면 실패하며 원래 UUID와 같은지 비교한다.
+- 검사가 AppKit/LaunchServices 초기화 뒤에 시작해 리뷰 환경에서 exit 134로 재현되지 못한 피드백을 반영했다. CLI 검사 분기를 SwiftUI 앱 시작 전 진입점으로 옮기고 문서 검사의 NSApplication 초기화 의존성을 제거했다. 일반 앱은 SwiftUI 앱 진입점으로 연결한다.
+- deprecated `onChange` 5곳을 두 인자 API로 변경했다. Release 빌드 로그 경고 없음, ad-hoc 서명 검사 통과.
+- 기본 sandbox CLI 실행으로 5개 모드 모두 exit 0: 기본 Building 27/27·Document open 24/24·Project 23/23·Routing 100/100·기존 회귀 ALL PASS. 실제 C5 폴더·ZIP·기존 v4 입력을 포함하면 Building 37/37·Routing 104/104 PASS. 사용자 원본 복구 파일 SHA-256 유지.
+- `IM-DFrnt/run-self-tests.sh`가 모드별 종료 코드·전체 로그·환경·바이너리 SHA-256을 남긴다. 문서 CLI 검사는 공통 요청 처리와 선언·입출력을 확인하며 실제 Finder 이벤트·UI 버튼 입력은 별도 검증이다.
+- [재현 명령과 검증 범위](docs/projects/SELF_TESTS.md). UI 도구 연결은 다시 `Sky Computer Use native pipe startup failed`로 실패했으며 건물·층 관리 UI 확인은 완료로 표시하지 않는다.

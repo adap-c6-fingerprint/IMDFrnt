@@ -42,7 +42,7 @@ struct AnchorDrawingPane: View {
                 GeometryReader { proxy in
                     Color.clear
                         .onAppear { zoomMonitor.canvasFrame = proxy.frame(in: .global) }
-                        .onChange(of: proxy.frame(in: .global)) { f in
+                        .onChange(of: proxy.frame(in: .global)) { _, f in
                             zoomMonitor.canvasFrame = f
                         }
                 }

@@ -131,7 +131,17 @@ enum AuxiliaryOpacity {
 @MainActor
 final class AppEnvironment: ObservableObject {
 
-    @Published var routing = RoutingGraph()
+    @Published var buildingProject = BuildingProject()
+    @Published var showBuildingManager = false
+    var routing: RoutingGraph {
+        get { projectContents.routingGraph }
+        set {
+            var project = projectContents
+            project.applyRouting(newValue)
+            buildingProject = project
+            if let floor = newValue.floor(routingFloorID) { anchors = floor.anchors }
+        }
+    }
     @Published var showRoutingScreen = false
     @Published var routingFloorID: UUID?
     @Published var routingSelectedNodeID: UUID?
@@ -172,7 +182,12 @@ final class AppEnvironment: ObservableObject {
     /// 클릭·사각형 선택·겹침 후보를 도면 전체가 아니라 해당 칸에서만 찾기 위한 격자(제안 5).
     private(set) var spatialIndex = SpatialIndex()
 
-    init() {
+    let recoveryURLOverride: URL?
+    let projectDefaults: UserDefaults
+
+    init(recoveryURL: URL? = nil, projectDefaults: UserDefaults = .standard) {
+        recoveryURLOverride = recoveryURL
+        self.projectDefaults = projectDefaults
         moves.onSettled = { [weak self] in self?.objectWillChange.send() }
         // 드래그가 끝난 시점에 한 번만 환경 전체에 알린다 — `도구` 메뉴의 '모든 개체 원위치'
         // 활성 여부처럼 `AppEnvironment`만 보는 화면을 위해서다.
@@ -438,6 +453,72 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 문서 열기
 
+    func resetProjectState(id: UUID = UUID()) {
+        document = nil
+        loadedSVG = nil
+        projectID = id
+        projectURL = nil
+        hasCreatedProject = true
+        lastExplicitSavedProject = nil
+        lastRecoveryProject = nil
+        features = FeatureStore()
+        ownership = OwnershipRegistry()
+        selection = SelectionStore()
+        segmentation = SegmentationStore()
+        auxiliary = AuxiliaryStore()
+        openingGate = OpeningGateStore()
+        borrow = BorrowRegistry()
+        doorClosures = DoorClosureStore()
+        anchors = AnchorStore()
+        serials = SerialNumberAllocator()
+        ids = IDAssigner()
+        assignment = nil
+        layers = LayerStore()
+        layers.bootstrap()
+        buildingProject = BuildingProject()
+        showBuildingManager = false
+        routingDrawingCache = [:]
+        routingFloorID = nil
+        routingSelectedNodeID = nil
+        routingSelectedEdgeID = nil
+        routingConnectStart = nil
+        routingConnectionDrag = nil
+        routingPendingAnchor = nil
+        routingExportError = nil
+        routingTool = .place
+        routingContextMenuIsOpen = false
+        pendingDeletion = nil
+        pendingClearSelection = nil
+        conflict = nil
+        exportBlockers = []
+        mergeReportMessage = nil
+        banner = nil
+        mode = .idle
+        expandedFeature = nil
+        undoStack.clear()
+        moves.reset(nil)
+        isMoveEnabled = false
+        canvasRotation = 0
+        marqueeSubtracts = false
+        auxiliarySelection = []
+        focusedTwinKey = nil
+        showTwinsOnly = false
+        faceSelection = []
+        closedPolygonFaces = []
+        totalPolygonCount = 0
+        vanishedPolygonCount = 0
+        closedPolygonNotice = nil
+        polygonWorkMode = .include
+        doorDraftPoints = []
+        doorDraftDoorID = nil
+        doorDraftArcID = nil
+        showRoutingScreen = false
+        showAnchorScreen = false
+        showDoorClosureScreen = false
+        showCurvedScreen = false
+        showAuxiliaryScreen = false
+    }
+
     func openSample() {
         guard let data = SampleFloorplan.svg.data(using: .utf8) else { return }
         load(data: data, name: SampleFloorplan.name)
@@ -447,6 +528,9 @@ final class AppEnvironment: ObservableObject {
     // 사용자가 여는 경로가 하나도 없으므로 앱에서는 샘플이 열리지 않는다.
 
     func openFile() {
+        guard !isProjectBusy else { return }
+        isProjectActionInProgress = true
+        defer { isProjectActionInProgress = false }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "svg") ?? .xml, .png, .jpeg]
         panel.canChooseDirectories = false
@@ -458,55 +542,45 @@ final class AppEnvironment: ObservableObject {
             let image = ["png", "jpg", "jpeg"].contains(url.pathExtension.lowercased())
             let svg = try image ? DrawingImageImporter.embeddedSVG(from: data)
                 : DrawingImageImporter.embedLocalImages(in: data, relativeTo: url)
-            load(data: svg, name: url.lastPathComponent)
+            load(data: svg, name: url.lastPathComponent, confirmingReplacement: true)
+            if document != nil { persist(showingBanner: false) }
         } catch {
             notify("파일을 읽지 못했습니다: \(error.localizedDescription)", isError: true)
         }
     }
 
-    private func load(data: Data, name: String) {
+    func load(data: Data, name: String, confirmingReplacement: Bool = false) {
         do {
             let doc = try SVGParser.parse(data: data, sourceName: name)
+            if hasCreatedProject && buildingProject.levels.isEmpty {
+                let info = ProjectLevelInfo(name: "1층", ordinal: 0, sourceName: name, svg: String(decoding: data, as: UTF8.self))
+                perform("첫 층 도면 불러오기") {
+                    buildingProject.levels.append(ProjectLevel(info: info))
+                    try? loadLevelEditor(info.id)
+                }
+                notify("\(name) — 개체 \(doc.objects.count)개를 읽었습니다.")
+                return
+            }
+            if hasCreatedProject && !buildingProject.levels.isEmpty {
+                let target = routingFloorID ?? buildingProject.levels[0].id
+                try setRoutingDrawing(target, data: data, name: name)
+                return
+            }
+            if confirmingReplacement && !confirmUnsavedChanges(action: "다른 도면 열기") { return }
+            let retainingEmptyProject = canFillEmptyProject
+            let previousID = projectID
+            let previousURL = projectURL
+            let previousSaved = lastExplicitSavedProject
+            resetProjectState(id: retainingEmptyProject ? previousID : UUID())
             document = doc
             loadedSVG = String(data: data, encoding: .utf8)
-            projectURL = nil
-            // 새 도면은 아직 어느 프로젝트 파일에도 속하지 않는다.
-            // 남겨두면 '저장'이 이전 작업 파일을 덮어쓴다.
-            layers.bootstrap()
-            features = FeatureStore()
-            ownership = OwnershipRegistry()
-            selection = SelectionStore()
-            segmentation = SegmentationStore()
-            auxiliary = AuxiliaryStore()
-            openingGate = OpeningGateStore()
-            borrow = BorrowRegistry()
-            doorClosures = DoorClosureStore()
-            anchors = AnchorStore()
-            routing = RoutingGraph()
-            routingDrawingCache = [:]
-            routingFloorID = nil
-            routingSelectedNodeID = nil
-            routingSelectedEdgeID = nil
-            routingConnectStart = nil
-            routingConnectionDrag = nil
-            routingPendingAnchor = nil
-            pendingDeletion = nil
-            showRoutingScreen = false
-            // 임시 문은 개체 id를 들고 있다. 다른 도면에 남겨두면 없는 개체를 가리킨다.
-            // 도면이 바뀌면 게이트도 대여도 처음부터다. 남겨두면 새 도면에서 다른 type 메뉴가
-            // 이미 열려 있어 opening 선행 태깅이 통째로 건너뛰어진다.
-            undoStack.clear()
-            // 다른 도면의 실행취소 칸을 남겨두면 cmd+z 한 번에 지금 문서에 없는 개체 id로 상태가 덮인다.
-            moves.reset(nil)
-            // 다른 도면의 이동량을 남겨두면 새 도면의 다른 개체 id에 엉뚱하게 씌워질 수 있다.
-            projectID = UUID()
-            assignment = nil
-            lastSavedSnapshot = nil
-            // 새 도면은 새 작업이다. 신원을 물려받으면 이전 작업의 배정본이 여기 합쳐진다.
-            serials = SerialNumberAllocator()
-            ids = IDAssigner()
-            mode = .idle
-            expandedFeature = nil
+            let info = ProjectLevelInfo(name: "1층", ordinal: 0, sourceName: name, svg: loadedSVG ?? "")
+            buildingProject.levels = [ProjectLevel(info: info)]
+            routingFloorID = info.id
+            if retainingEmptyProject {
+                projectURL = previousURL
+                lastExplicitSavedProject = previousSaved
+            }
             notify("\(name) — 개체 \(doc.objects.count)개를 읽었습니다.")
         } catch {
             notify("SVG 파싱 실패: \(error)", isError: true)
@@ -529,12 +603,12 @@ final class AppEnvironment: ObservableObject {
     @Published var mergeReportMessage: String?
     /// 배정본을 합친 결과. 팝업으로 그대로 보여준다 — 조용히 건너뛰면 나중에 내보내기에서야 드러난다.
 
-    var lastSavedSnapshot: EditorSnapshot?
-    /// 마지막으로 저장한 상태. 30초 루프가 이것과 비교해 **바뀐 게 없으면 쓰지 않는다.**
-    /// 파일 시각만 계속 갱신되면 사용자가 "뭐가 저장된 건지"를 파일 목록에서 읽을 수 없다.
+    @Published var hasCreatedProject = false
+    @Published var lastExplicitSavedProject: ProjectFile?
+    var lastRecoveryProject: ProjectFile?
+    @Published var isProjectActionInProgress = false
 
     var autosaveTimer: Timer?
-    var isTerminationConfirmed = false
 
     var loadedSVG: String?
     // 프로젝트에 함께 담을 SVG 원문. 도면을 열 때 받아 둔다.
@@ -547,27 +621,26 @@ final class AppEnvironment: ObservableObject {
         !features.features.isEmpty || !anchors.pairs.isEmpty || auxiliary.count > 0
     }
 
-    func saveProject(as newLocation: Bool = false) {
-        guard let doc = document, loadedSVG != nil else {
-            notify("먼저 SVG 도면을 여세요.", isError: true)
-            return
-        }
-
+    @discardableResult
+    func saveProject(as newLocation: Bool = false) -> Bool {
+        guard hasSomethingToPersist else { return false }
+        var destination = projectURL
         if newLocation || projectURL == nil {
             let panel = NSSavePanel()
-            panel.nameFieldStringValue =
-                (doc.sourceName as NSString).deletingPathExtension + "." + ProjectFile.fileExtension
+            panel.nameFieldStringValue = projectDisplayName + "." + ProjectFile.fileExtension
+            panel.allowedContentTypes = [UTType(filenameExtension: ProjectFile.fileExtension) ?? .data]
             panel.canCreateDirectories = true
-            panel.title = "작업 저장 위치 선택"
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            projectURL = url
+            panel.title = "프로젝트 저장 위치 선택"
+            guard panel.runModal() == .OK, let url = panel.url else { return false }
+            destination = url
         }
-        persist(showingBanner: true)
-        // 실제 쓰기는 자동 저장 루프와 **같은 경로**를 탄다(`ProjectPersistence.persist`).
-        // 손 저장과 자동 저장이 서로 다른 코드로 파일을 만들면 둘의 결과가 갈릴 수 있다.
+        guard let destination else { return false }
+        return saveProject(to: destination)
     }
 
     func openProject() {
+        guard !isProjectBusy else { return }
+        isProjectActionInProgress = true
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType(filenameExtension: ProjectFile.fileExtension) ?? .json,
                                      UTType(filenameExtension: ProjectFile.interimFileExtension) ?? .json]
@@ -575,15 +648,10 @@ final class AppEnvironment: ObservableObject {
         // 버전 1 파일은 확장자가 같아 여기서 걸러지지 않고, `ProjectFile.decoded`가 이유를 말하며 거절한다.
         panel.allowsMultipleSelection = false
         panel.title = "저장한 작업 열기"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            let file = try ProjectFile.decoded(from: try Data(contentsOf: url))
-            try adopt(file, from: url)
-            notify("\(url.lastPathComponent) — feature \(features.features.count)개, Anchor \(anchors.pairs.count)쌍을 불러왔습니다.")
-        } catch {
-            notify("열기 실패: \(error.localizedDescription)", isError: true)
-        }
+        let response = panel.runModal()
+        isProjectActionInProgress = false
+        guard response == .OK, let url = panel.url else { return }
+        openDocument(at: url)
     }
 
     // MARK: 진행률 (명세 3-1) — 전역 하나만 둔다
@@ -1184,12 +1252,17 @@ final class AppEnvironment: ObservableObject {
                        ids: ids, expandedFeatures: expandedFeatures,
                        focusedFeature: focusedFeature,
                        faceSelection: faceSelection,
+                       buildingProject: projectContents,
                        routing: routing, routingFloorID: routingFloorID,
                        routingSelectedNodeID: routingSelectedNodeID,
                        routingSelectedEdgeID: routingSelectedEdgeID)
     }
 
     private func restore(_ s: EditorSnapshot) {
+        let restoredSVG = s.buildingProject.levels.first { $0.id == s.routingFloorID }?.info.svg
+        let needsDocument = routingFloorID != s.routingFloorID || (loadedSVG ?? "") != (restoredSVG ?? "")
+        buildingProject = s.buildingProject
+        if needsDocument { try? loadLevelEditor(s.routingFloorID) }
         layers = s.layers
         features = s.features
         ownership = s.ownership
@@ -1205,7 +1278,6 @@ final class AppEnvironment: ObservableObject {
         expandedFeatures = s.expandedFeatures
         focusedFeature = s.focusedFeature
         faceSelection = s.faceSelection
-        routing = s.routing
         routingFloorID = s.routingFloorID
         routingSelectedNodeID = s.routingSelectedNodeID
         routingSelectedEdgeID = s.routingSelectedEdgeID

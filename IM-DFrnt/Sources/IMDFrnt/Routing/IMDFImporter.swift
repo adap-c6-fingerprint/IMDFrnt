@@ -38,6 +38,7 @@ struct ImportedIMDF: Sendable {
     var layoutVersion: String
     var coordinates: IMDFCoordinateSpace
     var floors: [ImportedIMDFFloor]
+    var files: [String: ProjectJSON] = [:]
 }
 
 enum IMDFImporter {
@@ -62,8 +63,8 @@ enum IMDFImporter {
                 throw Failure(message: "ZIP 안에 level.geojson이 포함된 IMDF 지도 하나가 있어야 합니다.")
             }
             let prefix = String(level.dropLast("level.geojson".count))
-            for name in ["manifest.json"] + drawingTypes.map({ "\($0).geojson" }) {
-                let path = prefix + name
+            for path in entries where path.hasPrefix(prefix) && !String(path.dropFirst(prefix.count)).contains("/") && ["json", "geojson"].contains((path as NSString).pathExtension.lowercased()) {
+                let name = String(path.dropFirst(prefix.count))
                 guard entries.contains(path) else { continue }
                 guard entries.filter({ $0 == path }).count == 1 else {
                     throw Failure(message: "ZIP에 \(name)이 중복되어 있습니다.")
@@ -77,8 +78,8 @@ enum IMDFImporter {
             }
         } else {
             let directory = isDirectory ? url : url.deletingLastPathComponent()
-            for name in ["manifest.json"] + drawingTypes.map({ "\($0).geojson" }) {
-                let file = directory.appendingPathComponent(name)
+            for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) where ["json", "geojson"].contains(file.pathExtension.lowercased()) {
+                let name = file.lastPathComponent
                 if FileManager.default.fileExists(atPath: file.path) { files[name] = try Data(contentsOf: file) }
             }
         }
@@ -200,7 +201,8 @@ enum IMDFImporter {
             // The format version isn't a layout revision. Use the source creation date if present.
             if let created = manifest["created"] as? String, !created.isEmpty { version = created }
         }
-        return ImportedIMDF(sourceName: sourceName, layoutVersion: version, coordinates: coordinates, floors: floors)
+        return ImportedIMDF(sourceName: sourceName, layoutVersion: version, coordinates: coordinates, floors: floors,
+                            files: try files.mapValues { try ProjectJSON.parse($0) })
     }
 
     private static func coordinatePairs(_ value: Any?) throws -> [[Double]] {
@@ -218,8 +220,9 @@ enum IMDFImporter {
         String(format: "%.9f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
-    private static func svgElement(_ geometry: [String: Any], type: String, category: String,
+    static func svgElement(_ geometry: [String: Any], type: String, category: String,
                                    coordinates: IMDFCoordinateSpace) throws -> String {
+        _ = try coordinatePairs(geometry["coordinates"])
         func path(_ points: [[Double]], closed: Bool) throws -> String {
             guard points.count >= (closed ? 4 : 2), points.allSatisfy({ $0.count >= 2 }) else {
                 throw Failure(message: "\(type).geojson의 선·다각형 좌표가 유효하지 않습니다.")
