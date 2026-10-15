@@ -1,2 +1,5 @@
 IM-DFrnt/.build/
 .DS_Store
+**/xcuserdata/
+*.xcuserstate
+IM-DFrnt/DerivedData/

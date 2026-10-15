@@ -1,5 +1,15 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-15 — #32 Xcode 프로젝트 추가
+
+- 구현 전에 [이슈 #32](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/32)에 목표·작업 목록·완료 조건을 기록하고, 병합된 develop에서 `chore/#32-xcode-project`를 만들었다.
+- `IM-DFrnt/IM-DFrnt.xcodeproj`에 macOS 앱 타깃과 공유 `IM-DFrnt` Scheme을 추가했다. 기존 `Sources/IMDFrnt`의 Swift 파일 101개를 직접 컴파일하며 폴더 동기화로 새 Swift 파일도 포함한다. Swift 6·macOS 14 설정을 유지한다.
+- Xcode에서 `IM-DFrnt → My Mac → ⌘R`로 실행할 수 있다. 로컬 ad-hoc 서명을 사용하며 개발자 Team을 지정하지 않고 Debug·Release를 빌드했다. Debug 서명의 `get-task-allow`도 확인했다.
+- 앱·문서 연결 정보를 `Configuration/Info.plist`로 옮겨 Xcode와 `build-app.sh`가 공유한다. 기존 리뷰 수정 앱의 메타데이터와 완전히 같고, 두 Xcode 앱과 Swift Package 앱에서 `.imdfrnt`/`.imdfproj`·SVG/PNG/JPG 등록, 실행 파일명, 샘플 리소스와 서명을 확인했다.
+- Xcode 27.0에서 프로젝트·Scheme 인식, Debug 및 Release(arm64·x86_64) 빌드, 기존 Swift Package 번들 빌드와 엄격한 서명 검사를 통과했다. Swift 컴파일 경고는 없고 Xcode의 AppIntents 메타데이터 추출 생략 경고만 남는다. 최초 sandbox 빌드는 SwiftUI 매크로 실행이 제한돼 실패했으며, 같은 명령을 sandbox 밖에서 실행해 통과했다.
+- Xcode Release 앱에서 기본 입력으로 CLI 6/6 모드 통과: SVG ALL PASS, Building 27/27, Project 23/23, Document open 24/24, Routing 100/100, Drawing Loading 49/49. 로그: `/private/tmp/imdfrnt-issue32-xcode-self-tests.log`, `/private/var/folders/y_/53_320qj4pqcgw5hp41cgr2m0000gp/T/imdfrnt-self-tests.g2sctE`. 빌드 로그: `/private/tmp/imdfrnt-issue32-xcode-debug.log`, `/private/tmp/imdfrnt-issue32-xcode-release.log`, `/private/tmp/imdfrnt-issue32-spm-build.log`.
+- Xcode에 프로젝트 열기를 요청했다. UI 자동화는 `Sky Computer Use native pipe startup failed`로 연결되지 않아 Xcode의 실제 ⌘R 조작·앱 화면은 별도 확인 대상이다. CLI 성공을 GUI 확인으로 표시하지 않는다.
+
 ## 2026-10-15 — PR #27 P2 리뷰 반영
 
 - 코드 변경 전 #20에 두 P2의 재현·수정·완료 조건을 기록했다. 기존 PR #27과 `feat/#20-level-drawing-management`에서 수정한다.
