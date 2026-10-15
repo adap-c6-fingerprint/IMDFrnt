@@ -11,7 +11,7 @@ struct ProjectFileToolbar: View {
                 Divider()
                 Button("IMDF 불러오기…") { env.importIMDF() }
                 Button("도면 열기…") { env.openFile() }
-                Button("작업 열기…") { env.openProject() }
+                Button("프로젝트 열기 (.imdfrnt)…") { env.openProject() }
                 Divider()
                 Button("작업 저장") { env.saveProject() }
                     .disabled(!env.hasSomethingToPersist)

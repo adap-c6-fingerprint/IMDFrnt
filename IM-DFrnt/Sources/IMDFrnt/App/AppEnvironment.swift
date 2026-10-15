@@ -652,7 +652,9 @@ final class AppEnvironment: ObservableObject {
         // 잠깐 쓰였던 `.imdfproj`도 고를 수 있게 둔다. 그 사이에 저장한 파일이 있으면 열려야 한다.
         // 버전 1 파일은 확장자가 같아 여기서 걸러지지 않고, `ProjectFile.decoded`가 이유를 말하며 거절한다.
         panel.allowsMultipleSelection = false
-        panel.title = "저장한 작업 열기"
+        panel.title = "프로젝트 열기 (.imdfrnt)"
+        panel.message = "도면·층·노드·연결이 저장된 .imdfrnt 프로젝트를 선택하세요."
+        panel.prompt = "프로젝트 열기"
         let response = panel.runModal()
         isProjectActionInProgress = false
         guard response == .OK, let url = panel.url else { return }

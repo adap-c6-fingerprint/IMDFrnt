@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-15 — #36 .imdfrnt 프로젝트 열기 진입점
+
+- 구현 전에 [이슈 #36](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/36)을 등록하고, PR #33이 병합된 develop에서 `fix/#36-project-open-entry`를 만들었다.
+- 빈 캔버스에 `프로젝트 열기 (.imdfrnt)…` 버튼을 추가했다. macOS File 메뉴와 앱 안의 파일 메뉴도 같은 이름으로 맞추고 ⌘⇧O를 유지했다. 파일 선택 창에도 프로젝트 확장자와 복원되는 도면·층·노드·연결을 안내한다.
+- 기존 `openProject()`와 비동기 검증·미저장 작업 확인 경로를 재사용했다. 중복 열기 방지와 이전 `.imdfproj` 선택·취소·손상 입력 보호를 유지한다.
+- Xcode Release(arm64·x86_64) 빌드·엄격한 서명·diff 검사를 통과했다. 문서 폴더의 실제 v4 백업을 읽기 전용으로 사용해 6/6 CLI 모드 통과: SVG ALL PASS, Building 30/30, Project 23/23, Document open 24/24, Routing 100/100, Drawing Loading 61/61. 실제 백업의 6개 층·노드 72개·연결 87개와 메타데이터, v4→v5 왕복·클라이언트 출력 보존을 검증했다. 원본 SHA-256은 검사 전후 동일하다.
+- 최신 앱을 `--project-qa-directory /private/tmp/IMDFrnt36-UI-QA`로 실행했다. UI 자동화는 `Sky Computer Use native pipe startup failed`로 연결되지 않아 실제 버튼·파일 메뉴·파일 선택 창 클릭과 화면 배치는 수동 확인 대상으로 남긴다.
+- 빌드 로그: `/private/tmp/imdfrnt-issue36-build.log`. 회귀 결과: `/private/tmp/imdfrnt-issue36-self-tests.log`, `/private/var/folders/y_/53_320qj4pqcgw5hp41cgr2m0000gp/T/imdfrnt-self-tests.Jrm6EV`.
+
 ## 2026-10-15 — #32 Xcode 프로젝트 추가
 
 - 구현 전에 [이슈 #32](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/32)에 목표·작업 목록·완료 조건을 기록하고, 병합된 develop에서 `chore/#32-xcode-project`를 만들었다.
