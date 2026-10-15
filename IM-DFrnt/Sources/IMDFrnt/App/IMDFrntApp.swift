@@ -42,7 +42,7 @@ struct IMDFrntApp: App {
                     .keyboardShortcut("o")
                     .disabled(env.isProjectBusy)
                 Divider()
-                Button("작업 열기…") { env.openProject() }
+                Button("프로젝트 열기 (.imdfrnt)…") { env.openProject() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
                     .disabled(env.isProjectBusy)
                 Button("작업 저장") { env.saveProject() }

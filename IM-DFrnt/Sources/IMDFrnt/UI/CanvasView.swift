@@ -709,6 +709,10 @@ struct CanvasView: View {
                 .font(.title3)
             Button("IMDF 불러오기…") { env.importIMDF() }
                 .buttonStyle(.borderedProminent).disabled(env.isImportingIMDF)
+            Button("프로젝트 열기 (.imdfrnt)…") { env.openProject() }
+                .buttonStyle(.bordered)
+                .disabled(env.isProjectBusy)
+                .help("저장한 프로젝트의 도면·층·노드·연결을 불러옵니다. (⌘⇧O)")
             Button(env.showRoutingScreen && env.currentRoutingFloor == nil ? "층 추가" : "도면 불러오기…") {
                 if env.showRoutingScreen {
                     if env.currentRoutingFloor == nil { env.addRoutingFloor() } else { env.importRoutingDrawing() }
