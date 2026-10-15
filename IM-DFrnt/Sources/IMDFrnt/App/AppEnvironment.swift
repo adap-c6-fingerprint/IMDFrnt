@@ -524,8 +524,6 @@ final class AppEnvironment: ObservableObject {
         closedPolygonNotice = nil
         polygonWorkMode = .include
         doorDraftPoints = []
-        doorDraftDoorID = nil
-        doorDraftArcID = nil
         showRoutingScreen = false
         showAnchorScreen = false
         showDoorClosureScreen = false
@@ -1430,8 +1428,6 @@ final class AppEnvironment: ObservableObject {
 
     @Published var showDoorClosureScreen = false
     @Published var doorDraftPoints: [LocalPoint] = []
-    @Published var doorDraftDoorID: VectorObjectID?
-    @Published var doorDraftArcID: VectorObjectID?
 
     var doorSnapCache: [SnapPointExtractor.SnapPoint] = []
     /// 찍을 수 있는 점 목록. 도면이 바뀔 때만 다시 만든다 —
