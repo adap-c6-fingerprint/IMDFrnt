@@ -30,6 +30,8 @@ struct EditorSnapshot: Equatable {
     var expandedFeatures: Set<FeatureGroupID>
     var focusedFeature: FeatureGroupID?
     var faceSelection: Set<String>
+    /// 작성 중인 점 도형(#21). 점 추가·삭제·이동을 cmd+z로 되돌리려면 여기 있어야 한다.
+    var pointDraft = PointDraft()
     var buildingProject = BuildingProject()
     var routing = RoutingGraph()
     var routingFloorID: UUID?

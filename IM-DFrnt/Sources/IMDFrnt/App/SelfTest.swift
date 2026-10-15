@@ -2118,11 +2118,13 @@ enum SelfTest {
 
         // 3-2) 끝점과 교차점
         //
-        // **만드는 시점이 이 절의 핵심이다.** 끝점·교차점 계산은 개체 수의 제곱에 붙는다.
-        // 도면을 열 때마다 만들면 실도면(개체 수천 개)에서 **앱 시작이 그대로 멈춘다** —
-        // 자동 저장본 복원 경로에서 실제로 그렇게 됐다. 창에 들어갈 때만 만든다.
-        check("문닫기: 도면을 열기만 해서는 점을 만들지 않는다", dc.doorSnapPoints.isEmpty,
-              "여기서 만들면 실도면을 여는 순간 앱이 멈춘다(엔진 디버깅 1-1과 같은 실수)")
+        // **만드는 시점이 이 절의 핵심이었다.** 예전에는 끝점·교차점을 메인 스레드에서 만들어,
+        // 도면을 열 때 만들면 실도면에서 앱 시작이 멈췄다. 그래서 창에 들어갈 때만 만들었다.
+        // #21(2026-10-15): 점 단위 편집이 모든 레이어의 기본이 되어 도면을 열 때 함께 만든다.
+        // 대신 **앱에서는 백그라운드에서** 만든다(`DerivedGeometry`). 자체점검은 그 자리에서 계산한다.
+        check("문닫기: 도면을 열면 고를 수 있는 점이 이미 준비된다(#21)",
+              !dc.snapPoints.isEmpty && dc.doorSnapPoints.count == dc.snapPoints.count,
+              "점 \(dc.snapPoints.count)개 — 앱에서는 백그라운드에서 계산한다")
         dc.enterDoorClosureScreen()
         let snaps = dc.doorSnapPoints
         check("문닫기: 창에 들어가면 점이 만들어진다", !snaps.isEmpty, "\(snaps.count)개")
@@ -2677,16 +2679,19 @@ enum SelfTest {
         let cp = AppEnvironment()
         cp.document = doc
         cp.selectPropertyType(.opening)
-        check("다각형 작업: opening 레이어는 선분 선택 그대로다", !cp.isPolygonWorkMode,
-              "LineString·Point type은 종전 경로를 유지한다(5-4 1번)")
+        check("다각형 작업: opening 레이어는 점 단위 편집이다", !cp.isPolygonWorkMode && cp.isPointWorkMode,
+              "#21: 선분 단위 작업은 없앴다. LineString은 두 점을 찍는다")
         cp.declareOpeningComplete()
         cp.selectPropertyType(.unit)
-        check("다각형 작업: unit 레이어를 열면 면을 고르는 모드가 된다", cp.isPolygonWorkMode)
-        check("다각형 작업: 레이어를 여는 것이 곧 진입이다",
-              !cp.closedPolygonFaces.isEmpty
+        check("다각형 작업: unit 레이어도 기본은 점 단위다", cp.isPointWorkMode && !cp.isPolygonWorkMode,
+              "#21: 모든 레이어의 기본은 점 단위 편집이다")
+        check("다각형 작업: 면은 층을 불러올 때 이미 찾아 둔다", !cp.closedPolygonFaces.isEmpty,
+              "면 \(cp.closedPolygonFaces.count)개 — 레이어를 열 때 메인 스레드에서 다시 찾지 않는다(#21)")
+        cp.setLayerEditMode(.face)
+        check("다각형 작업: 면 단위로 바꾸면 면을 고르는 모드가 되고 안내가 뜬다",
+              cp.isPolygonWorkMode
               && (cp.closedPolygonNotice?.contains("보조 개체 제외 창") ?? false)
-              && (cp.closedPolygonNotice?.contains(IMDFFeatureType.unit.displayName) ?? false),
-              "면 \(cp.closedPolygonFaces.count)개 — 별도 진입 버튼을 두지 않는다")
+              && (cp.closedPolygonNotice?.contains(IMDFFeatureType.unit.displayName) ?? false))
 
         // 포함 모드: 빈 상태에서 더해 간다.
         check("다각형 작업: 포함 모드는 아무것도 고르지 않은 상태로 시작한다",
@@ -2739,6 +2744,7 @@ enum SelfTest {
         fx.selectPropertyType(.opening)
         fx.declareOpeningComplete()
         fx.selectPropertyType(.fixture)
+        fx.setLayerEditMode(.face)
         fx.selectAllFaces()
         let fxFaceCount = fx.faceSelection.count
         fx.saveSelectedFaces()
@@ -2748,12 +2754,15 @@ enum SelfTest {
               && fxFeatures.allSatisfy { !$0.polygonRings.isEmpty },
               "면 \(fxFaceCount)개 → feature \(fxFeatures.count)개")
 
-        // 진행률 두 막대(5-5).
+        // 진행률 — 점 기준(#21). 다각형 막대(5-5-2)를 점 기준으로 바꿨다.
         let pr = AppEnvironment()
         pr.document = doc
-        check("진행률: 다각형 분모는 도면을 열 때 한 번 센다",
-              pr.totalPolygonCount > 0, "전체 면 \(pr.totalPolygonCount)개")
-        let denominatorBefore = pr.totalPolygonCount
+        check("진행률: 점 분모는 도면을 열 때 센다",
+              pr.totalPointCount > 0 && pr.totalPointCount == pr.snapPoints.count,
+              "전체 점 \(pr.totalPointCount)개")
+        check("진행률: 도면을 막 열면 처리된 점이 0이다",
+              pr.taggedPointCount == 0 && pr.excludedPointCount == 0 && pr.pointProgressFraction == 0)
+        let denominatorBefore = pr.totalPointCount
         pr.selectPropertyType(.opening)
         pr.declareOpeningComplete()
         pr.selectPropertyType(.unit)
@@ -2761,49 +2770,34 @@ enum SelfTest {
             pr.auxiliary.exclude([victim.id])
         }
         check("진행률: 보조 개체를 빼도 분모는 그대로다",
-              pr.totalPolygonCount == denominatorBefore,
+              pr.totalPointCount == denominatorBefore,
               "분모가 조작할 때마다 흔들리면 막대가 이유 없이 늘었다 줄었다 한다")
-        check("진행률: 제외로 사라진 면이 분자에 들어간다",
-              pr.vanishedPolygonCount >= 0
-              && pr.polygonProgressFraction >= pr.taggedPolygonFraction,
-              "사라진 면 \(pr.vanishedPolygonCount)개")
+        check("진행률: 제외로 사라진 점이 분자에 들어간다",
+              pr.excludedPointCount > 0 && pr.pointProgressFraction >= pr.taggedPointFraction,
+              "제외된 점 \(pr.excludedPointCount)개")
+        pr.setLayerEditMode(.face)
         pr.selectAllFaces()
         pr.saveSelectedFaces()
-        check("진행률: 태깅한 면이 분자에 들어간다",
-              pr.taggedPolygonCount > 0 && pr.taggedPolygonFraction > 0,
-              "태깅 \(pr.taggedPolygonCount)개 / 전체 \(pr.totalPolygonCount)개")
-
-        // ✅ 2026-08-30 요청 1-1: 도면을 막 열었을 때 '제외로 사라진 다각형'이 100%로 나오던 것.
-        //
-        // 옛 식은 `totalPolygonCount - closedPolygonFaces.count`였다. 그런데 면 목록은 성능 때문에
-        // **폴리곤 type 레이어를 열 때만** 채운다(도면 적재 시 만들면 실도면에서 앱이 멈춘다).
-        // 그래서 도면을 막 열면 빈 배열이고 `전체 - 0 = 전체`, 즉 '제외로 다 사라졌다'가 되어
-        // 막대가 통째로 주황이 됐다. **'아직 안 셌다'와 '다 사라졌다'가 둘 다 면 0개로 보인 것이다.**
-        let fresh = AppEnvironment()
-        fresh.document = doc
-        check("진행률: 도면을 막 열면 사라진 면이 0이다",
-              fresh.vanishedPolygonCount == 0 && fresh.polygonProgressFraction == 0,
-              "\(fresh.vanishedPolygonCount)/\(fresh.totalPolygonCount)개")
-        fresh.selectPropertyType(.opening)
-        check("진행률: 폴리곤이 아닌 레이어로 옮겨도 100%가 되지 않는다",
-              fresh.closedPolygonFaces.isEmpty && fresh.vanishedPolygonCount == 0,
-              "면 목록이 비워지는 자리다 — 여기서 그 값으로 다시 세면 같은 버그가 돌아온다")
+        check("진행률: 면 단위로 저장해도 점 기준으로 센다",
+              pr.taggedPointCount > 0 && pr.taggedPointFraction > 0,
+              "태깅된 점 \(pr.taggedPointCount)개 / 전체 \(pr.totalPointCount)개")
 
         let vp = AppEnvironment()
         vp.document = doc
         if let victim2 = doc.objects.first {
+            let keyBefore = vp.derivedKey
             vp.enterAuxiliaryScreen()
             vp.auxiliarySelection = [victim2.id]
             vp.markSelectedAsAuxiliary()
             check("진행률: 제외 창 안에서는 셈을 미룬다",
-                  vp.vanishedPolygonCount == 0,
-                  "창이 떠 있는 동안 좌측 사이드바는 보이지 않는다 — 클릭마다 면을 다시 찾을 이유가 없다")
+                  vp.derivedKey == keyBefore && vp.excludedPointCount == 0,
+                  "창이 떠 있는 동안 좌측 사이드바는 보이지 않는다 — 클릭마다 다시 셀 이유가 없다")
             vp.exitAuxiliaryScreen()
-            let remainingFaces = ClosedPolygonFinder.faces(
-                in: vp.faceSources(in: doc, includeAuxiliary: false)).count
-            check("진행률: 창을 닫을 때 사라진 면을 다시 센다",
-                  vp.vanishedPolygonCount == max(0, vp.totalPolygonCount - remainingFaces),
-                  "사라진 면 \(vp.vanishedPolygonCount)개 / 전체 \(vp.totalPolygonCount)개")
+            let expected = try? DerivedGeometry.make(document: doc, key: vp.currentDerivedKey)
+            check("진행률: 창을 닫을 때 제외된 점을 다시 센다",
+                  vp.excludedPointCount == max(0, vp.totalPointCount - (expected?.snapPoints.count ?? -1))
+                  && vp.excludedPointCount > 0,
+                  "제외된 점 \(vp.excludedPointCount)개 / 전체 \(vp.totalPointCount)개")
         }
 
         // 큰 도면에서도 창이 열려야 한다. 자르기가 선분 수의 제곱에 붙어서,
@@ -2823,6 +2817,204 @@ enum SelfTest {
         check("닫힌 다각형: 격자 도면(선 50개·면 576개)에서도 창이 열린다",
               gridElapsed < 3.0 && gridFaces.count == 576,
               String(format: "%.2f초, 면 %d개", gridElapsed, gridFaces.count))
+
+        // MARK: #21 — 격자 자르기와 점 단위 편집 (2026-10-15)
+
+        // 격자 자르기는 모든 쌍 비교와 **같은 결과**를 내야 한다. 비교 상대만 줄였을 뿐이다.
+        var lcg: UInt64 = 0x2026_1015
+        func rnd(_ range: Double) -> Double {
+            lcg = lcg &* 6364136223846793005 &+ 1442695040888963407
+            return Double(lcg >> 11) / Double(1 << 53) * range
+        }
+        var randomWalls: [ClosedPolygonFinder.SourceSegment] = []
+        for _ in 0..<400 {
+            let x = rnd(1000), y = rnd(1000)
+            randomWalls.append(faceEdge(x, y, x + rnd(200) - 100, y + rnd(200) - 100))
+        }
+        randomWalls += gridWalls
+        func pieceKey(_ s: ClosedPolygonFinder.SourceSegment) -> String {
+            String(format: "%.9f,%.9f,%.9f,%.9f", s.segment.start.x, s.segment.start.y, s.segment.end.x, s.segment.end.y)
+        }
+        let byGrid = ClosedPolygonFinder.split(randomWalls).map(pieceKey)
+        let byPairs = ClosedPolygonFinder.splitByAllPairs(randomWalls).map(pieceKey)
+        check("#21 격자 자르기: 모든 쌍 비교와 조각이 같다", byGrid == byPairs,
+              "조각 \(byGrid.count)개 / \(byPairs.count)개 — C5 실도면에서도 136,352개로 같았다")
+
+        // 꼭짓점·교점도 격자로 비교 상대를 좁힌다. 모든 쌍 비교와 **점 목록이 같아야** 한다.
+        let snapGrid = SnapPointExtractor.points(in: doc.objects, segmentation: SegmentationStore())
+        let snapPairs = SnapPointExtractor.pointsByAllPairs(in: doc.objects, segmentation: SegmentationStore())
+        check("#21 격자 교점: 샘플 도면에서 모든 쌍 비교와 같다", snapGrid == snapPairs,
+              "점 \(snapGrid.count)개 / \(snapPairs.count)개")
+        let curveSVG = """
+        <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+        <path d="M 0 0 C 0 100 100 100 100 0" fill="none" stroke="#000"/>
+        <line x1="-10" y1="50" x2="110" y2="50" stroke="#000"/>
+        <line x1="50" y1="-10" x2="50" y2="120" stroke="#000"/>
+        </svg>
+        """
+        if let curveDoc = try? SVGParser.parse(data: Data(curveSVG.utf8), sourceName: "curve.svg") {
+            let cg = SnapPointExtractor.points(in: curveDoc.objects, segmentation: SegmentationStore())
+            let cp = SnapPointExtractor.pointsByAllPairs(in: curveDoc.objects, segmentation: SegmentationStore())
+            let onCurve = cg.filter { $0.kind == .crossing && abs($0.point.y - 50) < 0.5 && $0.point.x < 45 }
+            check("#21 격자 교점: 곡선이 기준점 상자 밖으로 나간 자리의 교차도 찾는다",
+                  cg == cp && !onCurve.isEmpty,
+                  "점 \(cg.count)개 — 곡선 위 교차 \(onCurve.count)개. 개체 상자는 기준점만 담아 예전에는 놓쳤다")
+        } else {
+            check("#21 격자 교점: 곡선 검사 도면을 읽는다", false)
+        }
+
+        // 점 단위 편집 — unit(폴리곤).
+        let pe = AppEnvironment()
+        pe.document = doc
+        pe.selectPropertyType(.opening)
+        pe.declareOpeningComplete()
+        pe.selectPropertyType(.unit)
+        let tol = 0.01
+        let pool = pe.snapPoints.map(\.point)
+        if let a = pool.min(by: { $0.x < $1.x }), let b = pool.max(by: { $0.x < $1.x }),
+           let c = pool.min(by: { $0.y < $1.y }), let d = pool.max(by: { $0.y < $1.y }) {
+            let quad = VertexExtractor.sortAroundCentroid(VertexExtractor.dedup([a, b, c, d], epsilon: 1))
+            for p in quad.dropLast() { pe.handlePointClick(at: p, tolerance: tol, freePoint: false) }
+            check("#21 점 편집: 꼭짓점·교점을 순서대로 찍는다",
+                  pe.pointDraft.points.count == quad.count - 1 && pe.features.features(ofType: .unit).isEmpty,
+                  "미완성 도형은 feature가 되지 않는다")
+            pe.undo()
+            check("#21 점 편집: 점 추가는 cmd+z로 되돌아간다", pe.pointDraft.points.count == quad.count - 2)
+            pe.redo()
+            pe.handlePointClick(at: quad.last!, tolerance: tol, freePoint: false)
+            pe.handlePointClick(at: quad[0], tolerance: tol, freePoint: false)
+            let units = pe.features.features(ofType: .unit)
+            check("#21 점 편집: 시작점을 다시 누르면 닫히고 저장된다",
+                  units.count == 1 && pe.pointDraft.isEmpty && units[0].polygonRings.first?.count == quad.count)
+            if let u = units.first {
+                check("#21 점 편집: DraftShape는 원본 개체와 독립이다",
+                      u.memberIDs.isEmpty && u.isPointDrawn && pe.ownership.claimedCount == 0)
+                check("#21 점 편집: 좌표는 찍은 점이 정본이다",
+                      VertexExtractor.vertices(for: u, document: doc, segmentation: pe.segmentation, kind: .polygon)
+                          == u.polygonRings[0])
+                check("#21 점 편집: 점으로 닫은 도형은 링 열림 경고가 없다", pe.ringClosure(of: u) == nil)
+                check("#21 진행률: 점으로 그린 도형의 꼭짓점이 태깅된 점이 된다",
+                      pe.taggedPointCount == quad.count, "\(pe.taggedPointCount)개")
+
+                // 꼭짓점 이동·고정.
+                pe.isVertexMoveEnabled = false
+                pe.beginVertexDrag(.feature(u.id, ring: 0, index: 0), at: quad[0])
+                check("#21 꼭짓점: 고정 모드에서는 끌 수 없다", pe.vertexDrag == nil)
+                pe.isVertexMoveEnabled = true
+                check("#21 꼭짓점: 이동 모드에서 저장된 꼭짓점을 잡는다",
+                      pe.vertexHit(at: quad[0], tolerance: tol) == .feature(u.id, ring: 0, index: 0))
+                let moved = LocalPoint(quad[0].x - 0.5, quad[0].y)
+                pe.beginVertexDrag(.feature(u.id, ring: 0, index: 0), at: quad[0])
+                pe.updateVertexDrag(to: moved, tolerance: 0.0001, freePoint: true)
+                pe.endVertexDrag()
+                check("#21 꼭짓점: 끌어 놓으면 좌표가 바뀐다",
+                      pe.features.feature(u.id)?.polygonRings[0][0] == moved)
+                pe.undo()
+                check("#21 꼭짓점: 이동은 cmd+z로 되돌아간다",
+                      pe.features.feature(u.id)?.polygonRings[0][0] == quad[0])
+                pe.isVertexMoveEnabled = false
+            }
+        }
+
+        // 꼭짓점을 옮겨 도형이 꼬이면 반영하지 않는다. 도면과 겹치지 않는 먼 자리에 새 점(⌥)으로 정사각형을 그린다.
+        let far = 1_000_000.0
+        let drawnSquare = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)].map { LocalPoint(far + $0.0, far + $0.1) }
+        for p in drawnSquare { pe.handlePointClick(at: p, tolerance: tol, freePoint: true) }
+        pe.handlePointClick(at: drawnSquare[0], tolerance: tol, freePoint: true)
+        if let sq = pe.features.features(ofType: .unit).first(where: { $0.polygonRings.first == drawnSquare }) {
+            pe.isVertexMoveEnabled = true
+            pe.beginVertexDrag(.feature(sq.id, ring: 0, index: 0), at: drawnSquare[0])
+            pe.updateVertexDrag(to: LocalPoint(far + 150, far + 50), tolerance: tol, freePoint: true)
+            pe.endVertexDrag()
+            check("#21 꼭짓점: 옮겨서 도형이 꼬이면 반영하지 않는다",
+                  pe.features.feature(sq.id)?.polygonRings.first == drawnSquare)
+            pe.isVertexMoveEnabled = false
+        } else {
+            check("#21 꼭짓점: 검사용 정사각형을 새 점으로 그린다", false)
+        }
+
+        // 자기 교차(나비넥타이) 도형은 확정하지 않는다.
+        for (x, y) in [(0.0, 0.0), (100.0, 100.0), (100.0, 0.0), (0.0, 100.0)] {
+            pe.handlePointClick(at: LocalPoint(far + x, far + y), tolerance: tol, freePoint: true)
+        }
+        let unitCountBefore = pe.features.features(ofType: .unit).count
+        pe.closePointDraft()
+        check("#21 점 편집: 자기 교차 도형은 확정하지 않는다",
+              pe.features.features(ofType: .unit).count == unitCountBefore && pe.pointDraft.points.count == 4,
+              "변끼리 X자로 가로지르면 경고만 띄우고 작성 중 상태를 유지한다")
+        check("#21 점 편집: 꼭짓점·교점이 아닌 자리는 ⌥ 없이 찍히지 않는다", { () -> Bool in
+            let before = pe.pointDraft.points.count
+            pe.handlePointClick(at: LocalPoint(far + 500, far + 500), tolerance: tol, freePoint: false)
+            return pe.pointDraft.points.count == before
+        }())
+        let keys = PointKeyMonitor(env: pe)
+        check("#21 키보드: Delete는 마지막 점을 지운다",
+              keys.handle(keyCode: 51) && pe.pointDraft.points.count == 3)
+        check("#21 키보드: 글자 입력 중에는 Delete를 가로채지 않는다",
+              !keys.handle(keyCode: 51, textIsEditing: true) && pe.pointDraft.points.count == 3)
+        check("#21 키보드: ESC는 작성 중인 도형을 취소한다",
+              keys.handle(keyCode: 53) && pe.pointDraft.isEmpty)
+        pe.undo()
+        check("#21 점 편집: ESC 취소도 cmd+z로 되살아난다", pe.pointDraft.points.count == 3)
+
+        // opening — 두 점 선분(#37).
+        let ow = AppEnvironment()
+        ow.document = doc
+        ow.selectPropertyType(.opening)
+        if ow.snapPoints.count >= 2 {
+            let p0 = ow.snapPoints[0].point
+            let p1 = ow.snapPoints.max(by: { $0.point.distance(to: p0) < $1.point.distance(to: p0) })!.point
+            ow.handlePointClick(at: p0, tolerance: tol, freePoint: false)
+            check("#21 opening: 첫 점만으로는 저장하지 않는다",
+                  ow.features.features(ofType: .opening).isEmpty && ow.pointDraft.points.count == 1)
+            ow.handlePointClick(at: p1, tolerance: tol, freePoint: false)
+            let opening = ow.features.features(ofType: .opening).first
+            check("#21 opening: 두 점을 찍으면 바로 선으로 저장된다",
+                  opening?.drawnVertices == [p0, p1] && ow.pointDraft.isEmpty && opening?.memberIDs.isEmpty == true)
+            if let opening {
+                check("#21 opening: 좌표는 찍은 두 점이다",
+                      VertexExtractor.vertices(for: opening, document: doc, segmentation: ow.segmentation,
+                                               kind: .lineString) == [p0, p1])
+                check("#21 opening: 저장한 선이 면을 닫는 선분이 된다",
+                      ow.currentDerivedKey.closingSegments.contains(LineSegment(start: p0, end: p1)))
+            }
+        }
+
+        // amenity — 점 하나.
+        ow.declareOpeningComplete()
+        ow.selectPropertyType(.amenity)
+        if let p = ow.snapPoints.first?.point {
+            ow.handlePointClick(at: p, tolerance: tol, freePoint: false)
+            let amenity = ow.features.features(ofType: .amenity).first
+            check("#21 amenity: 점 하나를 찍으면 바로 저장된다", amenity?.drawnVertices == [p])
+            if let amenity {
+                check("#21 amenity: Point 좌표는 찍은 점이다",
+                      VertexExtractor.vertices(for: amenity, document: doc, segmentation: ow.segmentation,
+                                               kind: .point) == [p])
+            }
+        }
+
+        // footprint는 면 단위 대상이 아니다.
+        ow.selectPropertyType(.footprint)
+        ow.setLayerEditMode(.face)
+        check("#21 footprint: 면 단위 선택을 쓸 수 없다",
+              !IMDFFeatureType.footprint.allowsFaceSelection && ow.layerEditMode == .point
+              && !ow.isPolygonWorkMode && ow.isPointWorkMode)
+        check("#21 면 단위: polygon·multipolygon type만 허용한다",
+              IMDFFeatureType.unit.allowsFaceSelection && IMDFFeatureType.fixture.allowsFaceSelection
+              && !IMDFFeatureType.opening.allowsFaceSelection && !IMDFFeatureType.amenity.allowsFaceSelection)
+
+        // 저장 형식 — 점 좌표는 선택적 필드라 이전 파일도 읽힌다.
+        if let saved = ow.features.features(ofType: .amenity).first,
+           let data = try? JSONEncoder().encode(saved),
+           var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            let round = try? JSONDecoder().decode(FeatureGroup.self, from: data)
+            check("#21 저장: 점으로 그린 좌표가 왕복 보존된다", round?.drawnVertices == saved.drawnVertices)
+            json.removeValue(forKey: "drawnVertices")
+            let legacy = (try? JSONSerialization.data(withJSONObject: json))
+                .flatMap { try? JSONDecoder().decode(FeatureGroup.self, from: $0) }
+            check("#21 저장: 이 필드가 없는 이전 파일도 읽힌다", legacy != nil && legacy?.drawnVertices == nil)
+        }
 
         // MARK: 성능 최적화 (07) 성능 최적화 제안.md, 2026-08-26)
         //

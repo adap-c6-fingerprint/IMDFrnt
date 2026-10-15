@@ -8,13 +8,26 @@ struct LevelDrawingInput: Equatable, Sendable {
     let sourceName: String
     var segmentation = SegmentationStore()
     var excluded: Set<VectorObjectID> = []
-    var doors: [TemporaryDoor] = []
+    /// 면을 닫는 선분(임시 문·저장된 opening의 선, #21).
+    var closingSegments: [LineSegment] = []
 
     init(_ level: ProjectLevel) {
         levelID = level.id; svg = level.info.svg; sourceName = level.info.sourceName
-        segmentation = level.editing.segmentation
-        excluded = level.editing.auxiliary.excluded
-        doors = level.editing.doorClosures.doors
+        let key = level.editing.derivedKey
+        segmentation = key.segmentation
+        excluded = key.excluded
+        closingSegments = key.closingSegments
+    }
+
+    var derivedKey: DerivedGeometryKey {
+        DerivedGeometryKey(segmentation: segmentation, excluded: excluded, closingSegments: closingSegments)
+    }
+
+    /// 파싱·색인 결과를 다시 써도 되는가. **제외 개체·닫는 선분은 면과 점에만 영향을 준다** —
+    /// 이 둘이 바뀌었다고 SVG 파싱부터 다시 하지 않는다(#21, 캐시 열쇠 분리).
+    func sharesParse(with other: LevelDrawingInput) -> Bool {
+        levelID == other.levelID && svg == other.svg && sourceName == other.sourceName
+            && segmentation == other.segmentation
     }
 
     init(levelID: UUID, svg: String, sourceName: String) {
@@ -30,8 +43,8 @@ struct PreparedLevelDrawing: Sendable {
     let spatialIndex: SpatialIndex
     let twinKeys: [VectorObjectID: String]
     let twinGroups: [PreparedTwinGroup]
-    let totalPolygonCount: Int
-    let vanishedPolygonCount: Int
+    /// 면·점(#21). 층을 불러올 때 백그라운드에서 함께 만들어, 레이어를 열 때 다시 계산하지 않는다.
+    let derived: DerivedGeometry
     let preparationSeconds: Double
 
     struct PreparedTwinGroup: Sendable {
@@ -41,17 +54,24 @@ struct PreparedLevelDrawing: Sendable {
     }
 
     /// The same pipeline serves file validation and background UI loading.
-    static func make(_ input: LevelDrawingInput) throws -> Self {
+    /// `base`가 같은 도면·선분화의 결과이면 파싱·색인을 다시 하지 않고 면·점만 새로 만든다.
+    static func make(_ input: LevelDrawingInput, reusing base: PreparedLevelDrawing? = nil) throws -> Self {
         let start = ContinuousClock.now
         try Task.checkCancellation()
+        if let base, base.input.sharesParse(with: input) {
+            let derived = try DerivedGeometry.make(document: base.document, key: input.derivedKey)
+            let duration = start.duration(to: .now).components
+            return Self(input: input, document: base.document, renderEntries: base.renderEntries,
+                        attributeIndex: base.attributeIndex, spatialIndex: base.spatialIndex,
+                        twinKeys: base.twinKeys, twinGroups: base.twinGroups, derived: derived,
+                        preparationSeconds: Double(duration.seconds) + Double(duration.attoseconds) / 1e18)
+        }
         let doc = try input.svg.isEmpty ? nil : SVGParser.parse(data: Data(input.svg.utf8), sourceName: input.sourceName)
         let objects = doc?.objects ?? []
         var entries: [VectorObjectID: ObjectRenderCache] = [:]
         var attributes: [String: [VectorObjectID]] = [:]
         var keys: [VectorObjectID: String] = [:]
         var buckets: [String: [VectorObject]] = [:]
-        var sources: [ClosedPolygonFinder.SourceSegment] = []
-        var remaining: [ClosedPolygonFinder.SourceSegment] = []
         for object in objects {
             try Task.checkCancellation()
             let geometry = input.segmentation.effectiveGeometry(for: object.id, fallback: object.geometry)
@@ -60,17 +80,9 @@ struct PreparedLevelDrawing: Sendable {
             attributes[object.style.attributeKey, default: []].append(object.id)
             let key = object.twinKey
             keys[object.id] = key; buckets[key, default: []].append(object)
-            let pieces = segments.map { ClosedPolygonFinder.SourceSegment(segment: $0, objectID: object.id) }
-            sources.append(contentsOf: pieces)
-            if !input.excluded.contains(object.id) { remaining.append(contentsOf: pieces) }
         }
-        let doors = input.doors.map { ClosedPolygonFinder.SourceSegment(segment: LineSegment(start: $0.start, end: $0.end), objectID: nil) }
-        sources.append(contentsOf: doors); remaining.append(contentsOf: doors)
         try Task.checkCancellation()
-        let total = ClosedPolygonFinder.faces(in: sources).count
-        try Task.checkCancellation()
-        let vanished = input.excluded.isEmpty ? 0 : max(0, total - ClosedPolygonFinder.faces(in: remaining).count)
-        try Task.checkCancellation()
+        let derived = try DerivedGeometry.make(document: doc, key: input.derivedKey)
         let groups = buckets.compactMap { key, objects -> PreparedTwinGroup? in
             guard let sample = objects.first else { return nil }
             return PreparedTwinGroup(key: key, memberIDs: objects.map(\.id), sample: sample)
@@ -78,7 +90,7 @@ struct PreparedLevelDrawing: Sendable {
         let duration = start.duration(to: .now).components
         return Self(input: input, document: doc, renderEntries: entries, attributeIndex: attributes,
             spatialIndex: SpatialIndex(objects: objects, canvasSize: doc?.canvasSize ?? .zero),
-            twinKeys: keys, twinGroups: groups, totalPolygonCount: total, vanishedPolygonCount: vanished,
+            twinKeys: keys, twinGroups: groups, derived: derived,
             preparationSeconds: Double(duration.seconds) + Double(duration.attoseconds) / 1e18)
     }
 }
@@ -143,8 +155,10 @@ final class LevelDrawingCache {
                 pending.removeValue(forKey: pendingOrder.removeFirst())?.task.cancel()
             }
             preparationCount += 1
+            let base = entries[input.levelID].flatMap { $0.input.sharesParse(with: input) ? $0 : nil }
+            // 같은 층의 예전 결과가 파싱을 공유하면 면·점만 새로 만든다(#21, 캐시 열쇠 분리).
             work = Pending(token: UUID(), generation: generation, input: input, task: Task.detached(priority: .userInitiated) {
-                try PreparedLevelDrawing.make(input)
+                try PreparedLevelDrawing.make(input, reusing: base)
             })
             pending[input.levelID] = work
             pendingOrder.append(input.levelID)

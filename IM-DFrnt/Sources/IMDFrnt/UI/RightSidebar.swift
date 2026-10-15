@@ -100,7 +100,11 @@ struct RightSidebar: View {
                             .font(.caption2)
                         Text(f.serialNumber).font(.callout.weight(.medium).monospaced())
                             .lineLimit(1).truncationMode(.middle)
-                        Text("개체 \(f.memberIDs.count)").font(.caption).foregroundStyle(.secondary)
+                        Text(f.isPointDrawn
+                             ? "꼭짓점 \((f.drawnVertices?.count ?? 0) + f.polygonRings.reduce(0) { $0 + $1.count })"
+                             : "개체 \(f.memberIDs.count)")
+                            .font(.caption).foregroundStyle(.secondary)
+                        // #21: 점으로 그린 도형은 원본 개체가 없다. '개체 0'은 비어 있는 것처럼 읽힌다.
                             .fixedSize()
                     }
                     .contentShape(Rectangle())

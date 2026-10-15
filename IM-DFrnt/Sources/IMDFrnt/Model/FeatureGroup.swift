@@ -40,6 +40,16 @@ struct FeatureGroup: Identifiable, Hashable, Codable {
     var polygonFaceIDs: Set<String> = []
     /// 그 면들의 신원. 같은 면을 두 번 저장하는 것을 막는 데만 쓴다.
 
+    var drawnVertices: [LocalPoint]?
+    /// 점 단위 편집으로 그린 Point·LineString의 좌표(#21). Point는 하나, LineString은 둘 이상이다.
+    /// 폴리곤은 `polygonRings`에 담는다 — 링 정본이 이미 거기 있어서 내보내기 경로를 하나로 유지한다.
+    ///
+    /// **선택적(Optional)인 이유**는 이전에 저장한 프로젝트 파일에 이 키가 없기 때문이다.
+    /// 기본값을 둔 비선택 필드는 키가 없으면 해독에 실패한다.
+
+    /// 원본 SVG 개체와 무관하게 점으로 그린 feature인가.
+    var isPointDrawn: Bool { memberIDs.isEmpty && (drawnVertices != nil || (!polygonRings.isEmpty && polygonFaceIDs.isEmpty)) }
+
     init(id: FeatureGroupID = UUID(),
          featureType: IMDFFeatureType,
          serialNumber: String,

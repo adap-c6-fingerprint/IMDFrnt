@@ -43,6 +43,9 @@ struct CanvasView: View {
     @State private var routingDragCommandHeld = false
     @State private var routingDragConnectCandidate: UUID?
     @State private var routingConnectionStarted = false
+    /// 꼭짓점을 끄는 드래그인가(#21). 시작할 때 정하고 끝까지 유지한다.
+    @State private var dragIsVertex = false
+    @State private var pointKeys: PointKeyMonitor?
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -89,6 +92,9 @@ struct CanvasView: View {
                         PolygonToolbar()
                         // 폴리곤 type에서는 선택 대상이 개체가 아니라 면이라 상단바가 다르다.
                         // **선택이 없어도 항상 뜬다** — 이 모드에서는 무엇을 더 해야 하는지가 곧 안내다.
+                    } else if env.isPointWorkMode {
+                        PointToolbar()
+                        // #21: property type 레이어의 기본 작업은 점 단위다.
                     } else if !env.selection.isEmpty {
                         SelectionToolbar()
                     }
@@ -116,9 +122,14 @@ struct CanvasView: View {
                 }
             )
         }
-        .onAppear { installZoomMonitor() }
+        .onAppear {
+            installZoomMonitor()
+            if pointKeys == nil { pointKeys = PointKeyMonitor(env: env) }
+            pointKeys?.start()
+        }
         .onDisappear {
             zoomMonitor.stop()
+            pointKeys?.stop()
             env.routingConnectionDrag = nil
         }
     }
@@ -331,6 +342,8 @@ struct CanvasView: View {
                 }
             }
 
+            if env.isPointWorkMode { drawPointWork(in: ctx, scale: s, visible: visible) }
+
             // 겹침 윤곽 — 개체를 옮겨보는 대신 겹치는 곳을 제자리에 표시한다(명세 2-3 대체).
             let overlap = moves.isMoving ? OverlapDetector.Result() : env.overlapHighlight
             // 겹침은 원본 좌표로 계산하므로 이동 중에는 어긋난 자리를 가리킨다(A12).
@@ -392,6 +405,76 @@ struct CanvasView: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    /// 점 단위 편집(#21). **저장된 도형 → 꼭짓점·교점 → 작성 중인 도형 순서로 그린다.**
+    /// 작성 중인 것이 맨 위에 와야 지금 찍은 점이 다른 표시에 가려지지 않는다.
+    private func drawPointWork(in ctx: GraphicsContext, scale s: CGFloat, visible: CGRect) {
+        guard let type = env.layers.activePropertyType else { return }
+        let saved = ClosedPolygonAppearance.savedFill
+        let handle = CanvasZoom.screenLength(3.5, at: s)
+        for f in env.features.features(ofType: type) {
+            for r in f.polygonRings.indices {
+                let ring = env.previewRing(of: f, ring: r)
+                guard ring.count >= 3 else { continue }
+                var path = Path(); path.addLines(ring.map(\.cg)); path.closeSubpath()
+                guard path.boundingRect.intersects(visible) else { continue }
+                ctx.fill(path, with: .color(saved.opacity(ClosedPolygonAppearance.savedFillOpacity)))
+                ctx.stroke(path, with: .color(saved), lineWidth: CanvasZoom.screenLength(1.5, at: s))
+                if env.isVertexMoveEnabled, f.isPointDrawn {
+                    for p in ring {
+                        ctx.stroke(Path(CGRect(x: p.x - handle, y: p.y - handle, width: handle * 2, height: handle * 2)),
+                                   with: .color(saved), lineWidth: CanvasZoom.screenLength(1, at: s))
+                    }
+                }
+            }
+            let v = env.previewDrawnVertices(of: f)
+            if v.count >= 2 {
+                var line = Path(); line.addLines(v.map(\.cg))
+                ctx.stroke(line, with: .color(saved), lineWidth: CanvasZoom.screenLength(3, at: s))
+            }
+            for p in v {
+                let r = CanvasZoom.screenLength(v.count == 1 ? 5 : 3, at: s)
+                ctx.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(saved))
+            }
+        }
+
+        // 꼭짓점·교점. 화면에 너무 많으면 그리지 않는다 — 수만 개를 그리면 화면이 점으로 덮여
+        // 도면이 안 보이고 그리기도 느려진다. 확대하면 나타난다.
+        let visibleIndices = env.snapPointIndex.indices(in: visible)
+        if visibleIndices.count <= 4000 {
+            let r = CanvasZoom.screenLength(2.2, at: s)
+            for i in visibleIndices {
+                let sp = env.snapPointIndex.points[i]
+                let rect = CGRect(x: sp.point.x - r, y: sp.point.y - r, width: r * 2, height: r * 2)
+                let shape = sp.kind == .crossing ? Path(rect) : Path(ellipseIn: rect)
+                ctx.stroke(shape, with: .color(ClosedPolygonAppearance.vertexFill),
+                           lineWidth: CanvasZoom.screenLength(1, at: s))
+            }
+        }
+
+        let draft = env.previewDraftPoints
+        guard !draft.isEmpty else { return }
+        let accent = env.canvasBackground.selection
+        if draft.count >= 2 {
+            var line = Path(); line.addLines(draft.map(\.cg))
+            ctx.stroke(line, with: .color(accent),
+                       style: StrokeStyle(lineWidth: CanvasZoom.screenLength(2, at: s), lineJoin: .round))
+        }
+        if draft.count >= 3, env.activeGeometryKind.isAreal {
+            var closing = Path(); closing.move(to: draft.last!.cg); closing.addLine(to: draft[0].cg)
+            ctx.stroke(closing, with: .color(accent.opacity(0.5)),
+                       style: StrokeStyle(lineWidth: CanvasZoom.screenLength(1, at: s),
+                                          dash: [4, 3].map { CanvasZoom.screenLength($0, at: s) }))
+            // 닫으면 생길 변을 점선으로 미리 보여준다.
+        }
+        for (i, p) in draft.enumerated() {
+            let r = CanvasZoom.screenLength(i == 0 ? 6 : 4, at: s)
+            let dot = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
+            ctx.fill(dot, with: .color(i == 0 ? env.canvasBackground.fill : accent))
+            ctx.stroke(dot, with: .color(accent), lineWidth: CanvasZoom.screenLength(i == 0 ? 2.5 : 1, at: s))
+            // 시작점은 속이 빈 큰 원(◎)이다. 다시 누르면 닫힌다는 것을 모양으로 보여준다.
+        }
     }
 
     private func drawCross(_ ctx: GraphicsContext, at p: LocalPoint, scale s: CGFloat, color: Color) {
@@ -558,7 +641,16 @@ struct CanvasView: View {
                 if dragStart == nil {
                     dragStart = offset
                     lastDrag = .zero
-                    dragIsMarquee = !env.showRoutingScreen && env.isSelectModeActive
+                    dragIsMarquee = !env.showRoutingScreen && env.isSelectModeActive && !env.isPointWorkMode
+                    // 점 단위 편집에는 개체를 고르는 사각형 선택이 없다(#21, 선분 단위 작업 폐지).
+                    dragIsVertex = false
+                    if env.isPointWorkMode, env.isVertexMoveEnabled,
+                       let target = env.vertexHit(at: toLocal(value.startLocation),
+                                                  tolerance: 6 / Double(effectiveScale)) {
+                        dragIsVertex = true
+                        dragIsMarquee = false
+                        env.beginVertexDrag(target, at: toLocal(value.startLocation))
+                    }
                     if env.showRoutingScreen {
                         NSApp.keyWindow?.makeFirstResponder(nil)
                         let hit = env.nearestRoutingNode(to: toLocal(value.startLocation),
@@ -578,7 +670,7 @@ struct CanvasView: View {
                     }
                     // 드래그 도중 fn+shift+z를 놓으면 팬으로 돌변해 화면이 튄다.
                     // 시작 시점에 무엇을 하는 드래그인지 확정하고 끝까지 유지한다.
-                    if !env.showRoutingScreen, dragIsMarquee == false, !env.isPolygonWorkMode, env.isMoveEnabled {
+                    if !env.showRoutingScreen, dragIsMarquee == false, !dragIsVertex, !env.isPolygonWorkMode, env.isMoveEnabled {
                         // fn+shift+z가 없을 때만 이동 후보다 — 사각형 선택이 최우선이다.
                         // '개체 이동' 토글이 꺼져 있으면 여기를 아예 건너뛴다(2026-08-29 사노 요청).
                         // `moveBase`가 nil로 남으므로 아래 분기에서 화면 팬이 된다 — 드래그가
@@ -595,7 +687,10 @@ struct CanvasView: View {
 
                 // Command is a click shortcut, so a Command-drag neither moves pins nor pans the map.
                 if routingDragCommandHeld && !routingDragIsConnection { return }
-                if routingDragIsConnection {
+                if dragIsVertex {
+                    env.updateVertexDrag(to: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
+                                         freePoint: NSEvent.modifierFlags.contains(.option))
+                } else if routingDragIsConnection {
                     let moved = abs(value.translation.width) + abs(value.translation.height)
                     if !routingConnectionStarted, let from = routingDragConnectCandidate,
                        routingDragOptionHeld || moved >= MarqueeRect.dragThreshold {
@@ -638,12 +733,26 @@ struct CanvasView: View {
                     } else if moved < MarqueeRect.dragThreshold {
                         env.handleRoutingClick(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale))
                     }
+                } else if dragIsVertex {
+                    if moved >= MarqueeRect.dragThreshold {
+                        env.endVertexDrag()
+                    } else {
+                        env.vertexDrag = nil
+                        env.handlePointClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
+                                             freePoint: NSEvent.modifierFlags.contains(.option))
+                        // 꼭짓점 위를 끌지 않고 눌렀으면 클릭이다(시작점으로 닫기·점 지우기).
+                    }
                 } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
                     selectByMarquee(m)
                 } else if moveBase == nil, moved < MarqueeRect.dragThreshold {
                     if env.isPolygonWorkMode {
                         env.handleFaceClick(at: toLocal(value.location))
                         // 폴리곤 type에서는 클릭이 개체가 아니라 **면**을 고른다(신기능 5-4).
+                    } else if env.isPointWorkMode, !env.mode.blocksSelection {
+                        env.handlePointClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
+                                             freePoint: NSEvent.modifierFlags.contains(.option))
+                        // #21: property type 레이어의 클릭은 개체가 아니라 **점**을 찍는다.
+                        // display point·Anchor 찍기 중이면 아래 종전 경로가 받는다.
                     } else {
                         env.handleCanvasClick(at: toLocal(value.location),
                                               tolerance: 6 / Double(effectiveScale))
@@ -651,6 +760,7 @@ struct CanvasView: View {
                 }
                 marquee = nil
                 dragIsMarquee = nil
+                dragIsVertex = false
                 if moveBase != nil { env.endMove() }
                 moveBase = nil
                 routingDragNode = nil
