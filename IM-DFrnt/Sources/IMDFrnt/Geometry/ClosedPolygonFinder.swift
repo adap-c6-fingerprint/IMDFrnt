@@ -18,7 +18,7 @@ import Foundation
 enum ClosedPolygonFinder {
 
     /// 찾아낸 면 하나.
-    struct Face: Identifiable, Hashable {
+    struct Face: Identifiable, Hashable, Sendable {
         let id: String
         /// 면의 경계. 첫 점과 끝 점은 같지 않다(GeoJSON 링으로 쓸 때 닫아 준다).
         let ring: [LocalPoint]
@@ -47,7 +47,7 @@ enum ClosedPolygonFinder {
     }
 
     /// 경계에 쓰이는 선분 하나. 어느 개체에서 왔는지를 함께 들고 다닌다.
-    struct SourceSegment {
+    struct SourceSegment: Sendable {
         let segment: LineSegment
         let objectID: VectorObjectID?
         // `nil`이면 임시 문처럼 도면에 개체가 없는 선분이다.
@@ -220,22 +220,80 @@ enum ClosedPolygonFinder {
     static func split(_ sources: [SourceSegment]) -> [SourceSegment] {
         let boxes = sources.map { box(of: $0.segment) }
         var cuts: [[Double]] = Array(repeating: [], count: sources.count)
+        guard sources.count > 1 else { return pieces(sources, cuts: cuts) }
+
+        // **격자로 비교 상대를 좁힌다(#21, 2026-10-15).** 예전에는 모든 선분 쌍을 돌며 상자부터
+        // 비교했는데, 상자 비교 자체가 선분 수의 제곱만큼 돌았다. C5 도면(선분 74,916개)에서
+        // 약 28억 번, 4.96초였다. 이제는 상자가 걸친 칸에 함께 든 선분끼리만 비교한다.
+        // 상자가 겹치는 두 선분은 반드시 같은 칸을 하나 이상 공유하므로 결과는 예전과 같다.
+        var bounds = boxes[0]
+        for b in boxes.dropFirst() { bounds = bounds.union(b) }
+        let axisLimit = 4096.0
+        // 칸 수를 제한한다. 개체가 하나 멀리 떨어져 있으면 도면 범위가 커져 칸이 폭증한다.
+        let cellSize = max(sqrt(Double(bounds.width * bounds.height) / Double(sources.count)),
+                           Double(max(bounds.width, bounds.height)) / axisLimit,
+                           mergeTolerance * 4)
+        let columns = Int(Double(bounds.width) / cellSize) + 1
+        func cellRange(_ b: CGRect) -> (x: ClosedRange<Int>, y: ClosedRange<Int>) {
+            let x0 = Int((Double(b.minX - bounds.minX)) / cellSize)
+            let x1 = Int((Double(b.maxX - bounds.minX)) / cellSize)
+            let y0 = Int((Double(b.minY - bounds.minY)) / cellSize)
+            let y1 = Int((Double(b.maxY - bounds.minY)) / cellSize)
+            return (x0...max(x0, x1), y0...max(y0, y1))
+        }
+
+        var cells: [Int: [Int32]] = [:]
+        for (i, b) in boxes.enumerated() {
+            let r = cellRange(b)
+            for y in r.y { for x in r.x { cells[y * columns + x, default: []].append(Int32(i)) } }
+        }
 
         let eps = 1e-9
+        var lastTested = [Int](repeating: -1, count: sources.count)
+        // 같은 상대가 여러 칸에 함께 들어 있으면 한 번만 비교한다.
         for i in sources.indices {
-            if Task.isCancelled { return [] }
+            if i % 1024 == 0, Task.isCancelled { return [] }
+            let r = cellRange(boxes[i])
+            for y in r.y {
+                for x in r.x {
+                    guard let members = cells[y * columns + x] else { continue }
+                    for m in members {
+                        let j = Int(m)
+                        guard j > i, lastTested[j] != i else { continue }
+                        lastTested[j] = i
+                        guard boxes[i].intersects(boxes[j]) else { continue }
+                        guard let hit = crossing(sources[i].segment, sources[j].segment) else { continue }
+                        if hit.t > eps, hit.t < 1 - eps { cuts[i].append(hit.t) }
+                        if hit.u > eps, hit.u < 1 - eps { cuts[j].append(hit.u) }
+                        // **한쪽 끝점이 다른 선의 중간에 닿는 T자 접합도 자른다.**
+                        // 방을 가로지르는 벽은 양 끝이 바깥 벽의 중간에 붙는 형태라, 이걸 안 자르면
+                        // 바깥 벽에 마디가 생기지 않아 두 방이 한 덩어리로 남는다.
+                        // 양쪽 모두 끝점에서 만나면 자를 것이 없다 — 그때는 두 조건 모두 거짓이다.
+                    }
+                }
+            }
+        }
+        return pieces(sources, cuts: cuts)
+    }
+
+    /// 격자 도입 전의 모든 쌍 비교. **자체점검에서 격자 결과와 같은지 대조하는 데만 쓴다.**
+    static func splitByAllPairs(_ sources: [SourceSegment]) -> [SourceSegment] {
+        let boxes = sources.map { box(of: $0.segment) }
+        var cuts: [[Double]] = Array(repeating: [], count: sources.count)
+        let eps = 1e-9
+        for i in sources.indices {
             for j in (i + 1)..<sources.count {
                 guard boxes[i].intersects(boxes[j]) else { continue }
                 guard let hit = crossing(sources[i].segment, sources[j].segment) else { continue }
                 if hit.t > eps, hit.t < 1 - eps { cuts[i].append(hit.t) }
                 if hit.u > eps, hit.u < 1 - eps { cuts[j].append(hit.u) }
-                // **한쪽 끝점이 다른 선의 중간에 닿는 T자 접합도 자른다.**
-                // 방을 가로지르는 벽은 양 끝이 바깥 벽의 중간에 붙는 형태라, 이걸 안 자르면
-                // 바깥 벽에 마디가 생기지 않아 두 방이 한 덩어리로 남는다.
-                // 양쪽 모두 끝점에서 만나면 자를 것이 없다 — 그때는 두 조건 모두 거짓이다.
             }
         }
+        return pieces(sources, cuts: cuts)
+    }
 
+    /// 자를 자리(`cuts`)를 따라 선분을 조각낸다.
+    private static func pieces(_ sources: [SourceSegment], cuts: [[Double]]) -> [SourceSegment] {
         var out: [SourceSegment] = []
         for (i, src) in sources.enumerated() {
             let ts = ([0, 1] + cuts[i]).filter { $0 >= 0 && $0 <= 1 }

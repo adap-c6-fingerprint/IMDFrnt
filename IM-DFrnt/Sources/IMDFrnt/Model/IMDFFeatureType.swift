@@ -39,6 +39,10 @@ enum IMDFFeatureType: String, CaseIterable, Identifiable, Codable, Hashable {
         requiredGeometry == .polygon || requiredGeometry == .multiPolygon
     }
 
+    /// 면 단위 선택을 쓸 수 있는가(#21). polygon·multipolygon type만 되고 footprint는 뺀다 —
+    /// 건물 외곽은 도면의 면 하나로 떨어지지 않는 경우가 많아 점으로 직접 그린다(10번 지침).
+    var allowsFaceSelection: Bool { requiresClosedRing && self != .footprint }
+
     var canBorrowOpenings: Bool {
         switch requiredGeometry {
         case .polygon, .multiPolygon: return true

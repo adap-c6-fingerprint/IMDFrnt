@@ -203,9 +203,14 @@ final class AppEnvironment: ObservableObject {
     }
     @Published var layers = LayerStore() { didSet { invalidateRenderStates() } }
     @Published var features = FeatureStore() {
-        didSet { invalidateRenderStates(); refreshOverlap(); refreshOpenRingGaps() }
+        didSet {
+            invalidateRenderStates(); refreshOverlap(); refreshOpenRingGaps()
+            scheduleDerivedGeometryRefresh()
+            // 저장된 opening의 선이 면을 닫는 선분이라 면이 달라질 수 있다(#21). 열쇠가 같으면 바로 돌아온다.
+            refreshPointProgress()
+        }
     }
-    @Published var ownership = OwnershipRegistry() { didSet { invalidateRenderStates() } }
+    @Published var ownership = OwnershipRegistry() { didSet { invalidateRenderStates(); refreshPointProgress() } }
     @Published var selection = SelectionStore() {
         didSet {
             invalidateRenderStates()
@@ -216,28 +221,23 @@ final class AppEnvironment: ObservableObject {
         }
     }
     @Published var segmentation = SegmentationStore() {
-        didSet { invalidateSegmentationCaches(since: oldValue); refreshOverlap(); refreshOpenRingGaps() }
+        didSet {
+            invalidateSegmentationCaches(since: oldValue); refreshOverlap(); refreshOpenRingGaps()
+            scheduleDerivedGeometryRefresh()
+        }
     }
     @Published var auxiliary = AuxiliaryStore() {
         didSet {
             invalidateRenderStates()
             refreshOverlap()
-            if !isInstallingLevelDrawing, auxiliary != oldValue, isPolygonWorkMode { rebuildClosedPolygons() }
-            // 보조 개체를 빼면 그 선분이 이루던 면이 없어지거나 옆면과 합쳐진다.
-            // 다시 세지 않으면 화면의 면과 실제가 어긋난다.
-
-            // ✅ 2026-08-30 추가 — '제외로 사라진 면' 수를 여기서 함께 갱신한다.
-            // 예전에는 `vanishedPolygonCount`가 `totalPolygonCount - closedPolygonFaces.count`를
-            // 그 자리에서 계산했는데, `closedPolygonFaces`는 폴리곤 type 레이어를 열 때만 채워진다.
-            // 그래서 도면을 막 열었을 때는 그 목록이 빈 배열이라 `전체 - 0 = 전체`가 되어
-            // 진행률이 100%로 표시됐다. **'아직 안 셌다'와 '제외로 다 사라졌다'가 둘 다
-            // 면 0개로 보이는 것이 원인이다.**
-            // 보조 개체 제외 창 안에서는 미룬다 — 그 창이 떠 있는 동안 좌측 사이드바는 보이지
-            // 않으므로 클릭마다 무거운 면 찾기를 돌릴 이유가 없다. 창을 닫을 때 한 번 센다.
-            if !isInstallingLevelDrawing, auxiliary != oldValue, !showAuxiliaryScreen { rebuildVanishedPolygonCount() }
+            if auxiliary != oldValue, !showAuxiliaryScreen { scheduleDerivedGeometryRefresh() }
+            // 보조 개체를 빼면 그 선분이 이루던 면과 점이 없어진다. 다시 세지 않으면 화면과 실제가 어긋난다.
+            // **계산은 백그라운드에서 한다(#21).** 예전에는 여기서 면 찾기를 메인 스레드로 돌려
+            // 폴리곤 레이어에서 제외를 바꿀 때마다 앱이 멈췄다(`04) 엔진 디버깅.md` 3장).
+            // 보조 개체 제외 창 안에서는 미룬다 — 클릭마다 다시 셀 이유가 없다. 창을 닫을 때 한 번 센다.
         }
     }
-    @Published var doorClosures = DoorClosureStore() { didSet { refreshOpenRingGaps() } }
+    @Published var doorClosures = DoorClosureStore() { didSet { refreshOpenRingGaps(); scheduleDerivedGeometryRefresh() } }
     /// '문 임시로 닫기'로 만들어 둔, 아직 Openings 레이어에 반영하지 않은 문(신기능 3항).
     @Published var openingGate = OpeningGateStore()
     @Published var borrow = BorrowRegistry() {
@@ -518,14 +518,12 @@ final class AppEnvironment: ObservableObject {
         focusedTwinKey = nil
         showTwinsOnly = false
         faceSelection = []
-        closedPolygonFaces = []
-        totalPolygonCount = 0
-        vanishedPolygonCount = 0
+        derivedTask?.cancel(); derivedTask = nil
+        applyDerivedGeometry(.empty, key: nil)
+        pointDraft = PointDraft()
         closedPolygonNotice = nil
         polygonWorkMode = .include
         doorDraftPoints = []
-        doorDraftDoorID = nil
-        doorDraftArcID = nil
         showRoutingScreen = false
         showAnchorScreen = false
         showDoorClosureScreen = false
@@ -1262,6 +1260,7 @@ final class AppEnvironment: ObservableObject {
                        ids: ids, expandedFeatures: expandedFeatures,
                        focusedFeature: focusedFeature,
                        faceSelection: faceSelection,
+                       pointDraft: pointDraft,
                        buildingProject: projectContents,
                        routing: routing, routingFloorID: routingFloorID,
                        routingSelectedNodeID: routingSelectedNodeID,
@@ -1288,6 +1287,8 @@ final class AppEnvironment: ObservableObject {
         expandedFeatures = s.expandedFeatures
         focusedFeature = s.focusedFeature
         faceSelection = s.faceSelection
+        pointDraft = s.pointDraft
+        vertexDrag = nil
         routingFloorID = s.routingFloorID
         routingSelectedNodeID = s.routingSelectedNodeID
         routingSelectedEdgeID = s.routingSelectedEdgeID
@@ -1389,14 +1390,33 @@ final class AppEnvironment: ObservableObject {
 
     @Published var polygonWorkMode: PolygonWorkMode = .include
 
-    /// 다각형 진행률의 분모(보조 개체를 포함한 전체 면 수). 도면을 열 때 한 번만 센다.
-    @Published var totalPolygonCount = 0
+    /// 점 기준 진행률의 분모(보조 개체를 포함한 전체 점 수, #21).
+    @Published var totalPointCount = 0
+    /// 고를 수 있는 점(보조 제외 뺀 꼭짓점·끝점·교차점). 점 단위 편집이 이 점에 붙는다.
+    @Published var snapPoints: [SnapPointExtractor.SnapPoint] = []
+    var snapPointIndex = SnapPointGrid()
+    /// 점 기준 진행률의 분자 — 태깅된 점 수.
+    @Published var taggedPointCount = 0
+    /// 지금 화면의 면·점이 어떤 열쇠로 계산된 것인가. `nil`이면 아직 계산 전이다.
+    var derivedKey: DerivedGeometryKey?
+    var derivedTask: Task<Void, Never>?
+    var derivedToken = UUID()
+    @Published var isComputingDerivedGeometry = false
 
-    /// ✅ 2026-08-30 신설 — 다각형 진행률에서 '제외로 사라진 면'의 몫.
-    /// **그때그때 계산하지 않고 세어 둔다.** 계산 프로퍼티였을 때는 면 목록이 아직 없는 시점
-    /// (도면을 막 열었을 때, 폴리곤이 아닌 type 레이어에 있을 때)의 0개를
-    /// '제외로 다 사라졌다'로 오해해 진행률이 100%가 됐다.
-    @Published var vanishedPolygonCount = 0
+    // MARK: 점 단위 편집 상태 (#21)
+
+    /// 레이어의 작업 방식. 기본은 점 단위다.
+    @Published var layerEditMode: LayerEditMode = .point
+    /// 작성 중인 도형. 실행취소 대상이다(점 추가·삭제·이동을 cmd+z로 되돌린다).
+    @Published var pointDraft = PointDraft()
+    /// '꼭짓점 이동' 모드. 꺼져 있으면(고정) 드래그는 화면 이동이다.
+    @Published var isVertexMoveEnabled = false
+    /// 꼭짓점을 끄는 중이면 그 대상과 지금 위치. 놓을 때 한 번만 실행취소 칸을 쌓는다.
+    @Published var vertexDrag: VertexDrag?
+    /// 자체점검에서는 파생 기하를 그 자리에서 계산한다 — 결과를 바로 확인해야 하기 때문이다.
+    /// 앱에서는 백그라운드에서 계산한다.
+    var derivedGeometryInline = AppEnvironment.isRunningSelfTests
+
 
     /// 폴리곤 type 레이어에서 안내를 한 번 띄운다(신기능 5-2). 닫으면 `nil`.
     @Published var closedPolygonNotice: String?
@@ -1408,8 +1428,6 @@ final class AppEnvironment: ObservableObject {
 
     @Published var showDoorClosureScreen = false
     @Published var doorDraftPoints: [LocalPoint] = []
-    @Published var doorDraftDoorID: VectorObjectID?
-    @Published var doorDraftArcID: VectorObjectID?
 
     var doorSnapCache: [SnapPointExtractor.SnapPoint] = []
     /// 찍을 수 있는 점 목록. 도면이 바뀔 때만 다시 만든다 —
@@ -1491,9 +1509,8 @@ final class AppEnvironment: ObservableObject {
         twinKeyByObject = prepared.twinKeys
         twinGroups = prepared.twinGroups.map { TwinGroup(key: $0.key, memberIDs: $0.memberIDs, sample: $0.sample) }
         twinMembersByKey = Dictionary(uniqueKeysWithValues: prepared.twinGroups.map { ($0.key, Set($0.memberIDs)) })
-        totalPolygonCount = prepared.totalPolygonCount
-        vanishedPolygonCount = prepared.vanishedPolygonCount
-        doorSnapCache = []
+        derivedTask?.cancel(); derivedTask = nil
+        applyDerivedGeometry(prepared.derived, key: prepared.input.derivedKey)
         invalidateRenderStates()
     }
 
@@ -1511,15 +1528,13 @@ final class AppEnvironment: ObservableObject {
                                     canvasSize: document?.canvasSize ?? .zero)
         refreshOverlap()
         refreshOpenRingGaps()
-        closedPolygonFaces = []
         faceSelection = []
-        rebuildTotalPolygonCount()
-        rebuildVanishedPolygonCount()
-        // ✅ 2026-08-30 — 새 도면은 제외 목록이 비어 있어 계산 없이 0으로 확정된다.
-        // 프로젝트 파일을 복원해 제외가 이미 들어 있는 경우에만 실제로 면을 센다.
-        // **끝점·교차점은 여기서 만들지 않는다.** 계산이 개체 수의 제곱에 붙어서,
-        // 실도면(개체 수천 개)을 열면 그 자리에서 앱이 멈춘다 — 자동 저장본 복원 경로에서
-        // 실제로 그렇게 됐다. '문 임시로 닫기' 창에 들어갈 때만 만든다(엔진 디버깅 1-1과 같은 교훈).
+        derivedKey = nil
+        scheduleDerivedGeometryRefresh()
+        // 면·점은 백그라운드에서 계산한다(#21). 자체점검에서는 그 자리에서 계산한다.
+        // 예전에는 끝점·교차점을 '문 임시로 닫기' 창에 들어갈 때만 메인 스레드에서 만들었다.
+        // 면 자르기를 격자로 바꾸고(5초 → 0.03초) 계산을 메인 스레드에서 뺀 뒤로는
+        // 도면을 열 때 함께 만들어도 앱이 멈추지 않는다.
     }
 
     private func rebuildTwinIndex() {
@@ -1616,7 +1631,7 @@ final class AppEnvironment: ObservableObject {
         focusedTwinKey = nil
         showTwinsOnly = false
         marqueeSubtracts = false // ✅ 2026-08-30
-        rebuildVanishedPolygonCount()
+        scheduleDerivedGeometryRefresh()
         // ✅ 2026-08-30 — 창 안에서 미뤄 둔 셈을 여기서 한 번에 치른다.
     }
 
@@ -1774,6 +1789,9 @@ final class AppEnvironment: ObservableObject {
         guard let doc = document else { return nil }
         guard feature.featureType.requiresClosedRing else { return nil }
         // 닫힌 폴리곤이 필요 없는 type은 판정 자체가 무의미하다(amenity는 점 하나다).
+        guard !feature.isPointDrawn else { return nil }
+        // #21: 점으로 그린 도형은 시작점을 다시 눌러 닫았으므로 링이 정의상 닫혀 있다.
+        // 구성원 개체가 없어 개체로 재면 '전부 열림'으로 잘못 나온다.
 
         let ids = feature.memberIDs.union(borrow.objects(borrowedBy: feature.id))
         let segments = ids.compactMap { doc.object($0) }
@@ -1812,22 +1830,42 @@ final class AppEnvironment: ObservableObject {
         enterPolygonWorkIfNeeded(type)
     }
 
-    /// 폴리곤 type 레이어를 열면 면을 찾아 두고 안내를 한 번 띄운다(신기능 5-2·5-4).
-    /// **레이어를 여는 것이 곧 다각형 작업의 시작이다** — 별도 진입 버튼을 두지 않는다.
+    /// 레이어를 열 때 작업 방식을 정한다(#21).
+    ///
+    /// **모든 레이어의 기본은 점 단위 편집이다.** 폴리곤 type(footprint 제외)은 상단바에서
+    /// 면 단위로 바꿀 수 있다. 면은 층을 불러올 때 백그라운드에서 이미 찾아 두었으므로
+    /// 여기서 다시 계산하지 않는다 — 예전에는 여기서 메인 스레드가 약 5초 멈췄다.
     func enterPolygonWorkIfNeeded(_ type: IMDFFeatureType) {
-        guard type.requiresClosedRing, document != nil else {
-            closedPolygonFaces = []
-            faceSelection = []
-            return
-        }
+        cancelPointDraft()
+        layerEditMode = .point
         polygonWorkMode = .include
         faceSelection = []
-        rebuildClosedPolygons()
-        closedPolygonNotice = String(
-            format: "모든 닫힌 다각형을 표시했습니다. %@의 Feature로 저장할 다각형 또는 제외할 다각형을 선택하세요. 제외할 다각형이 너무 많이 표시된다면, 보조 개체 제외 창에서 불필요한 선분을 제외해 보세요.",
-            type.displayName)
-        // 안내가 가리키는 처방(불필요한 선분 제외)이 이 기능의 실패 모드에 대한 답이다 —
-        // 치수선·해치가 남아 있으면 방이 아닌 자투리가 수백 개 잡힌다.
+        closedPolygonNotice = nil
+    }
+
+    /// 점 단위와 면 단위를 오간다. 면 단위는 polygon·multipolygon type(footprint 제외)에서만 된다.
+    func setLayerEditMode(_ next: LayerEditMode) {
+        guard next != layerEditMode else { return }
+        if next == .face {
+            guard let type = layers.activePropertyType, type.allowsFaceSelection else {
+                notify("면 단위 선택은 polygon·multipolygon type에서만 쓸 수 있습니다. footprint는 점으로 그립니다.",
+                       isError: true)
+                return
+            }
+            cancelPointDraft()
+            layerEditMode = .face
+            polygonWorkMode = .include
+            faceSelection = []
+            closedPolygonNotice = String(
+                format: "모든 닫힌 다각형을 표시했습니다. %@의 Feature로 저장할 다각형 또는 제외할 다각형을 선택하세요. 제외할 다각형이 너무 많이 표시된다면, 보조 개체 제외 창에서 불필요한 선분을 제외해 보세요.",
+                type.displayName)
+            // 안내가 가리키는 처방(불필요한 선분 제외)이 이 기능의 실패 모드에 대한 답이다 —
+            // 치수선·해치가 남아 있으면 방이 아닌 자투리가 수백 개 잡힌다.
+        } else {
+            layerEditMode = .point
+            faceSelection = []
+            closedPolygonNotice = nil
+        }
     }
 
     // MARK: feature 그룹 (명세 6항)

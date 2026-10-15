@@ -42,11 +42,9 @@ extension AppEnvironment {
     /// 점 하나가 이미 찍힌 채로 시작해 "내가 찍은 적 없는 점"이 화면에 있다.
     func resetDoorDraft() {
         doorDraftPoints = []
-        doorDraftDoorID = nil
-        doorDraftArcID = nil
     }
 
-    // MARK: 점 찍기 (신기능 3-2·3-3)
+    // MARK: 점 찍기 (신기능 3-2, #37)
 
     /// 지금 창에서 찍을 수 있는 점 전부.
     ///
@@ -61,72 +59,35 @@ extension AppEnvironment {
         doorSnapCache = SnapPointExtractor.points(in: doc.objects, segmentation: segmentation)
     }
 
-    /// 지금 클릭이 무엇을 고르는가.
+    /// 지금 무엇을 해야 하는지 한 줄로. 상단바가 그대로 띄운다.
     ///
-    /// **점과 개체를 같은 클릭으로 다투게 두면 개체를 영영 못 고른다.** 예전에는 점을 언제나
-    /// 먼저 봤는데, 호는 곡선이라 경로 위 꼭짓점이 그 자체로 후보 점이다 — 호를 누르면
-    /// 반드시 그 위의 점이 먼저 잡혀 **호가 선택되는 일이 아예 없었다.** 문짝도 짧은 선이라
-    /// 양 끝점이 허용 반경 안에 들어오면 같은 일이 벌어진다.
-    /// 그래서 순서를 **작업 순서와 같게** 나눴다 — 점 2개를 먼저 찍고, 그다음 문짝과 호를 고른다.
-    enum DoorClickStage { case pickingPoints, pickingObjects }
-
-    var doorClickStage: DoorClickStage {
-        doorDraftPoints.count < 2 ? .pickingPoints : .pickingObjects
-    }
-
-    /// 지금 무엇을 고르는 중인지 한 줄로. 상단바가 그대로 띄운다 —
-    /// 클릭이 단계에 따라 다르게 동작하면 그 사실이 화면에 있어야 한다.
+    /// #37(2026-10-15): **문짝·호를 고르는 단계를 없앴다.** 예전에는 점 2개를 찍은 뒤 열려 있는
+    /// 문짝과 회전 궤적(호)까지 골라야 저장할 수 있었는데, C5 도면은 호가 점선으로 그려져
+    /// 곡선 하나로 고를 수 없었다(1차 사용성 검증 #35). 문 선의 양 끝 두 점만 찍는다.
     var doorStageHint: String {
-        switch doorClickStage {
-        case .pickingPoints:
-            return "① 문 자리의 양쪽 끝(○ 끝점 · □ 교차점)을 \(2 - doorDraftPoints.count)개 더 찍으세요."
-        case .pickingObjects:
-            return "② 이제 열려 있는 문짝과 호를 클릭하세요. 찍은 점을 다시 누르면 지워집니다."
+        switch doorDraftPoints.count {
+        case 0: return "문 자리의 양쪽 끝(○ 끝점 · □ 교차점 · ◇ 꼭짓점)을 2개 찍으세요."
+        case 1: return "반대쪽 끝을 1개 더 찍으세요. 찍은 점을 다시 누르면 지워집니다."
+        default: return "'임시 문 저장'을 누르세요. 다시 찍으면 가장 먼저 찍은 점이 밀려납니다."
         }
     }
 
-    /// 도면을 클릭했을 때.
-    ///
-    /// 순서가 규칙이다. ① 이미 찍은 점을 다시 누르면 **언제나** 지운다(되돌릴 길이 없으면
-    /// 창을 나갔다 다시 들어와야 한다) ② 점이 2개가 되기 전에는 점만 찍는다
-    /// ③ 점 2개가 놓이면 클릭은 개체를 고른다.
+    /// 도면을 클릭했을 때. **점만 찍는다.** 이미 찍은 점을 다시 누르면 지운다
+    /// (되돌릴 길이 없으면 창을 나갔다 다시 들어와야 한다).
     func handleDoorClosureClick(at point: LocalPoint, tolerance: Double) {
-        guard let doc = document else { return }
+        guard document != nil else { return }
         let radius = tolerance * 1.5
 
-        // ① 찍은 점 취소. 단계와 무관하게 통한다.
         if let idx = doorDraftPoints.firstIndex(where: { $0.distance(to: point) <= radius }) {
             doorDraftPoints.remove(at: idx)
             return
         }
-
-        // ② 점을 찍는 단계.
-        if doorClickStage == .pickingPoints {
-            if let snap = SnapPointExtractor.nearest(to: point, among: doorSnapCache,
-                                                     within: radius) {
-                toggleDoorPoint(snap.point)
-            }
-            return
-            // 점 단계에서는 개체를 잡지 않는다. 문 자리는 개체가 빽빽한 곳이라,
-            // 개체를 함께 보면 점을 겨냥한 클릭이 그 아래 개체로 새어 나간다.
-        }
-
-        // ③ 개체를 고르는 단계.
-        let candidates = doc.objects.filter { !auxiliary.isExcluded($0.id) }
-        // 신기능 3-1: 제외된 보조 개체는 조작 불가. 후보에서 빼면 클릭이 통과해
-        // 그 아래 개체가 잡힌다 — "안 눌린다"보다 "다른 게 눌린다"가 덜 헷갈린다.
-        if let hit = HitTester.hitTest(point, candidates: candidates,
-                                       cached: renderCache.geometryProvider(segmentation),
-                                       tolerance: tolerance) {
-            toggleDoorObject(hit)
+        if let snap = SnapPointExtractor.nearest(to: point, among: doorSnapCache, within: radius) {
+            toggleDoorPoint(snap.point)
             return
         }
-
-        // 개체는 못 잡았는데 후보 점 위를 눌렀다면, 사용자는 점을 더 찍으려던 것이다.
-        // 아무 일도 안 일어나면 고장으로 읽히므로 왜 안 되는지 밝힌다.
-        if SnapPointExtractor.nearest(to: point, among: doorSnapCache, within: radius) != nil {
-            notify("점은 이미 2개입니다. 다시 찍으려면 찍어 둔 점을 눌러 지우세요.")
-        }
+        notify("끝점·교차점·꼭짓점 위를 찍으세요. 아무 데나 찍으면 벽과 몇 단위씩 어긋나 방이 닫히지 않습니다.")
+        // 아무 일도 안 일어나면 고장으로 읽히므로 왜 안 되는지 밝힌다(신기능 3-2의 이유 그대로).
     }
 
     /// 점 쌍은 **두 개까지만** 받는다. 세 번째를 찍으면 가장 오래된 것을 밀어낸다 —
@@ -142,60 +103,29 @@ extension AppEnvironment {
         if doorDraftPoints.count > 2 { doorDraftPoints.removeFirst() }
     }
 
-    /// 개체 하나를 문짝/호 자리에 넣는다.
-    ///
-    /// **어느 자리인지는 사용자가 아니라 도형이 정한다.** 곡선이면 호, 아니면 문짝이다.
-    /// 버튼으로 "지금 문짝을 고르는 중"을 먼저 정하게 하면 클릭 한 번에 모드 전환이 하나씩 더 붙는다.
-    /// 호는 회전 궤적이라 반드시 곡선이고 문짝은 직선이라, 이 판정은 도면이 보장한다.
-    func toggleDoorObject(_ id: VectorObjectID) {
-        guard let obj = document?.object(id) else { return }
-
-        if let used = doorClosures.user(of: id) {
-            notify("이미 저장된 임시 문(\(used.label))이 쓰고 있는 개체입니다.", isError: true)
-            return
-            // 같은 문짝을 두 opening이 나눠 갖는 상황은 도면상 있을 수 없다.
-        }
-
-        let isArc = obj.isCurved
-        if isArc {
-            doorDraftArcID = (doorDraftArcID == id) ? nil : id
-        } else {
-            doorDraftDoorID = (doorDraftDoorID == id) ? nil : id
-        }
-    }
-
-    /// 이 개체가 지금 화면에서 어떤 역할인가. 도면 패널이 색을 정하는 데 쓴다.
-    enum DoorRole { case none, door, arc, saved }
+    /// 이 개체가 화면에서 어떤 역할인가. 도면 패널이 색을 정하는 데 쓴다.
+    /// 문짝·호를 고르지 않게 된 뒤로는 **예전에 저장한 임시 문이 쓰는 개체**만 표시한다.
+    enum DoorRole { case none, saved }
 
     func doorRole(of id: VectorObjectID) -> DoorRole {
-        if doorDraftDoorID == id { return .door }
-        if doorDraftArcID == id { return .arc }
-        if doorClosures.user(of: id) != nil { return .saved }
-        return .none
+        doorClosures.user(of: id) != nil ? .saved : .none
     }
 
-    // MARK: 저장 (신기능 3-4·3-5)
+    // MARK: 저장 (신기능 3-4·3-5, #37)
 
-    /// 신기능 3-4: 점 2개 + 문짝 + 호, **넷이 모두 갖춰져야** 저장할 수 있다.
-    var canSaveTemporaryDoor: Bool {
-        doorDraftPoints.count == 2 && doorDraftDoorID != nil && doorDraftArcID != nil
-    }
+    /// 점 2개가 찍혀 있으면 저장할 수 있다.
+    var canSaveTemporaryDoor: Bool { doorDraftPoints.count == 2 }
 
     /// 왜 아직 저장할 수 없는지. 비활성 버튼만 있고 이유가 없으면 고장으로 읽힌다
     /// — 상단바 가시성(뷰 디버깅 10번)에서 겪은 것과 같은 오해다.
     var temporaryDoorHint: String {
-        var missing: [String] = []
-        if doorDraftPoints.count < 2 { missing.append("점 \(2 - doorDraftPoints.count)개") }
-        if doorDraftDoorID == nil { missing.append("열려 있는 문") }
-        if doorDraftArcID == nil { missing.append("호") }
-        return missing.isEmpty
-            ? "Openings 개체로 저장합니다."
-            : "\(missing.joined(separator: " · "))를 더 고르세요."
+        doorDraftPoints.count < 2
+            ? "점 \(2 - doorDraftPoints.count)개를 더 찍으세요."
+            : "임시 문으로 저장합니다. 모두 찍은 뒤 'Openings 레이어에 반영하기'를 누르세요."
     }
 
     func saveTemporaryDoor() {
-        guard canSaveTemporaryDoor,
-              let doorID = doorDraftDoorID, let arcID = doorDraftArcID else { return }
+        guard canSaveTemporaryDoor else { return }
         let a = doorDraftPoints[0], b = doorDraftPoints[1]
         guard a.distance(to: b) > SnapPointExtractor.mergeTolerance else {
             notify("두 점이 같은 자리입니다. 문 자리의 양쪽 끝을 찍으세요.", isError: true)
@@ -203,9 +133,7 @@ extension AppEnvironment {
             // 길이 0인 LineString은 GeoJSON으로 나가면 그대로 깨진 opening이 된다.
         }
 
-        let door = TemporaryDoor(id: UUID(), start: a, end: b,
-                                 doorObjectID: doorID, arcObjectID: arcID,
-                                 createdAt: Date())
+        let door = TemporaryDoor(id: UUID(), start: a, end: b, createdAt: Date())
         perform("임시 문 저장") { doorClosures.insert(door) }
         resetDoorDraft()
         notify("임시 문을 저장했습니다. 모두 찍은 뒤 '모두 Openings 레이어에 반영하기'를 누르세요.")
@@ -238,6 +166,7 @@ extension AppEnvironment {
         perform("임시 문 레이어 반영") {
             for door in doorClosures.doors {
                 let members = door.consumedObjectIDs
+                // 새 임시 문(#37)은 비어 있다. 예전 임시 문만 문짝·호를 구성원으로 넘긴다.
                 guard members.isDisjoint(with: ownership.claimedObjectIDs) else {
                     blocked.append(door.label)
                     continue

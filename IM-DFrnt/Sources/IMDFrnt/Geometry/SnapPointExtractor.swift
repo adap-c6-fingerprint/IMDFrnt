@@ -9,7 +9,7 @@ import Foundation
 enum SnapPointExtractor {
 
     /// 찍을 수 있는 점 하나.
-    struct SnapPoint: Identifiable, Hashable {
+    struct SnapPoint: Identifiable, Hashable, Sendable {
         enum Kind: String { case endpoint, vertex, crossing }
         /// - `endpoint`: 열린 경로가 **끝난** 자리. 문 자리를 닫을 때 겨냥하는 것이 대개 이것이다.
         /// - `vertex`: 경로가 **꺾이는** 자리. 사각형 모서리처럼 닫힌 경로에도 있다.
@@ -56,32 +56,13 @@ enum SnapPointExtractor {
         // 같은 개체 안의 자기 교차는 보지 않는다. 도면 한 개체가 스스로를 가로지르는 것은
         // 작도 흔적일 때가 많고, 문 자리를 닫는 데 쓸 점이 아니다.
         //
-        // **경계 상자로 먼저 걸러내는 것이 이 절의 전부다.** 모든 개체 쌍 × 모든 선분 쌍을
+        // **비교 상대를 격자로 좁히는 것이 이 절의 전부다(#21).** 모든 개체 쌍 × 모든 선분 쌍을
         // 그대로 돌면 계산이 개체 수의 제곱에 붙어, 실도면(개체 수천 개)에서 앱이 멈춘다.
-        // 도면에서 실제로 겹치는 개체 쌍은 전체의 아주 일부라, 상자만 먼저 봐도 대부분이 걸러진다.
-        let entries: [(id: VectorObjectID, box: CGRect, segments: [(LineSegment, CGRect)])] =
-            geometries.map { id, geo in
-                let segs = geo.lineSegments().map { ($0, $0.boundingBox) }
-                return (id, geo.boundingBox, segs)
-            }
-
-        for i in entries.indices {
-            let a = entries[i]
-            for j in (i + 1)..<entries.count {
-                let b = entries[j]
-                guard a.box.intersects(b.box) else { continue }
-                // 개체 상자가 안 겹치면 그 안의 선분도 안 겹친다. 여기서 대부분이 끝난다.
-
-                for (segA, boxA) in a.segments {
-                    guard boxA.intersects(b.box) else { continue }
-                    for (segB, boxB) in b.segments {
-                        guard boxA.intersects(boxB) else { continue }
-                        guard let p = OverlapDetector.crossing(segA, segB) else { continue }
-                        add(SnapPoint(id: "x-\(key(p))", point: p, kind: .crossing,
-                                      owners: [a.id, b.id]), into: &seen)
-                    }
-                }
-            }
+        // 개체 상자가 아니라 **선분 상자**로 거른다 — 개체 상자는 곡선의 불룩한 부분을 담지 못한다
+        // (`pointsByAllPairs` 설명 참조).
+        for c in crossings(geometries) {
+            add(SnapPoint(id: "x-\(key(c.point))", point: c.point, kind: .crossing,
+                          owners: [geometries[c.a].0, geometries[c.b].0]), into: &seen)
         }
 
         // 3) 끝점 — 열린 경로의 양 끝. 가장 좁은 뜻이라 마지막에 담아 다른 종류를 덮는다.
@@ -99,6 +80,106 @@ enum SnapPointExtractor {
         }
         // 정렬은 화면 표시가 아니라 **결과를 재현 가능하게** 만들기 위한 것이다.
         // 딕셔너리 순서를 그대로 내보내면 실행할 때마다 목록이 달라져 자체점검이 흔들린다.
+    }
+
+    /// 서로 다른 개체의 선분이 가로지르는 자리. **넣는 순서는 예전과 같다**(개체 i < j, 선분 순).
+    /// 같은 자리에 교차가 여럿이면 먼저 넣은 쪽 좌표가 남기 때문에, 순서가 달라지면 결과도 달라진다.
+    private struct Crossing { let a: Int; let b: Int; let sa: Int; let sb: Int; let point: LocalPoint }
+
+    /// #21(2026-10-15): **격자로 비교 상대를 좁힌다.** 예전에는 모든 개체 쌍의 상자를 비교해
+    /// 개체 수의 제곱만큼 돌았다(실프로젝트 개체 16,738개에서 약 1억 4천만 번).
+    /// 이제는 선분 상자가 걸친 칸에 함께 든 선분끼리만 비교하고, 찾은 교차를 예전 순서로 정렬해 넣는다.
+    private static func crossings(_ geometries: [(VectorObjectID, PathGeometry)]) -> [Crossing] {
+        var owner: [Int] = [], local: [Int] = [], segs: [LineSegment] = [], boxes: [CGRect] = []
+        for (o, (_, geo)) in geometries.enumerated() {
+            for (k, s) in geo.lineSegments().enumerated() {
+                owner.append(o); local.append(k); segs.append(s); boxes.append(s.boundingBox)
+            }
+        }
+        guard segs.count > 1 else { return [] }
+        var bounds = boxes[0]
+        for b in boxes.dropFirst() { bounds = bounds.union(b) }
+        let cellSize = max(sqrt(Double(bounds.width * bounds.height) / Double(segs.count)),
+                           Double(max(bounds.width, bounds.height)) / 4096, mergeTolerance * 4)
+        let columns = Int(Double(bounds.width) / cellSize) + 1
+        func cellRange(_ b: CGRect) -> (x: ClosedRange<Int>, y: ClosedRange<Int>) {
+            let x0 = Int(Double(b.minX - bounds.minX) / cellSize), x1 = Int(Double(b.maxX - bounds.minX) / cellSize)
+            let y0 = Int(Double(b.minY - bounds.minY) / cellSize), y1 = Int(Double(b.maxY - bounds.minY) / cellSize)
+            return (x0...max(x0, x1), y0...max(y0, y1))
+        }
+        var cells: [Int: [Int32]] = [:]
+        for (g, b) in boxes.enumerated() {
+            let r = cellRange(b)
+            for y in r.y { for x in r.x { cells[y * columns + x, default: []].append(Int32(g)) } }
+        }
+        var out: [Crossing] = []
+        var lastTested = [Int](repeating: -1, count: segs.count)
+        for g in segs.indices {
+            if g % 1024 == 0, Task.isCancelled { return [] }
+            let r = cellRange(boxes[g])
+            for y in r.y {
+                for x in r.x {
+                    guard let members = cells[y * columns + x] else { continue }
+                    for m in members {
+                        let h = Int(m)
+                        guard h > g, owner[h] != owner[g], lastTested[h] != g else { continue }
+                        // 같은 개체 안의 자기 교차는 보지 않는다(아래 설명). 선분은 개체 순서로 펼쳐 있어
+                        // h > g이면 개체도 owner[g] < owner[h]다 — 예전의 i < j와 같은 방향이다.
+                        lastTested[h] = g
+                        guard boxes[g].intersects(boxes[h]),
+                              let p = OverlapDetector.crossing(segs[g], segs[h]) else { continue }
+                        out.append(Crossing(a: owner[g], b: owner[h], sa: local[g], sb: local[h], point: p))
+                    }
+                }
+            }
+        }
+        return out.sorted { ($0.a, $0.b, $0.sa, $0.sb) < ($1.a, $1.b, $1.sa, $1.sb) }
+    }
+
+    /// 모든 쌍 비교. **자체점검에서 격자 결과와 같은지 대조하는 데만 쓴다.**
+    ///
+    /// 격자 도입 전 코드는 개체 상자(`PathGeometry.boundingBox`)로 먼저 걸렀다. 그런데 그 상자는
+    /// **기준점만으로** 만들어 곡선이 상자 밖으로 불룩 나간 부분을 담지 못한다. 그래서 곡선 위의
+    /// 교차(문 호와 벽이 만나는 자리 등)를 놓쳤다. C5 도면에서 격자 버전이 점을 27개 더 찾고
+    /// 181개는 같은 칸에서 남는 좌표가 바뀌었다. SETEC 프로젝트는 10개가 바뀌었다. 격자 버전에
+    /// 옛 개체 상자 필터를 다시 넣으면 두 결과가 완전히 같아지는 것으로 원인을 확인했다(2026-10-15).
+    /// 이 대조 함수는 그 필터 없이 **선분 상자만** 보고, 넣는 순서는 격자 버전과 같다(개체 i < j, 선분 순).
+    static func pointsByAllPairs(in objects: [VectorObject], segmentation: SegmentationStore) -> [SnapPoint] {
+        let geometries = objects.map { ($0.id, segmentation.effectiveGeometry(for: $0.id, fallback: $0.geometry)) }
+        var seen: [GridKey: SnapPoint] = [:]
+        for (id, geo) in geometries {
+            for sp in geo.subpaths { for p in sp.points {
+                add(SnapPoint(id: "v-\(key(p))", point: p, kind: .vertex, owners: [id]), into: &seen)
+            } }
+        }
+        let entries: [(id: VectorObjectID, segments: [(LineSegment, CGRect)])] =
+            geometries.map { id, geo in (id, geo.lineSegments().map { ($0, $0.boundingBox) }) }
+
+        for i in entries.indices {
+            let a = entries[i]
+            for j in (i + 1)..<entries.count {
+                let b = entries[j]
+                for (segA, boxA) in a.segments {
+                    for (segB, boxB) in b.segments {
+                        guard boxA.intersects(boxB) else { continue }
+                        guard let p = OverlapDetector.crossing(segA, segB) else { continue }
+                        add(SnapPoint(id: "x-\(key(p))", point: p, kind: .crossing,
+                                      owners: [a.id, b.id]), into: &seen)
+                    }
+                }
+            }
+        }
+
+        for (id, geo) in geometries {
+            for sp in geo.subpaths where !sp.isClosed {
+                for p in [sp.start, sp.points.last].compactMap({ $0 }) {
+                    add(SnapPoint(id: "e-\(key(p))", point: p, kind: .endpoint, owners: [id]), into: &seen)
+                }
+            }
+        }
+        return seen.values.sorted {
+            $0.point.y == $1.point.y ? $0.point.x < $1.point.x : $0.point.y < $1.point.y
+        }
     }
 
     /// 커서에서 가장 가까운 후보. 허용 반경 밖이면 아무것도 안 준다 —

@@ -70,13 +70,10 @@ struct DoorClosurePane: View {
 
                 let color: Color
                 switch role {
-                case .door:  color = bg.selection
-                case .arc:   color = bg.marker(.pending)
                 case .saved: color = bg.marker(.displayPoint)
                 case .none:  color = isExcluded ? bg.excludedStroke : bg.resolve(o.style.stroke)
                 }
-                // 문짝과 호를 **다른 색**으로 그린다. 둘 다 선택 색이면 무엇이 무엇으로
-                // 잡혔는지 확인할 방법이 없고, 곡선 판정이 틀렸을 때 알아챌 수 없다.
+                // 예전 방식으로 저장한 임시 문의 문짝·호만 색을 달리한다(#37부터는 고르지 않는다).
 
                 let opacity = isExcluded ? DoorClosureAppearance.excludedOpacity
                                          : DoorClosureAppearance.activeOpacity
@@ -104,9 +101,8 @@ struct DoorClosurePane: View {
             // 끝점 ○ · 교차점 □ · 꼭짓점 ◇. 꼭짓점은 수가 압도적으로 많아 더 작게,
             // 더 옅게 그린다 — 같은 크기로 그리면 도면이 마커로 덮여 정작 끝점이 안 보인다.
             let lw = CanvasZoom.screenLength(1, at: scale)
-            let snapDim = env.doorClickStage == .pickingObjects ? 0.35 : 1.0
-            // 점을 다 찍은 뒤에는 후보 점을 옅게 그린다. 그 단계의 클릭은 개체를 고르므로,
-            // 마커가 그대로 진하면 아직 점을 찍는 화면으로 읽힌다.
+            let snapDim = 1.0
+            // #37: 클릭은 언제나 점을 찍으므로 후보 점을 옅게 할 단계가 없다.
             for s in snaps {
                 let r = CanvasZoom.screenLength(s.kind == .vertex ? 2.5 : 3.5, at: scale)
                 let rect = CGRect(x: s.point.x - r, y: s.point.y - r, width: r * 2, height: r * 2)
@@ -149,12 +145,11 @@ struct DoorClosurePane: View {
 
     private var legend: some View {
         HStack(spacing: 12) {
-            legendItem(color: env.canvasBackground.selection, text: "찍은 점 · 열려 있는 문")
-            legendItem(color: env.canvasBackground.marker(.pending), text: "호")
+            legendItem(color: env.canvasBackground.selection, text: "찍은 점")
             legendItem(color: env.canvasBackground.marker(.displayPoint), text: "저장된 임시 문")
             legendItem(color: env.canvasBackground.excludedStroke, text: "보조 개체(조작 불가)")
             ToolbarDivider().frame(height: 12)
-            Text("○ 끝점 · □ 교차점 · ◇ 꼭짓점 · 점 2개 → 문짝·호 순서 · 드래그는 화면 이동")
+            Text("○ 끝점 · □ 교차점 · ◇ 꼭짓점 · 문 선 양 끝 점 2개 · 드래그는 화면 이동")
                 .lineLimit(1).truncationMode(.tail)
         }
         .font(.caption2)

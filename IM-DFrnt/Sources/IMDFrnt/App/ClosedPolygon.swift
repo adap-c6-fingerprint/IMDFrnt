@@ -13,55 +13,18 @@ import Foundation
 extension AppEnvironment {
 
     /// 지금 화면이 면을 고르는 모드인가.
+    ///
+    /// #21(2026-10-15): 폴리곤 type 레이어에서 **점 단위와 면 단위를 오가며** 쓴다. 상단바에서
+    /// '면 단위'를 골랐을 때만 면을 고른다. footprint는 면 단위 대상에서 뺀다(10번 지침).
     var isPolygonWorkMode: Bool {
-        document != nil && (layers.activePropertyType?.requiresClosedRing ?? false)
+        document != nil && (layers.activePropertyType?.allowsFaceSelection ?? false) && layerEditMode == .face
     }
 
     // MARK: 면 찾기
-
-    /// 활성 레이어가 폴리곤 type으로 바뀌거나 보조 개체 제외가 바뀔 때 다시 만든다.
-    ///
-    /// **매 프레임은 물론 도면을 열 때도 만들지 않는다.** 계산이 선분 수의 제곱에 붙어서,
-    /// 적재 시점에 만들면 실도면에서 앱 시작이 멈춘다(`04) 엔진 디버깅.md` 1-1).
-    func rebuildClosedPolygons() {
-        guard let doc = document else {
-            closedPolygonFaces = []
-            faceSelection = []
-            return
-        }
-        closedPolygonFaces = ClosedPolygonFinder.faces(in: faceSources(in: doc, includeAuxiliary: false))
-        faceSelection.formIntersection(Set(closedPolygonFaces.map(\.id)))
-        // 사라진 면의 선택을 들고 있으면 저장 버튼의 개수와 화면이 어긋난다.
-        if polygonWorkMode == .exclude { selectAllFaces() }
-        // 제외 모드는 '전부 고른 상태에서 빼 나가는' 모드다(5-4 2번). 면 목록이 새로 만들어졌으면
-        // 다시 전부 고른 상태에서 시작해야 한다.
-    }
-
-    /// 면을 이루는 선분들. `includeAuxiliary`가 참이면 보조 개체로 제외한 선분까지 넣는다 —
-    /// 다각형 진행률 막대의 **분모**가 그 상태의 면 수다(5-5-2).
-    func faceSources(in doc: DrawingDocument,
-                     includeAuxiliary: Bool) -> [ClosedPolygonFinder.SourceSegment] {
-        var sources: [ClosedPolygonFinder.SourceSegment] = []
-        for o in doc.objects where includeAuxiliary || !auxiliary.isExcluded(o.id) {
-            let entry = renderCache.entry(for: o, segmentation: segmentation)
-            for s in entry.segments { sources.append(.init(segment: s, objectID: o.id)) }
-        }
-        for door in doorClosures.doors {
-            sources.append(.init(segment: LineSegment(start: door.start, end: door.end),
-                                 objectID: nil))
-            // 신기능 5-2: "openings에서 임시로 닫은 문을 포함하여".
-        }
-        return sources
-    }
-
-    /// 다각형 진행률의 분모. **도면을 열 때 한 번만 센다**(5-5-2, 사노 확정) —
-    /// 보조 개체를 제외해도 분모는 그대로 두고, 사라진 면을 **분자에** 얹는다.
-    /// 분모가 조작할 때마다 흔들리면 막대가 이유 없이 늘었다 줄었다 한다.
-    func rebuildTotalPolygonCount() {
-        guard let doc = document else { totalPolygonCount = 0; return }
-        totalPolygonCount = ClosedPolygonFinder.faces(
-            in: faceSources(in: doc, includeAuxiliary: true)).count
-    }
+    //
+    // 면은 `DerivedGeometry`가 백그라운드에서 찾아 `closedPolygonFaces`에 넣는다(#21).
+    // 예전의 `rebuildClosedPolygons()`는 레이어를 열 때마다 메인 스레드에서 면을 다시 찾아
+    // C5 도면에서 앱이 약 5초 멈췄다(`04) 엔진 디버깅.md` 3장). 층을 불러올 때 찾은 면을 그대로 쓴다.
 
     // MARK: 고르기
 
@@ -188,51 +151,7 @@ extension AppEnvironment {
                : "\(type.displayName) feature \(madeSerials.count)개를 저장했습니다(면 \(picked.count)개).")
     }
 
-    // MARK: 진행률 (5-5)
-
-    /// 다각형 기준 진행률에서 **태깅한 면**의 몫.
-    var taggedPolygonCount: Int { savedPolygonFaceIDs.count }
-
-    /// **제외된 개체 때문에 사라진 면**의 몫. 분모(전체 면)에서 지금 남아 있는 면을 뺀 값이다.
-    /// 보조 개체를 빼면 그 선분이 이루던 면이 없어지거나 옆면과 합쳐지는데, 어느 쪽이든
-    /// "손을 대서 처리된 면"이므로 진척으로 셈한다(5-5-2).
-    ///
-    /// ✅ 2026-08-30 — 계산 프로퍼티에서 **세어 두는 값**(`AppEnvironment.vanishedPolygonCount`)으로
-    /// 바꿨다. 옛 식 `totalPolygonCount - closedPolygonFaces.count`는 `closedPolygonFaces`가
-    /// 항상 최신이라는 전제를 깔고 있는데, 그 목록은 성능 때문에 **폴리곤 type 레이어를 열 때만**
-    /// 채운다. 도면을 막 열면 빈 배열이므로 `전체 - 0 = 전체`, 즉 100%가 됐다.
-    ///
-    /// **제외가 하나도 없으면 세지 않는다.** 제외가 없으면 `includeAuxiliary`가 참이든 거짓이든
-    /// 같은 면 집합이 나오므로 사라진 면은 정의상 0이다 — 무거운 면 찾기를 돌릴 이유가 없다.
-    func rebuildVanishedPolygonCount() {
-        guard let doc = document, !auxiliary.excluded.isEmpty else {
-            vanishedPolygonCount = 0
-            return
-        }
-        let remaining = ClosedPolygonFinder.faces(
-            in: faceSources(in: doc, includeAuxiliary: false)).count
-        vanishedPolygonCount = max(0, totalPolygonCount - remaining)
-    }
-
-    var polygonProgressFraction: Double {
-        guard totalPolygonCount > 0 else { return 0 }
-        return Double(min(totalPolygonCount, taggedPolygonCount + vanishedPolygonCount))
-            / Double(totalPolygonCount)
-    }
-
-    var taggedPolygonFraction: Double {
-        guard totalPolygonCount > 0 else { return 0 }
-        return Double(min(totalPolygonCount, taggedPolygonCount)) / Double(totalPolygonCount)
-    }
-
-    var vanishedPolygonFraction: Double {
-        guard totalPolygonCount > 0 else { return 0 }
-        return Double(min(totalPolygonCount, vanishedPolygonCount)) / Double(totalPolygonCount)
-    }
-
-    var polygonProgressText: String {
-        "\(taggedPolygonCount + vanishedPolygonCount) / \(totalPolygonCount)"
-    }
+    // 다각형 기준 진행률(5-5-2)은 점 기준으로 바뀌었다(#21, `PointEditing.swift`).
 }
 
 /// 다각형을 고르는 두 가지 방법(5-4 1·2번).
