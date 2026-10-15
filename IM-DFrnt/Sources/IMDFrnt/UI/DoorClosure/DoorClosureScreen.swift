@@ -57,28 +57,22 @@ struct DoorClosureScreen: View {
             slot(icon: "smallcircle.filled.circle",
                  label: "점 \(env.doorDraftPoints.count)/2",
                  filled: env.doorDraftPoints.count == 2)
-            divider
-            slot(icon: "door.left.hand.open",
-                 label: env.doorDraftDoorID == nil ? "열려 있는 문" : "문 ✓",
-                 filled: env.doorDraftDoorID != nil)
-            divider
-            slot(icon: "arrow.clockwise",
-                 label: env.doorDraftArcID == nil ? "호" : "호 ✓",
-                 filled: env.doorDraftArcID != nil)
+            // #37: 문짝·호 칸을 없앴다. 문 선의 양 끝 두 점만 찍는다.
             divider
 
             Button { env.saveTemporaryDoor() } label: {
-                Label("Openings 개체로 저장", systemImage: "square.and.arrow.down")
+                Label("임시 문 저장", systemImage: "square.and.arrow.down")
             }
+            .keyboardShortcut(.return, modifiers: [])
             .buttonStyle(.toolbar)
             .padding(.horizontal, 10)
             .disabled(!env.canSaveTemporaryDoor)
             .help(env.temporaryDoorHint)
 
-            if env.doorDraftPoints.count > 0 || env.doorDraftDoorID != nil || env.doorDraftArcID != nil {
+            if env.doorDraftPoints.count > 0 {
                 divider
                 Button { env.resetDoorDraft() } label: {
-                    Label("고른 것 비우기", systemImage: "xmark.circle")
+                    Label("찍은 점 비우기", systemImage: "xmark.circle")
                 }
                 .buttonStyle(.toolbar)
                 .padding(.horizontal, 10)
@@ -88,7 +82,7 @@ struct DoorClosureScreen: View {
         .toolbarCard()
     }
 
-    /// 지금 단계 안내(①점 → ②문짝·호). 클릭의 뜻이 단계마다 달라지는 것을 화면이 말한다.
+    /// 지금 무엇을 찍어야 하는지 안내한다.
     private var stageHint: some View {
         Text(env.doorStageHint)
             .font(.caption)
@@ -96,8 +90,7 @@ struct DoorClosureScreen: View {
             .toolbarCapsuleCard()
     }
 
-    /// 네 칸 중 하나. **무엇이 채워졌고 무엇이 남았는지를 칸으로 보여준다.**
-    /// "4개 모두 선택되면 활성화"(3-4)라는 규칙은 남은 개수가 보여야 지킬 수 있다 —
+    /// 상태 칸. **무엇이 채워졌고 무엇이 남았는지를 칸으로 보여준다** —
     /// 버튼만 흐리게 두면 무엇이 모자란지 알 수 없어 아무거나 눌러 보게 된다.
     private func slot(icon: String, label: String, filled: Bool) -> some View {
         HStack(spacing: 5) {
@@ -137,7 +130,7 @@ struct DoorClosureScreen: View {
                             doorRow(door)
                         }
                         if env.doorClosures.isEmpty {
-                            Text("아직 없습니다.\n도면에서 문 자리의 두 점과 문·호를 고른 뒤 저장하세요.")
+                            Text("아직 없습니다.\n도면에서 문 선의 양 끝 두 점을 찍은 뒤 저장하세요.")
                                 .font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(8)
@@ -159,7 +152,7 @@ struct DoorClosureScreen: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!env.canApplyTemporaryDoors)
 
-                Text("반영하면 각 임시 문이 opening feature 하나가 되고, 쓰인 문·호는 그 feature 소유가 됩니다.")
+                Text("반영하면 각 임시 문이 opening feature 하나가 됩니다. 좌표는 찍은 두 점입니다.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -182,12 +175,12 @@ struct DoorClosureScreen: View {
             Spacer()
             Button(role: .destructive) {
                 env.requestDeletion(title: "\(door.label)을 삭제할까요?",
-                                    message: "이 임시 문을 삭제합니다. 쓰인 문과 호는 다시 고를 수 있게 됩니다. 실행 취소로 복구할 수 있습니다.") {
+                                    message: "이 임시 문을 삭제합니다. 실행 취소로 복구할 수 있습니다.") {
                     $0.removeTemporaryDoor(door.id)
                 }
             } label: { Image(systemName: "trash").foregroundStyle(.red) }
                 .buttonStyle(.borderless)
-                .help("이 임시 문을 지웁니다. 쓰인 문·호는 다시 고를 수 있게 됩니다.")
+                .help("이 임시 문을 지웁니다.")
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))

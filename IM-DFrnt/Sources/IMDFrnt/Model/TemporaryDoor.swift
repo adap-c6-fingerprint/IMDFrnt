@@ -19,16 +19,19 @@ struct TemporaryDoor: Identifiable, Codable, Equatable, Sendable {
     /// 사용자가 찍은 점 쌍. **도면에 없는 선분이라 개체 id로 가리킬 수 없다.**
     /// 좌표를 직접 들고 있는 것은 그래서다.
 
-    var doorObjectID: VectorObjectID
-    /// 열린 상태로 그려진 문짝.
+    var doorObjectID: VectorObjectID?
+    /// 열린 상태로 그려진 문짝. **#37(2026-10-15)부터 고르지 않는다** — 두 점만 찍는다.
+    /// 예전에 저장한 임시 문에는 값이 남아 있어 그대로 읽는다(변환하지 않는다).
 
-    var arcObjectID: VectorObjectID
-    /// 그 문의 회전 궤적(호).
+    var arcObjectID: VectorObjectID?
+    /// 그 문의 회전 궤적(호). 문짝과 같은 이유로 선택 항목이다.
+    /// C5 도면은 호가 점선(짧은 선분 여러 개)이라 곡선 하나로 고를 수 없었다(#35·#37).
 
     var createdAt: Date
 
-    /// 문짝과 호. 이 둘은 opening feature의 구성원이 되어 진행률에 기여한다(신기능 3-7).
-    var consumedObjectIDs: Set<VectorObjectID> { [doorObjectID, arcObjectID] }
+    /// 문짝과 호. 예전 임시 문이면 opening feature의 구성원이 되어 진행률에 기여한다(신기능 3-7).
+    /// 새 임시 문은 비어 있다 — 좌표는 찍은 두 점이 정본이고 구성원이 필요 없다.
+    var consumedObjectIDs: Set<VectorObjectID> { Set([doorObjectID, arcObjectID].compactMap { $0 }) }
 
     var segment: LineSegment { LineSegment(start: start, end: end) }
 

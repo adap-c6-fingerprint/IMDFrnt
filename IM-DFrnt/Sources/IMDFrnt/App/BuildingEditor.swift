@@ -145,7 +145,7 @@ extension AppEnvironment {
         selection = SelectionStore(); expandedFeature = nil; faceSelection = []
         auxiliarySelection = []; focusedTwinKey = nil
         moves.reset(nil); isMoveEnabled = false; mode = .idle
-        doorDraftPoints = []; doorDraftDoorID = nil; doorDraftArcID = nil
+        doorDraftPoints = []
         routingConnectionDrag = nil; routingSelectedNodeID = nil; routingSelectedEdgeID = nil
         routingPendingAnchor = nil; pendingDeletion = nil; pendingClearSelection = nil
         conflict = nil; exportBlockers = []; closedPolygonNotice = nil

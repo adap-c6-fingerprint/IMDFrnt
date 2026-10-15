@@ -2229,26 +2229,19 @@ enum SelfTest {
               DoorClosureAppearance.excludedOpacity != 0.5,
               "그쪽은 사노 요청으로 50%가 됐다 — 우연히 같았던 수치를 묶으면 한쪽이 조용히 끌려간다")
 
-        // 3-3·3-4) 넷을 모두 고르기 전에는 저장할 수 없다
+        // 3-3·3-4) #37(2026-10-15): 문짝·호를 고르지 않는다. 문 선의 양 끝 두 점만 찍는다.
+        // C5 도면은 호가 점선(짧은 선분 여러 개)이라 곡선 하나로 고를 수 없었다(1차 사용성 검증 #35).
         guard let arcObj = dcDoc.objects.first(where: { $0.isCurved }),
               let doorObj = dcDoc.objects.first(where: { !$0.isCurved && $0.sourceElement == "line" }) else {
-            print("[FAIL] 문닫기: 시험용 문·호를 못 찾음"); exit(1)
+            print("[FAIL] 문닫기: 예전 방식 시험용 문·호를 못 찾음"); exit(1)
         }
-        check("문닫기: 아무것도 안 골랐으면 저장 불가", !dc.canSaveTemporaryDoor)
+        check("문닫기: 아무것도 안 찍었으면 저장 불가", !dc.canSaveTemporaryDoor)
         dc.toggleDoorPoint(LocalPoint(10, 10))
         check("문닫기: 점 1개로는 저장 불가", !dc.canSaveTemporaryDoor)
+        check("문닫기: 왜 못 누르는지 알려준다", dc.temporaryDoorHint.contains("1개"), dc.temporaryDoorHint)
         dc.toggleDoorPoint(LocalPoint(40, 10))
-        check("문닫기: 점만 2개여도 저장 불가", !dc.canSaveTemporaryDoor,
-              "명세 3-4는 넷이 모두 갖춰져야 한다고 못박는다")
-        check("문닫기: 왜 못 누르는지 알려준다", dc.temporaryDoorHint.contains("문"),
-              dc.temporaryDoorHint)
-
-        dc.toggleDoorObject(doorObj.id)
-        check("문닫기: 직선은 문짝 자리에 들어간다", dc.doorDraftDoorID == doorObj.id)
-        dc.toggleDoorObject(arcObj.id)
-        check("문닫기: 곡선은 호 자리에 들어간다", dc.doorDraftArcID == arcObj.id,
-              "어느 자리인지는 사용자가 아니라 도형이 정한다 — 호는 회전 궤적이라 반드시 곡선이다")
-        check("문닫기: 넷이 갖춰지면 저장할 수 있다", dc.canSaveTemporaryDoor)
+        check("#37 문닫기: 점 2개면 문짝·호 없이 저장할 수 있다", dc.canSaveTemporaryDoor,
+              "호와 문짝을 고르는 단계를 없앴다")
 
         // 점은 두 개까지만. 세 번째는 가장 오래된 것을 밀어낸다.
         dc.toggleDoorPoint(LocalPoint(70, 10))
@@ -2265,9 +2258,7 @@ enum SelfTest {
         dc.undoStack.clear()
         dc.saveTemporaryDoor()
         check("문닫기: 저장하면 목록에 쌓인다", dc.doorClosures.count == 1)
-        check("문닫기: 저장 뒤에는 고른 것이 비워진다",
-              dc.doorDraftPoints.isEmpty && dc.doorDraftDoorID == nil && dc.doorDraftArcID == nil,
-              "안 비우면 다음 문을 찍을 때 앞 문의 개체가 딸려 온다")
+        check("문닫기: 저장 뒤에는 찍은 점이 비워진다", dc.doorDraftPoints.isEmpty)
         check("문닫기: 저장은 실행취소 대상이다", dc.canUndo,
               "스냅샷에서 빠뜨리면 perform이 '바뀐 게 없다'고 판단해 칸을 도로 버린다")
         dc.undo()
@@ -2276,57 +2267,67 @@ enum SelfTest {
         check("문닫기: 다시실행도 된다", dc.doorClosures.count == 1)
 
         guard let saved = dc.doorClosures.doors.first else { print("[FAIL] 문닫기: 저장 실패"); exit(1) }
-        check("문닫기: 쓰인 문·호를 기억한다",
-              saved.consumedObjectIDs == [doorObj.id, arcObj.id])
-        check("문닫기: 같은 개체를 다른 문이 또 쓰지 못한다",
-              dc.doorClosures.user(of: doorObj.id)?.id == saved.id,
-              "같은 문짝을 두 opening이 나눠 갖는 상황은 도면상 있을 수 없다")
-
-        // 3-7) 진행률 기여 — 레이어에 반영하기 **전에도** 센다
-        let doorClaimedBefore = dc.claimedCount
-        check("문닫기: 반영 전에도 진행률에 기여한다", doorClaimedBefore >= 2,
-              "\(doorClaimedBefore)개 — 작업을 했는데 막대가 안 움직이면 한 줄 알 수 없다")
+        check("#37 문닫기: 새 임시 문은 도면 개체를 쓰지 않는다",
+              saved.doorObjectID == nil && saved.arcObjectID == nil && saved.consumedObjectIDs.isEmpty)
 
         // 같은 자리를 겨냥해도 길이 0인 문은 저장되지 않는다.
         // 토글이라 같은 점을 두 번 찍으면 취소되지만, 그 경로로만 막으면 규칙이 UI에 갇힌다.
         let beforeZero = dc.doorClosures.count
         dc.doorDraftPoints = [LocalPoint(200, 200), LocalPoint(200, 200)]
-        dc.doorDraftDoorID = doorObj.id
-        dc.doorDraftArcID = arcObj.id
         dc.saveTemporaryDoor()
         check("문닫기: 길이 0인 문은 저장되지 않는다", dc.doorClosures.count == beforeZero,
               "길이 0인 LineString은 GeoJSON으로 나가면 그대로 깨진 opening이 된다")
         dc.resetDoorDraft()
 
         // 3-6) 레이어 반영
+        let doorClaimedBefore = dc.claimedCount
         let openingsBefore = dc.features.count(ofType: .opening)
         dc.applyTemporaryDoors()
         check("문닫기: 반영하면 opening feature가 된다",
               dc.features.count(ofType: .opening) == openingsBefore + 1)
         check("문닫기: 반영하면 목록이 비워진다", dc.doorClosures.isEmpty)
-        check("문닫기: 반영 뒤에도 진행률이 두 번 세지 않는다", dc.claimedCount == doorClaimedBefore,
-              "\(dc.claimedCount) vs \(doorClaimedBefore) — 집합 합집합으로 세야 이중 계산이 안 샌다")
 
         guard let openingFeature = dc.features.features(ofType: .opening).last else {
             print("[FAIL] 문닫기: opening feature 없음"); exit(1)
         }
-        check("문닫기: 쓰인 문·호가 그 feature 소유가 된다",
-              openingFeature.memberIDs == [doorObj.id, arcObj.id]
-              && dc.ownership.ownerOf(doorObj.id) == openingFeature.id)
+        check("#37 문닫기: 반영된 opening은 개체를 소유하지 않는다",
+              openingFeature.memberIDs.isEmpty && dc.claimedCount == doorClaimedBefore)
         check("문닫기: 찍은 선분이 feature에 실린다",
               openingFeature.closureSegment?.start == saved.start
               && openingFeature.closureSegment?.end == saved.end)
-
-        // 좌표는 구성원이 아니라 찍은 선분에서 나와야 한다.
         let doorVerts = VertexExtractor.vertices(for: openingFeature, document: dcDoc,
                                              segmentation: dc.segmentation, kind: .lineString)
         check("문닫기: opening 좌표는 찍은 두 점이다",
-              doorVerts.count == 2 && doorVerts[0] == saved.start && doorVerts[1] == saved.end,
-              "구성원으로 LineString을 만들면 호를 따라 휘어진 엉뚱한 선이 나온다")
+              doorVerts.count == 2 && doorVerts[0] == saved.start && doorVerts[1] == saved.end)
 
-        // 3-8) 소유권 배타 규칙은 이 경로에서도 그대로
-        check("문닫기: 이미 쓰인 개체는 다시 못 고른다",
-              dc.ownership.ownerOf(arcObj.id) != nil)
+        // 예전 방식(문짝·호를 고른) 임시 문은 변환하지 않고 그대로 쓴다(#37 결정 4).
+        let legacyDoor = TemporaryDoor(id: UUID(), start: LocalPoint(300, 300), end: LocalPoint(330, 300),
+                                       doorObjectID: doorObj.id, arcObjectID: arcObj.id, createdAt: Date())
+        dc.doorClosures.insert(legacyDoor)
+        check("#37 예전 임시 문: 쓰인 문·호를 기억한다",
+              legacyDoor.consumedObjectIDs == [doorObj.id, arcObj.id]
+              && dc.doorClosures.user(of: doorObj.id)?.id == legacyDoor.id)
+        check("#37 예전 임시 문: 반영 전에도 진행률에 기여한다", dc.claimedCount >= doorClaimedBefore + 2)
+        if let data = try? JSONEncoder().encode(legacyDoor),
+           let round = try? JSONDecoder().decode(TemporaryDoor.self, from: data) {
+            check("#37 예전 임시 문: 문짝·호 id가 왕복 보존된다", round == legacyDoor)
+        } else {
+            check("#37 예전 임시 문: 문짝·호 id가 왕복 보존된다", false, "직렬화 실패")
+        }
+        if let data = try? JSONEncoder().encode(saved),
+           let json = String(data: data, encoding: .utf8) {
+            check("#37 새 임시 문: 문짝·호 키 없이 저장·해독된다",
+                  !json.contains("doorObjectID") && (try? JSONDecoder().decode(TemporaryDoor.self, from: data)) == saved)
+        }
+        dc.applyTemporaryDoors()
+        if let legacyOpening = dc.features.features(ofType: .opening).first(where: {
+            $0.closureSegment?.start == legacyDoor.start }) {
+            check("#37 예전 임시 문: 반영하면 문·호가 그 feature 소유가 된다",
+                  legacyOpening.memberIDs == [doorObj.id, arcObj.id]
+                  && dc.ownership.ownerOf(doorObj.id) == legacyOpening.id)
+        } else {
+            check("#37 예전 임시 문: 반영하면 문·호가 그 feature 소유가 된다", false)
+        }
 
         // 저장 파일에 실린다 — 수십 개를 찍는 작업이라 앱을 닫았다고 사라지면 안 된다
         dc.doorClosures.insert(saved)
@@ -2337,78 +2338,42 @@ enum SelfTest {
             check("문닫기: 작업 파일에 실려 왕복한다", false, "직렬화 실패")
         }
 
-        // 3-2·3-3) 클릭이 점과 개체를 나눠 받는다 (2026-08-30 보고: 연속으로 못 닫는 문제)
-        //
-        // **예전에는 점을 언제나 먼저 봤고, 그래서 호를 고르는 일이 아예 불가능했다.**
-        // 호는 곡선이라 경로 위 꼭짓점이 그 자체로 후보 점이다 — 호를 누르면 반드시
-        // 그 위의 점이 먼저 잡혀 점만 늘어나고 호는 안 잡혔다. 문 하나를 저장하지 못하니
-        // 다음 문으로 넘어갈 수도 없었다. 이 항목이 그 재발을 막는다.
+        // 3-2) 클릭은 점만 찍는다(#37). 예전에는 점 2개 뒤 클릭이 개체(문짝·호)를 골랐다.
         let dcClick = AppEnvironment()
         dcClick.openSample()
         dcClick.selectPropertyType(.opening)
         dcClick.enterDoorClosureScreen()
-
-        guard let clickArc = dcClick.document?.objects.first(where: { $0.isCurved }),
-              let clickDoor = dcClick.document?.objects.first(where: {
-                  !$0.isCurved && $0.sourceElement == "line" }) else {
-            print("[FAIL] 문닫기 클릭: 시험용 문·호를 못 찾음"); exit(1)
-        }
-        /// 개체 위의 한 점. 곡선은 경로 가운데 꼭짓점이라 예전 규칙에서는 반드시 점이 이겼다.
-        func pointOn(_ o: VectorObject) -> LocalPoint {
-            let pts = dcClick.geometry(for: o).subpaths.first!.points
-            return pts[pts.count / 2]
-        }
-
-        check("문닫기 클릭: 시작은 점을 찍는 단계",
-              dcClick.doorClickStage == .pickingPoints, dcClick.doorStageHint)
-
         let clickSnaps = dcClick.doorSnapPoints
-        guard clickSnaps.count >= 2 else { print("[FAIL] 문닫기 클릭: 후보 점 부족"); exit(1) }
+        guard clickSnaps.count >= 4 else { print("[FAIL] 문닫기 클릭: 후보 점 부족"); exit(1) }
+
+        check("#37 문닫기 클릭: 안내는 두 점 찍기다", dcClick.doorStageHint.contains("2개"), dcClick.doorStageHint)
+        dcClick.handleDoorClosureClick(at: LocalPoint(-100_000, -100_000), tolerance: 6)
+        check("문닫기 클릭: 후보 점이 아닌 자리는 찍히지 않는다", dcClick.doorDraftPoints.isEmpty)
         dcClick.handleDoorClosureClick(at: clickSnaps[0].point, tolerance: 6)
         dcClick.handleDoorClosureClick(at: clickSnaps[1].point, tolerance: 6)
         check("문닫기 클릭: 점 두 개가 찍힌다", dcClick.doorDraftPoints.count == 2)
-        check("문닫기 클릭: 점이 차면 개체를 고르는 단계로 넘어간다",
-              dcClick.doorClickStage == .pickingObjects, dcClick.doorStageHint)
-
-        dcClick.handleDoorClosureClick(at: pointOn(clickArc), tolerance: 6)
-        check("문닫기 클릭: 호를 클릭하면 호가 잡힌다", dcClick.doorDraftArcID == clickArc.id,
-              "곡선 위는 어디를 눌러도 후보 점이라, 점을 먼저 보면 호는 영영 안 잡힌다")
-        check("문닫기 클릭: 호를 눌러도 찍은 점은 그대로", dcClick.doorDraftPoints.count == 2,
-              "점이 밀려나면 저장 버튼이 도로 꺼져 사용자는 이유를 알 수 없다")
-
-        dcClick.handleDoorClosureClick(at: pointOn(clickDoor), tolerance: 6)
-        check("문닫기 클릭: 문짝도 클릭으로 잡힌다", dcClick.doorDraftDoorID == clickDoor.id)
-        check("문닫기 클릭: 넷이 갖춰져 저장할 수 있다", dcClick.canSaveTemporaryDoor,
+        check("#37 문닫기 클릭: 두 점이면 바로 저장할 수 있다", dcClick.canSaveTemporaryDoor,
               dcClick.temporaryDoorHint)
 
-        // 찍은 점을 다시 누르면 지워지고, 다시 점을 찍는 단계로 돌아간다.
         let backOne = dcClick.doorDraftPoints[1]
         dcClick.handleDoorClosureClick(at: backOne, tolerance: 6)
         check("문닫기 클릭: 찍은 점을 다시 누르면 지워진다", dcClick.doorDraftPoints.count == 1)
-        check("문닫기 클릭: 지우면 다시 점 단계", dcClick.doorClickStage == .pickingPoints)
         dcClick.handleDoorClosureClick(at: backOne, tolerance: 6)
         check("문닫기 클릭: 다시 찍으면 복구된다", dcClick.doorDraftPoints.count == 2)
 
-        // 연속 작업 — 저장하고 나면 곧바로 다음 문을 같은 순서로 닫을 수 있어야 한다.
+        // 연속 작업 — 저장하고 나면 곧바로 다음 문을 닫을 수 있어야 한다.
         dcClick.saveTemporaryDoor()
-        check("문닫기 클릭: 저장하면 다시 점 단계로 돌아온다",
-              dcClick.doorClosures.count == 1 && dcClick.doorClickStage == .pickingPoints)
-
-        guard let arc2 = dcClick.document?.objects.first(where: {
-                  $0.isCurved && $0.id != clickArc.id }),
-              let door2 = dcClick.document?.objects.first(where: {
-                  !$0.isCurved && $0.sourceElement == "line" && $0.id != clickDoor.id }) else {
-            print("[FAIL] 문닫기 클릭: 두 번째 문·호를 못 찾음"); exit(1)
-        }
         dcClick.handleDoorClosureClick(at: clickSnaps[2].point, tolerance: 6)
         dcClick.handleDoorClosureClick(at: clickSnaps[3].point, tolerance: 6)
-        dcClick.handleDoorClosureClick(at: pointOn(arc2), tolerance: 6)
-        dcClick.handleDoorClosureClick(at: pointOn(door2), tolerance: 6)
-        check("문닫기 클릭: 두 번째 문도 클릭만으로 갖춰진다", dcClick.canSaveTemporaryDoor,
-              dcClick.temporaryDoorHint)
         dcClick.saveTemporaryDoor()
         check("문닫기 클릭: 문을 연속으로 닫을 수 있다", dcClick.doorClosures.count == 2,
-              "2026-08-30 보고 — 하나를 닫고 나면 다음 문을 닫을 수 없던 증상")
+              "점 4번 클릭 + 저장 2번으로 문 두 개 — 문짝·호를 고르는 클릭이 없다")
+        dcClick.applyTemporaryDoors()
+        let clickOpenings = dcClick.features.features(ofType: .opening)
+        check("#37 문닫기 클릭: 모두 반영하면 opening 두 개가 두 점 LineString이 된다",
+              clickOpenings.count == 2 && clickOpenings.allSatisfy {
+                  VertexExtractor.vertices(for: $0, document: dcClick.document!, segmentation: dcClick.segmentation,
+                                           kind: .lineString).count == 2 })
 
         // 20. 사이드바 '모두 접기' (2026-08-25 요청)
         let sb = AppEnvironment()
