@@ -64,6 +64,8 @@ extension AppEnvironment {
         isInstallingLevelDrawing = true
         installPreparedIndexes(prepared)
         isInstallingLevelDrawing = false
+        // Undo can restore expanded features while document is still nil.
+        refreshOpenRingGaps()
         loadingLevelID = nil
         drawingLoadError = nil
         refreshCanvasReferences()

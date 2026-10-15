@@ -53,7 +53,11 @@ extension AppEnvironment {
         let project = [ProjectFile.fileExtension, ProjectFile.interimFileExtension].contains(ext)
         guard project || ["svg", "png", "jpg", "jpeg"].contains(ext) else { return .failed }
         if project, projectURL?.resolvingSymlinksInPath().standardizedFileURL == url.resolvingSymlinksInPath().standardizedFileURL { return .opened }
-        if !project { return await importDrawingAsync(at: url) }
+        if !project {
+            return await importDrawingAsync(at: url, confirmingChanges: {
+                confirmingChanges?() ?? self.confirmUnsavedChanges(action: "다른 도면 열기")
+            })
+        }
         isProjectActionInProgress = true
         defer { isProjectActionInProgress = false }
         do {
@@ -74,7 +78,7 @@ extension AppEnvironment {
     }
 
     @discardableResult
-    func importDrawingAsync(at url: URL) async -> DocumentOpenResult {
+    func importDrawingAsync(at url: URL, confirmingChanges: (() -> Bool)? = nil) async -> DocumentOpenResult {
         guard !isProjectBusy else { return .failed }
         isProjectActionInProgress = true
         defer { isProjectActionInProgress = false }
@@ -89,6 +93,9 @@ extension AppEnvironment {
                     : DrawingImageImporter.embedLocalImages(in: data, relativeTo: url)
                 return try PreparedLevelDrawing.make(LevelDrawingInput(levelID: id, svg: String(decoding: svg, as: UTF8.self), sourceName: url.lastPathComponent))
             }.value
+            // Finder's unsaved-work decision follows validation and precedes
+            // every mutation, including clearing an anchor-only editor.
+            guard confirmingChanges?() ?? true else { return .cancelled }
             if buildingProject.levels.isEmpty {
                 if !hasCreatedProject { resetProjectState() }
                 perform("첫 층 도면 불러오기") {

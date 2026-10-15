@@ -1,5 +1,15 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-15 — PR #27 P2 리뷰 반영
+
+- 코드 변경 전 #20에 두 P2의 재현·수정·완료 조건을 기록했다. 기존 PR #27과 `feat/#20-level-drawing-management`에서 수정한다.
+- Finder SVG/이미지 열기에서도 비동기 검증 후 기존 미저장 변경 확인을 실행한다. 기준점만 수정한 작업도 저장·폐기·취소를 거치며, 취소/저장 창 취소/손상 입력에서는 기준점·도면·복구본·Undo 기록을 바꾸지 않는다. 명시적 층 도면 가져오기의 기존 확인 흐름을 유지한다.
+- 준비된 도면과 색인을 설치한 뒤 `refreshOpenRingGaps()`를 호출한다. 캐시 없는 Undo에서 도면이 nil일 때 비워진 경고를 다시 계산한다.
+- 실제 수정 전 코드에 회귀 검사를 추가해 기본 입력 40/49 PASS(9개 실패)로 두 문제를 재현했다. SVG·PNG·JPG 확인 누락과 취소 시 데이터 변경, 저장 취소 무시/저장 누락, 실제 틈 2곳인데 경고가 0개인 Undo가 실패했다. 수정 후 같은 기본 입력은 49/49 PASS다.
+- Swift 6 Release 빌드(경고 없음), 번들 서명, diff 검사를 통과했다. 실제 C5 폴더·현재 사용자 테스트 프로젝트로 6/6 CLI 모드 통과: SVG ALL PASS, Building 34/34, Project 23/23, Document open 24/24, Routing 102/102, Drawing Loading 46/46. 도면 검사 수는 입력 층 수에 따라 달라진다.
+- 로그: `/private/var/folders/y_/53_320qj4pqcgw5hp41cgr2m0000gp/T/imdfrnt-self-tests.LUiJi2`; 동일 기본 입력의 수정 전/후 로그: `/private/tmp/imdfrnt-pr27-review-before-test.log`, `/private/tmp/imdfrnt-pr27-review-fixed-test.log`. 검사 앱: `/private/tmp/IMDFrntPR27Review-Fixed.app`.
+- 검사는 실제 비동기 열기·Undo 명령과 확인 응답 주입을 사용한다. Finder 이벤트/네이티브 alert 버튼을 실제로 클릭해 검증한 것으로 표시하지 않는다.
+
 ## 2026-10-14 — #20 층별 도면·#26 전환 버퍼링
 
 - 구현 전 #20·서브 이슈 #26에 작업 목적과 완료 조건을 기록하고, 병합된 develop에서 `feat/#20-level-drawing-management`를 만들었다. #18·#19는 닫힌 상태를 유지한다.

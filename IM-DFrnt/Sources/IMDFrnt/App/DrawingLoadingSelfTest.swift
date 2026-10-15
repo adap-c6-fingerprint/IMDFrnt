@@ -163,6 +163,7 @@ enum DrawingLoadingSelfTest {
             var asked = false
             let failed = await opened.openDocumentAsync(at: badURL, confirmingChanges: { asked = true; return true })
             check("비동기 손상 파일은 교체 질문 없이 작업 보존", failed == .failed && !asked && opened.makeProjectFile()!.hasSameContents(as: unsaved))
+            try await DrawingLoadingReviewSelfTest.run(environment: environment, check: check)
         } catch { check("도면 로딩 검증", false); print(error) }
         print("== Drawing Loading: \(total - failures)/\(total) PASS ==")
         exit(failures == 0 ? 0 : 1)

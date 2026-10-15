@@ -44,6 +44,8 @@ cd IM-DFrnt
 
 ## 2026-10-13 검증
 
+이후 PR #27 리뷰 회귀 결과는 아래 **2026-10-15 검증**을 참고한다.
+
 macOS 27.0.1 (26A434), arm64, Apple Swift 6.4에서 Release 빌드 및 ad-hoc 서명 검사에 성공했다. UUID nil 비교와 deprecated `onChange` 경고 5곳을 수정한 빌드 로그에는 경고가 없다. CLI 검사는 실행 권한을 확장하지 않은 기본 sandbox 실행에서도 모두 종료 코드 0으로 통과했다.
 
 | 모드 | 기본 입력 | 실제 C5 폴더·ZIP 및 기존 v4 입력 포함 |
@@ -59,3 +61,11 @@ macOS 27.0.1 (26A434), arm64, Apple Swift 6.4에서 Release 빌드 및 ad-hoc �
 이전 PR에 기재된 통과 결과는 당시 로컬 실행 기록이다. 리뷰어의 환경에서 독립 재현되지 않았다는 피드백과 구분한다. 새 실행 경로의 통과 결과 또한 위 환경에서 확인한 결과이며 별도 리뷰 환경의 재실행을 대신하지 않는다.
 
 일반 실행도 사용자 작업과 분리한 QA 프로세스에서 시도했다. 프로세스 샘플은 SwiftUI `App.main()` → `NSApplicationMain` → AppKit 이벤트 루프 진입을 확인했다. UI 도구는 `Sky Computer Use native pipe startup failed`로 실패했고 접근성 대체 조회에서도 기존·신규 IM-DFrnt 프로세스의 창을 조회하지 못했다. 초기 화면과 건물·층 관리 시트의 실제 렌더링·입력은 검증한 것으로 표시하지 않는다.
+
+## 2026-10-15 검증
+
+PR #27의 두 P2에 대해 `DrawingLoadingReviewSelfTest`를 도면 검사에 연결했다. 수정 전 코드의 동일 기본 입력은 40/49 PASS였고 수정 후 49/49 PASS다. Feature·노드 없이 기준점만 수정한 SVG/PNG/JPG 열기의 확인·취소·복구본/Undo 보존, 저장 취소·저장 승인·폐기 승인·손상 입력, 캐시 없는 Undo 후 열린 링 경고 2곳과 캐시된 Undo/Redo를 검사한다.
+
+Swift 6 Release 빌드·서명과 6/6 모드를 통과했다. 실제 C5 폴더와 현재 테스트 프로젝트를 지정한 결과는 Building 34/34, Project 23/23, Document open 24/24, Routing 102/102, Drawing Loading 46/46 및 SVG ALL PASS다. 층마다 수행하는 항목이 있어 도면 검사 수는 입력 층 수에 따라 달라진다. 로그는 `/private/var/folders/y_/53_320qj4pqcgw5hp41cgr2m0000gp/T/imdfrnt-self-tests.LUiJi2`에 있다.
+
+확인 응답을 주입한 실제 비동기 파일 열기와 편집 명령의 검증이다. 네이티브 Finder 이벤트·alert 버튼 입력을 실제로 확인한 결과로 해석하지 않는다.
