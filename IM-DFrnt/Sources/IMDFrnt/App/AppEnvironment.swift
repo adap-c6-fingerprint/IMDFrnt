@@ -154,12 +154,21 @@ final class AppEnvironment: ObservableObject {
     @Published var pendingDeletion: DeletionRequest?
     var routingContextMenuIsOpen = false
     @Published var isImportingIMDF = false
-    var routingDrawingCache: [UUID: (String, DrawingDocument)] = [:]
+    let levelDrawingCache = LevelDrawingCache()
+    var levelDrawingTask: Task<Void, Never>?
+    var levelPrefetchTask: Task<Void, Never>?
+    var levelDrawingRequest = UUID()
+    @Published var loadingLevelID: UUID?
+    @Published var drawingLoadError: String?
+    var isInstallingLevelDrawing = false
+    @Published var canvasReferences: PreparedCanvasReferences?
+    var canvasReferenceCache: [UUID: PreparedCanvasReferences] = [:]
+    var canvasReferenceTask: Task<Void, Never>?
 
     // MARK: 문서와 상태
 
     @Published var document: DrawingDocument? {
-        didSet { rebuildDocumentIndexes() }
+        didSet { if !isInstallingLevelDrawing { rebuildDocumentIndexes() } }
     }
 
     /// 개체별 파생 데이터(Path · 선분 · 경계 상자). 제안 2.
@@ -213,7 +222,7 @@ final class AppEnvironment: ObservableObject {
         didSet {
             invalidateRenderStates()
             refreshOverlap()
-            if auxiliary != oldValue, isPolygonWorkMode { rebuildClosedPolygons() }
+            if !isInstallingLevelDrawing, auxiliary != oldValue, isPolygonWorkMode { rebuildClosedPolygons() }
             // 보조 개체를 빼면 그 선분이 이루던 면이 없어지거나 옆면과 합쳐진다.
             // 다시 세지 않으면 화면의 면과 실제가 어긋난다.
 
@@ -225,7 +234,7 @@ final class AppEnvironment: ObservableObject {
             // 면 0개로 보이는 것이 원인이다.**
             // 보조 개체 제외 창 안에서는 미룬다 — 그 창이 떠 있는 동안 좌측 사이드바는 보이지
             // 않으므로 클릭마다 무거운 면 찾기를 돌릴 이유가 없다. 창을 닫을 때 한 번 센다.
-            if auxiliary != oldValue, !showAuxiliaryScreen { rebuildVanishedPolygonCount() }
+            if !isInstallingLevelDrawing, auxiliary != oldValue, !showAuxiliaryScreen { rebuildVanishedPolygonCount() }
         }
     }
     @Published var doorClosures = DoorClosureStore() { didSet { refreshOpenRingGaps() } }
@@ -234,7 +243,9 @@ final class AppEnvironment: ObservableObject {
     @Published var borrow = BorrowRegistry() {
         didSet { invalidateRenderStates(); refreshOpenRingGaps() }
     }
-    @Published var anchors = AnchorStore()
+    @Published var anchors = AnchorStore() {
+        didSet { if !isInstallingLevelDrawing { refreshCanvasReferences() } }
+    }
     @Published var serials = SerialNumberAllocator()
     @Published var ids = IDAssigner()
     @Published var mode: InteractionMode = .idle { didSet { invalidateRenderStates() } }
@@ -454,6 +465,10 @@ final class AppEnvironment: ObservableObject {
     // MARK: 문서 열기
 
     func resetProjectState(id: UUID = UUID()) {
+        cancelLevelDrawingLoads()
+        levelDrawingCache.reset()
+        canvasReferenceTask?.cancel(); canvasReferenceTask = nil
+        canvasReferenceCache = [:]; canvasReferences = nil
         document = nil
         loadedSVG = nil
         projectID = id
@@ -477,7 +492,6 @@ final class AppEnvironment: ObservableObject {
         layers.bootstrap()
         buildingProject = BuildingProject()
         showBuildingManager = false
-        routingDrawingCache = [:]
         routingFloorID = nil
         routingSelectedNodeID = nil
         routingSelectedEdgeID = nil
@@ -537,16 +551,7 @@ final class AppEnvironment: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.title = "도면 열기 (SVG·PNG·JPG)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let data = try Data(contentsOf: url)
-            let image = ["png", "jpg", "jpeg"].contains(url.pathExtension.lowercased())
-            let svg = try image ? DrawingImageImporter.embeddedSVG(from: data)
-                : DrawingImageImporter.embedLocalImages(in: data, relativeTo: url)
-            load(data: svg, name: url.lastPathComponent, confirmingReplacement: true)
-            if document != nil { persist(showingBanner: false) }
-        } catch {
-            notify("파일을 읽지 못했습니다: \(error.localizedDescription)", isError: true)
-        }
+        Task { await importDrawingAsync(at: url) }
     }
 
     func load(data: Data, name: String, confirmingReplacement: Bool = false) {
@@ -651,7 +656,7 @@ final class AppEnvironment: ObservableObject {
         let response = panel.runModal()
         isProjectActionInProgress = false
         guard response == .OK, let url = panel.url else { return }
-        openDocument(at: url)
+        Task { await openDocumentAsync(at: url) }
     }
 
     // MARK: 진행률 (명세 3-1) — 전역 하나만 둔다
@@ -773,6 +778,9 @@ final class AppEnvironment: ObservableObject {
     }
 
     private func computeRenderState(for object: VectorObject) -> ObjectRenderState {
+        if currentRoutingFloor?.imdfCoordinates == nil, !primarySVGPresentation.isVisible {
+            return ObjectRenderState(opacity: 0, isVisible: false, isSelected: false, isDisabled: true)
+        }
         var opacity = 1.0
         var visible = true
         let isSelected = selection.selected.contains(object.id)
@@ -1262,7 +1270,7 @@ final class AppEnvironment: ObservableObject {
         let restoredSVG = s.buildingProject.levels.first { $0.id == s.routingFloorID }?.info.svg
         let needsDocument = routingFloorID != s.routingFloorID || (loadedSVG ?? "") != (restoredSVG ?? "")
         buildingProject = s.buildingProject
-        if needsDocument { try? loadLevelEditor(s.routingFloorID) }
+        if needsDocument { beginLevelDrawingLoad(s.routingFloorID) }
         layers = s.layers
         features = s.features
         ownership = s.ownership
@@ -1288,6 +1296,7 @@ final class AppEnvironment: ObservableObject {
         pendingClearSelection = nil
         pendingDeletion = nil
         // 열려 있던 경고창은 되돌린 상태와 아귀가 안 맞을 수 있으니 함께 닫는다.
+        refreshCanvasReferences()
     }
 
     /// 되돌릴 수 있는 작업 단위 하나를 실행한다. **상태를 바꾸는 명령은 전부 이걸 거친다.**
@@ -1299,6 +1308,7 @@ final class AppEnvironment: ObservableObject {
         let before = snapshot
         undoStack.record(name, coalescingKey: coalescingKey, before: before)
         body()
+        refreshCanvasReferences()
         if snapshot == before, undoStack.undoName == name { undoStack.discardLast() }
     }
 
@@ -1464,6 +1474,26 @@ final class AppEnvironment: ObservableObject {
 
     private(set) var twinKeyByObject: [VectorObjectID: String] = [:]
     private var twinMembersByKey: [String: Set<VectorObjectID>] = [:]
+
+    func clearDocumentIndexesForLoading() {
+        objectIDsByAttributeKey = [:]
+        spatialIndex = SpatialIndex()
+        twinKeyByObject = [:]; twinMembersByKey = [:]; twinGroups = []
+    }
+
+    func installPreparedIndexes(_ prepared: PreparedLevelDrawing) {
+        document = prepared.document
+        renderCache.install(prepared.renderEntries)
+        objectIDsByAttributeKey = prepared.attributeIndex
+        spatialIndex = prepared.spatialIndex
+        twinKeyByObject = prepared.twinKeys
+        twinGroups = prepared.twinGroups.map { TwinGroup(key: $0.key, memberIDs: $0.memberIDs, sample: $0.sample) }
+        twinMembersByKey = Dictionary(uniqueKeysWithValues: prepared.twinGroups.map { ($0.key, Set($0.memberIDs)) })
+        totalPolygonCount = prepared.totalPolygonCount
+        vanishedPolygonCount = prepared.vanishedPolygonCount
+        doorSnapCache = []
+        invalidateRenderStates()
+    }
 
     /// 도면이 바뀔 때 한 번만 돈다. `document`의 `didSet`이 유일한 호출자다 —
     /// 다른 곳에서 부르면 "언제 최신인가"가 흐려져 예전의 매 프레임 재계산으로 되돌아간다.

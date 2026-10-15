@@ -24,10 +24,13 @@ final class SVGParser: NSObject, XMLParserDelegate {
     ]
 
     static func parse(data: Data, sourceName: String) throws -> DrawingDocument {
+        try Task.checkCancellation()
         let p = SVGParser()
         let xml = XMLParser(data: data)
         xml.delegate = p
-        guard xml.parse() else {
+        let parsed = xml.parse()
+        try Task.checkCancellation()
+        guard parsed else {
             throw p.failure ?? Failure(message: "SVG XML을 읽지 못했습니다: \(xml.parserError?.localizedDescription ?? "알 수 없는 오류")")
         }
         if let f = p.failure { throw f }
@@ -43,6 +46,8 @@ final class SVGParser: NSObject, XMLParserDelegate {
                 namespaceURI: String?, qualifiedName qName: String?,
                 attributes attributeDict: [String: String] = [:]) {
         let name = elementName.lowercased()
+
+        if Task.isCancelled { parser.abortParsing(); return }
 
         if name == "svg" { readCanvasSize(attributeDict) }
 

@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - 좌표 타입
 
-struct LocalPoint: Hashable, Codable {
+struct LocalPoint: Hashable, Codable, Sendable {
     var x: Double
     var y: Double
     // SVG 도면 안에서만 통하는 좌표. 위경도가 아니다.
@@ -22,7 +22,7 @@ struct LocalPoint: Hashable, Codable {
     }
 }
 
-struct GeoPoint: Hashable, Codable {
+struct GeoPoint: Hashable, Codable, Sendable {
     var longitude: Double
     var latitude: Double
     // GeoJSON coordinates 순서(경도, 위도)와 필드 순서를 일치시켰다.
@@ -32,7 +32,7 @@ struct GeoPoint: Hashable, Codable {
 
 // MARK: - 경로
 
-enum PathSegment: Hashable {
+enum PathSegment: Hashable, Sendable {
     case line(to: LocalPoint)
     case cubic(c1: LocalPoint, c2: LocalPoint, to: LocalPoint)
     // 2차 베지어와 호(A)는 파싱 시점에 전부 3차로 환산하므로 여기 케이스가 없다.
@@ -50,7 +50,7 @@ enum PathSegment: Hashable {
     }
 }
 
-struct Subpath: Hashable {
+struct Subpath: Hashable, Sendable {
     var start: LocalPoint
     var segments: [PathSegment]
     var isClosed: Bool
@@ -62,7 +62,7 @@ struct Subpath: Hashable {
     var isCurved: Bool { segments.contains(where: \.isCurved) }
 }
 
-struct PathGeometry: Hashable {
+struct PathGeometry: Hashable, Sendable {
     var subpaths: [Subpath]
 
     var isEmpty: Bool { subpaths.isEmpty }
@@ -125,7 +125,7 @@ struct PathGeometry: Hashable {
     }
 }
 
-struct LineSegment: Hashable, Codable {
+struct LineSegment: Hashable, Codable, Sendable {
     var start: LocalPoint
     var end: LocalPoint
 

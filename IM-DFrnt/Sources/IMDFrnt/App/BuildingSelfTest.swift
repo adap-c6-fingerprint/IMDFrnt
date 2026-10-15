@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 enum BuildingSelfTest {
-    static func runIfRequested() {
+    static func runIfRequested() async {
         guard CommandLine.arguments.contains("--building-selftest") else { return }
         var total = 0, failures = 0
         func check(_ name: String, _ valid: Bool) {
@@ -55,6 +55,7 @@ enum BuildingSelfTest {
             _ = env.routing.connect(firstNode, secondNode)
             check("층간 연결은 공통 저장, 노드는 각 층에 저장", env.buildingProject.crossLevelEdges.count == 1 && env.buildingProject.levels.allSatisfy { $0.nodes.count == 1 && $0.edges.isEmpty })
             env.selectProjectLevel(first)
+            await env.waitForLevelDrawing()
             check("층 전환으로 SVG·태깅·Anchor 복원", env.loadedSVG == firstSVG && env.features.feature(feature.id) != nil && env.anchors.pairs.first?.label == "first")
             env.showRoutingScreen = false
             check("도면과 노드 화면이 동일한 Level·문서를 사용", env.activeLevel?.id == first && env.currentRoutingFloor?.id == first && env.document?.fingerprint == env.routingDocument?.fingerprint)
@@ -91,6 +92,7 @@ enum BuildingSelfTest {
             try reopened.adopt(file, from: url)
             check("재열기 후 모든 층·건물·Footprint·층간 연결 동일", reopened.projectContents == env.projectContents && !reopened.hasUnsavedChanges)
             reopened.selectProjectLevel(changed)
+            await reopened.waitForLevelDrawing()
             check("층 선택만으로 저장 상태가 바뀌지 않음", !reopened.hasUnsavedChanges && reopened.document?.sourceName == "second.svg" && reopened.currentRoutingFloor?.shortName == "2F")
             reopened.showRoutingScreen = false
             reopened.requestRoutingFloorDeletion(changed)
@@ -98,6 +100,7 @@ enum BuildingSelfTest {
             reopened.confirmDeletion(reopened.pendingDeletion!.id)
             check("Level 삭제는 소속 SVG·노드·층간 연결 정리", reopened.routing.floors.count == 1 && reopened.routing.node(secondNode) == nil && reopened.routing.edges.isEmpty && reopened.document?.sourceName == "first.svg")
             reopened.undo()
+            await reopened.waitForLevelDrawing()
             check("Level 삭제 Undo는 문서와 층별 작업까지 복원", reopened.projectContents == file.buildingProject && reopened.document?.sourceName == "second.svg")
             reopened.redo()
             check("Level 삭제 Redo", reopened.routing.floors.count == 1 && reopened.routing.edges.isEmpty)

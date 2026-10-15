@@ -163,6 +163,7 @@ struct GeoJSONExporter {
         // GeoJSON Polygon의 링은 첫 점과 끝 점이 같아야 한다.
     }
 
+    @MainActor
     static func write(_ object: [String: Any], suggestedName: String) throws -> URL? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = suggestedName

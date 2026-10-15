@@ -4,7 +4,7 @@ import SwiftUI
 
 typealias VectorObjectID = UUID
 
-struct RGBAColor: Hashable {
+struct RGBAColor: Hashable, Sendable {
     var r: Double, g: Double, b: Double, a: Double
 
     var swiftUI: Color { Color(.sRGB, red: r, green: g, blue: b, opacity: a) }
@@ -15,7 +15,7 @@ struct RGBAColor: Hashable {
     }
 }
 
-struct VectorStyle: Hashable {
+struct VectorStyle: Hashable, Sendable {
     var stroke: RGBAColor?
     var fill: RGBAColor?
     var strokeWidth: Double
@@ -53,7 +53,7 @@ extension RGBAColor {
 }
 
 /// SVG에서 읽은 개체 하나. **불변** — 어떤 코드도 문서에서 이 원소를 제거하지 않는다(명세 2항).
-struct VectorObject: Identifiable, Hashable {
+struct VectorObject: Identifiable, Hashable, Sendable {
     let id: VectorObjectID
     let geometry: PathGeometry
     let style: VectorStyle
@@ -89,11 +89,12 @@ struct VectorObject: Identifiable, Hashable {
     }
 }
 
-struct DrawingDocument {
+struct DrawingDocument: Sendable {
     let objects: [VectorObject]
     let canvasSize: CGSize
     let sourceName: String
     let rasterImages: [DrawingRasterImage]
+    let fingerprint: String
 
     private let index: [VectorObjectID: Int]
 
@@ -102,6 +103,7 @@ struct DrawingDocument {
         self.canvasSize = canvasSize
         self.sourceName = sourceName
         self.rasterImages = rasterImages
+        self.fingerprint = Self.makeFingerprint(objects: objects, rasterImages: rasterImages)
         var map: [VectorObjectID: Int] = [:]
         for (i, o) in objects.enumerated() { map[o.id] = i }
         self.index = map

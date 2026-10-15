@@ -2,7 +2,7 @@ import CoreGraphics
 import SwiftUI
 
 /// 개체 하나에서 파생되는, 매 프레임 다시 만들 이유가 없는 것들.
-struct ObjectRenderCache {
+struct ObjectRenderCache: Sendable {
     let path: Path
     let segments: [LineSegment]
     let box: CGRect
@@ -45,6 +45,8 @@ final class RenderCacheStore {
     func invalidate(_ id: VectorObjectID) { entries.removeValue(forKey: id) }
 
     func invalidateAll() { entries.removeAll() }
+
+    func install(_ prepared: [VectorObjectID: ObjectRenderCache]) { entries = prepared }
 
     var count: Int { entries.count }
 }

@@ -68,6 +68,9 @@ struct ProjectLevel: Identifiable, Equatable, Codable {
     var geoJSON: [String: [ProjectJSON]] = [:]
     var nodes: [RoutingNode] = []
     var edges: [RoutingEdge] = []
+    /// Optional additions keep existing v5 projects readable without migration.
+    var svgPresentation: DrawingLayerPresentation?
+    var referenceDrawing: LevelReferenceDrawing?
 }
 
 /// Common building and Levels are authoritative. RoutingGraph is a compatibility
@@ -83,6 +86,7 @@ struct BuildingProject: Equatable, Codable {
     var layoutVersion = "layout-1"
     var hardSearchRadiusMeters = 25.0
     var imdfSourceName: String?
+    var footprintPresentation: DrawingLayerPresentation?
 
     func validate() throws {
         guard Set(levels.map(\.id)).count == levels.count,

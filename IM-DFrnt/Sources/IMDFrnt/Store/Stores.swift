@@ -214,7 +214,7 @@ struct SelectionStore: Equatable {
 // MARK: - SegmentationStore
 
 /// 선분화 상태. `DrawingDocument.objects`는 절대 건드리지 않는다.
-struct SegmentationStore: Equatable, Codable {
+struct SegmentationStore: Equatable, Codable, Sendable {
     private(set) var segmentations: [VectorObjectID: Segmentation] = [:]
 
     func isSegmented(_ id: VectorObjectID) -> Bool { segmentations[id] != nil }

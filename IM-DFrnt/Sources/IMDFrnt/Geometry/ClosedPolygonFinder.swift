@@ -223,6 +223,7 @@ enum ClosedPolygonFinder {
 
         let eps = 1e-9
         for i in sources.indices {
+            if Task.isCancelled { return [] }
             for j in (i + 1)..<sources.count {
                 guard boxes[i].intersects(boxes[j]) else { continue }
                 guard let hit = crossing(sources[i].segment, sources[j].segment) else { continue }

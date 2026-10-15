@@ -64,6 +64,18 @@ struct CanvasView: View {
                             // Switching from the drawing editor changes sidebar widths and layout.
                             if env.showRoutingScreen { fit(doc: doc, viewport: size) }
                         }
+                } else if let levelID = env.loadingLevelID {
+                    VStack(spacing: 10) {
+                        ProgressView("\(env.buildingProject.levels.first { $0.id == levelID }?.info.name ?? "층") 도면을 불러오는 중…")
+                        Text("다른 층을 선택할 수 있습니다.").font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if let error = env.drawingLoadError {
+                    VStack(spacing: 10) {
+                        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                        Button("다시 불러오기") {
+                            if let id = env.routingFloorID { env.selectProjectLevel(id) }
+                        }
+                    }
                 } else {
                     emptyState
                 }
@@ -190,14 +202,19 @@ struct CanvasView: View {
                 ctx.translateBy(x: -c.x, y: -c.y)
             }
 
-            doc.drawImages(in: ctx)
+            drawReferenceLayers(in: ctx, canvasSize: doc.canvasSize, scale: s)
+            let primary = env.currentRoutingFloor?.imdfCoordinates == nil ? env.primarySVGPresentation : DrawingLayerPresentation(isVisible: true, opacity: 1)
+            if primary.isVisible {
+                var images = ctx; images.opacity *= primary.opacity
+                doc.drawImages(in: images)
+            }
             if env.showRoutingScreen {
-                drawRouting(in: &ctx, document: doc, scale: s)
+                drawRouting(in: &ctx, document: doc, scale: s, visible: visible)
                 return
             }
 
             // 하위 기본 레이어 — 원위치를 20% opacity로. 히트테스트 대상이 아니다.
-            if let ghost = ghostLayer, !ghost.isHidden {
+            if primary.isVisible, let ghost = ghostLayer, !ghost.isHidden {
                 for o in doc.objects {
                     let cache = env.renderCache.entry(for: o, segmentation: env.segmentation)
                     guard cache.box.insetBy(dx: -o.style.strokeWidth / 2 - 2,
@@ -206,7 +223,7 @@ struct CanvasView: View {
                     // 화면 밖은 그리지 않는다(제안 5). 고스트는 원위치를 그리는 레이어라
                     // 이동량을 얹지 않으므로 원본 상자 그대로 판정한다.
                     ctx.stroke(cache.path,
-                               with: .color(env.canvasBackground.ghostStroke.opacity(ghost.opacity)),
+                               with: .color(env.canvasBackground.ghostStroke.opacity(ghost.opacity * primary.opacity)),
                                lineWidth: CanvasZoom.strokeWidth(o.style.strokeWidth, at: s))
                     // 수치를 여기 다시 적지 않고 `EditorLayer.opacity`를 쓴다(사용자 조절분 포함).
                     // 명세 2-3의 수치가 두 곳에 흩어져 있으면 한쪽만 고쳐 어긋난다.
@@ -216,7 +233,7 @@ struct CanvasView: View {
             // 상위 기본 레이어 / 현재 property type 레이어
             for o in doc.objects {
                 let st = states[o.id] ?? env.renderState(for: o)
-                guard st.isVisible, st.opacity > 0.01 else { continue }
+                guard primary.isVisible, st.isVisible, st.opacity * primary.opacity > 0.01 else { continue }
 
                 let cache = env.renderCache.entry(for: o, segmentation: env.segmentation)
                 let off = moves.offset(for: o.id)
@@ -229,6 +246,7 @@ struct CanvasView: View {
                 // 이전에는 도면 전체를 그렸다.
 
                 var g = ctx
+                g.opacity *= primary.opacity
                 if off != .zero { g.translateBy(x: off.width, y: off.height) }
                 // 옮긴 개체는 좌표를 옮긴 사본을 만드는 대신 **자를 옮긴다**(제안 2).
                 // `GraphicsContext`는 값 타입이라 복사가 싸다.
@@ -386,14 +404,41 @@ struct CanvasView: View {
                    with: .color(color), lineWidth: 1.5 / s)
     }
 
-    private func drawRouting(in ctx: inout GraphicsContext, document: DrawingDocument, scale s: CGFloat) {
-        for object in document.objects {
-            let path = object.geometry.swiftUIPath
+    private func drawReferenceLayers(in context: GraphicsContext, canvasSize: CGSize, scale: CGFloat) {
+        guard let prepared = env.canvasReferences, prepared.input.levelID == env.routingFloorID else { return }
+        let footprint = env.footprintPresentation
+        if footprint.isVisible {
+            for path in prepared.footprintPaths {
+                context.fill(path, with: .color(.purple.opacity(footprint.opacity * 0.15)), style: FillStyle(eoFill: true))
+                context.stroke(path, with: .color(.purple.opacity(footprint.opacity)), lineWidth: CanvasZoom.screenLength(2, at: scale))
+            }
+        }
+        guard let doc = prepared.reference, let presentation = env.activeLevel?.referenceDrawing?.presentation,
+              presentation.isVisible, doc.canvasSize.width > 0, doc.canvasSize.height > 0 else { return }
+        let fit = min(canvasSize.width / doc.canvasSize.width, canvasSize.height / doc.canvasSize.height)
+        var layer = context
+        layer.opacity *= presentation.opacity
+        layer.translateBy(x: (canvasSize.width - doc.canvasSize.width * fit) / 2,
+                          y: (canvasSize.height - doc.canvasSize.height * fit) / 2)
+        layer.scaleBy(x: fit, y: fit)
+        doc.drawImages(in: layer)
+        for (object, path) in zip(doc.objects, prepared.paths) {
+            if let fill = object.style.fill { layer.fill(path, with: .color(env.canvasBackground.resolveFill(fill)), style: FillStyle(eoFill: true)) }
+            layer.stroke(path, with: .color(env.canvasBackground.resolve(object.style.stroke)), lineWidth: object.style.strokeWidth)
+        }
+    }
+
+    private func drawRouting(in ctx: inout GraphicsContext, document: DrawingDocument, scale s: CGFloat, visible: CGRect) {
+        let presentation = env.currentRoutingFloor?.imdfCoordinates == nil ? env.primarySVGPresentation : DrawingLayerPresentation(isVisible: true, opacity: 1)
+        for object in document.objects where presentation.isVisible {
+            let cached = env.renderCache.entry(for: object, segmentation: env.segmentation)
+            guard cached.box.insetBy(dx: -2, dy: -2).intersects(visible) else { continue }
+            let path = cached.path
             if let fill = object.style.fill {
-                ctx.fill(path, with: .color(env.canvasBackground.resolveFill(fill).opacity(0.25)),
+                ctx.fill(path, with: .color(env.canvasBackground.resolveFill(fill).opacity(0.25 * presentation.opacity)),
                          style: FillStyle(eoFill: env.currentRoutingFloor?.imdfCoordinates != nil))
             }
-            ctx.stroke(path, with: .color(env.canvasBackground.resolve(object.style.stroke).opacity(0.6)),
+            ctx.stroke(path, with: .color(env.canvasBackground.resolve(object.style.stroke).opacity(0.6 * presentation.opacity)),
                        lineWidth: CanvasZoom.strokeWidth(object.style.strokeWidth, at: s))
         }
         func point(_ node: RoutingNode) -> LocalPoint {

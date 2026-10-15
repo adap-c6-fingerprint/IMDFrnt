@@ -71,11 +71,10 @@ extension AppEnvironment {
         try project.validate()
         try project.refreshIMDFDisplays()
         // Parse every embedded drawing before resetting the previous project.
-        for level in project.levels where !level.info.svg.isEmpty {
-            _ = try SVGParser.parse(data: Data(level.info.svg.utf8), sourceName: level.info.sourceName)
-        }
+        let prepared = try project.levels.map { try PreparedLevelDrawing.make(LevelDrawingInput($0)) }
         resetProjectState(id: file.projectID)
         buildingProject = project
+        for drawing in prepared { levelDrawingCache.insert(drawing) }
         try loadLevelEditor(file.assignment?.levelID ?? project.levels.first?.id)
         showRoutingScreen = project.imdfSourceName != nil
         assignment = file.assignment
@@ -93,11 +92,24 @@ extension AppEnvironment {
         } else if recoveryURLOverride == nil, fm.fileExists(atPath: Self.interimAutosaveURL.path) {
             url = Self.interimAutosaveURL
         } else { return }
-        do {
-            try restoreRecovery(from: url)
-            notify("지난 작업을 이어서 엽니다 — \(projectDisplayName)")
-        } catch {
-            notify("지난 작업을 불러오지 못했습니다: \(error.localizedDescription)", isError: true)
+        isProjectActionInProgress = true
+        Task {
+            defer { isProjectActionInProgress = false }
+            do {
+                let validated = try await Task.detached(priority: .userInitiated) {
+                    try ProjectOpeningPreparation.validate(Data(contentsOf: url))
+                }.value
+                try adoptPreparedProject(validated, from: nil)
+                lastExplicitSavedProject = projectContents == BuildingProject() ? makeProjectFile() : nil
+                if let path = projectDefaults.string(forKey: Self.lastProjectPathKey) {
+                    let originalURL = URL(fileURLWithPath: path)
+                    let data = try? await Task.detached { try Data(contentsOf: originalURL) }.value
+                    if let data, let original = try? ProjectFile.decoded(from: data), original.projectID == projectID {
+                        projectURL = originalURL; lastExplicitSavedProject = original
+                    }
+                }
+                notify("지난 작업을 이어서 엽니다 — \(projectDisplayName)")
+            } catch { notify("지난 작업을 불러오지 못했습니다: \(error.localizedDescription)", isError: true) }
         }
     }
 

@@ -95,7 +95,7 @@ final class DocumentOpenCoordinator {
                     request.reply(.failed)
                     continue
                 }
-                request.reply(environment.openDocument(at: url))
+                request.reply(await environment.openDocumentAsync(at: url))
             }
         }
     }

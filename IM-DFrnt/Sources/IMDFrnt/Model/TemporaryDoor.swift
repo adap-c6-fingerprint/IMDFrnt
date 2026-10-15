@@ -10,7 +10,7 @@ import Foundation
 ///
 /// 그래서 사용자가 **끊긴 자리의 두 점을 직접 찍어** 없는 선분을 만든다. 그게 `start`~`end`다.
 /// 그 선분이 곧 IMDF opening의 LineString 좌표가 된다(opening의 geometry는 LineString).
-struct TemporaryDoor: Identifiable, Codable, Equatable {
+struct TemporaryDoor: Identifiable, Codable, Equatable, Sendable {
 
     let id: UUID
 
