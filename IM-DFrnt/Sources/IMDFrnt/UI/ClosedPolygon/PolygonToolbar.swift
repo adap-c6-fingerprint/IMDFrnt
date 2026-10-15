@@ -9,6 +9,11 @@ struct PolygonToolbar: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            LayerEditModePicker()
+            if env.isComputingDerivedGeometry {
+                ProgressView().controlSize(.mini)
+                Text("다각형 계산 중").font(.caption2).foregroundStyle(.secondary)
+            }
             Picker("", selection: Binding(
                 get: { env.polygonWorkMode },
                 set: { env.setPolygonWorkMode($0) }

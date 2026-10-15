@@ -166,9 +166,9 @@ struct LeftSidebar: View {
         // 숫자만 보면 100%가 곧 완료로 읽히는데, 공유가 정상인 구조에서는 그렇지 않다.
     }
 
-    /// 신기능 5-5-2) 다각형 기준 진행률.
-    /// 분모는 **보조 개체로 만들어지는 면까지 포함한** 전체 면 수이고(도면을 열 때 한 번 센다),
-    /// 분자는 '제외로 사라진 면'과 '태깅한 면' 둘로 나뉜다.
+    /// 점 기준 진행률(#21). 신기능 5-5-2의 다각형 막대를 점 기준으로 바꿨다.
+    /// 분모는 **보조 개체까지 포함한** 전체 점(꼭짓점·끝점·교차점) 수이고,
+    /// 분자는 '태깅된 점'과 '보조 개체 제외로 사라진 점' 둘로 나뉜다. 면 단위로 저장해도 점 기준이다.
     private var polygonProgressSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             GeometryReader { geo in
@@ -176,29 +176,30 @@ struct LeftSidebar: View {
                     Capsule().fill(.quaternary)
                     HStack(spacing: 0) {
                         Capsule().fill(ClosedPolygonAppearance.faceFill)
-                            .frame(width: geo.size.width * env.taggedPolygonFraction)
+                            .frame(width: geo.size.width * env.taggedPointFraction)
                         Capsule().fill(env.canvasBackground.excludedStroke)
-                            .frame(width: geo.size.width * env.vanishedPolygonFraction)
+                            .frame(width: geo.size.width * env.excludedPointFraction)
                     }
                 }
             }
             .frame(height: 6)
 
             HStack {
-                Text(env.polygonProgressText).font(.caption.monospacedDigit())
+                Text(env.pointProgressText).font(.caption.monospacedDigit())
+                if env.isComputingDerivedGeometry { ProgressView().controlSize(.mini) }
                 Spacer()
-                Text(String(format: "%.1f%%", env.polygonProgressFraction * 100))
+                Text(String(format: "%.1f%%", env.pointProgressFraction * 100))
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
 
             HStack(spacing: 10) {
-                progressLegend(ClosedPolygonAppearance.faceFill, "태깅한 다각형")
-                progressLegend(env.canvasBackground.excludedStroke, "제외로 사라진 다각형")
+                progressLegend(ClosedPolygonAppearance.faceFill, "태깅된 점")
+                progressLegend(env.canvasBackground.excludedStroke, "제외된 점")
             }
-            Text("처리된 다각형 수 / 전체 다각형 수")
+            Text("처리된 점 수 / 전체 점(꼭짓점·교점) 수")
                 .font(.caption2).foregroundStyle(.tertiary)
         }
-        .hoverNote("보조선으로 만들어지는 다각형을 포함하여, 도면의 모든 다각형 수 대비 처리된 다각형 수를 진행률로 표시합니다.")
+        .hoverNote("보조선의 점을 포함하여, 도면의 모든 꼭짓점·교점 수 대비 태깅되거나 제외된 점 수를 진행률로 표시합니다. 면 단위로 저장해도 그 면의 꼭짓점이 태깅된 점으로 셈해집니다.")
     }
 
     private func progressLegend(_ color: Color, _ text: String) -> some View {

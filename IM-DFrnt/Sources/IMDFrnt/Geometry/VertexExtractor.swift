@@ -23,6 +23,11 @@ enum VertexExtractor {
             // 호를 따라 휘어진 엉뚱한 선이 나온다.
         }
 
+        if let drawn = feature.drawnVertices, kind == .point || kind == .lineString {
+            return kind == .point ? Array(drawn.prefix(1)) : drawn
+            // #21: 점 단위로 그린 Point·LineString. 사용자가 찍은 점이 정본이다.
+        }
+
         if let ring = feature.polygonRings.first, kind == .polygon || kind == .multiPolygon {
             return ring
             // MultiPolygon은 링이 여럿일 수 있다. 여기서는 첫 링만 주고,

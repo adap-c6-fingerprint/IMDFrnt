@@ -163,6 +163,52 @@ enum DrawingLoadingSelfTest {
             var asked = false
             let failed = await opened.openDocumentAsync(at: badURL, confirmingChanges: { asked = true; return true })
             check("비동기 손상 파일은 교체 질문 없이 작업 보존", failed == .failed && !asked && opened.makeProjectFile()!.hasSameContents(as: unsaved))
+            // #21: 면·점은 백그라운드에서 계산하고, 레이어를 열 때 다시 계산하지 않는다.
+            let bg = environment()
+            bg.derivedGeometryInline = false
+            try await bg.adoptProjectAsync(file, from: nil)
+            await bg.waitForLevelDrawing()
+            if let doc = bg.document, !doc.objects.isEmpty {
+                check("#21 층을 불러오면 면·점이 함께 준비된다", !bg.snapPoints.isEmpty && bg.totalPointCount > 0 && bg.derivedKey != nil)
+                bg.selectPropertyType(.opening); bg.declareOpeningComplete()
+                let layerStart = ContinuousClock.now
+                bg.selectPropertyType(.unit)
+                let layerTime = layerStart.duration(to: .now)
+                print("[MEASURE] unit-layer-open=\(layerTime) faces=\(bg.closedPolygonFaces.count) points=\(bg.snapPoints.count)")
+                check("#21 unit 레이어 생성은 면을 다시 계산하지 않는다", !bg.isComputingDerivedGeometry && layerTime < .milliseconds(200))
+                let free = doc.objects.filter { !bg.auxiliary.isExcluded($0.id) }.map(\.id)
+                // 실제 프로젝트는 이미 제외한 개체가 많다. 이미 제외된 개체를 다시 빼면 상태가 안 바뀌어
+                // 재계산도 일어나지 않으므로, 아직 제외하지 않은 개체를 고른다.
+                if let victim = free.first {
+                    let excludeStart = ContinuousClock.now
+                    bg.auxiliary.exclude([victim])
+                    let excludeCall = excludeStart.duration(to: .now)
+                    check("#21 보조 개체 제외는 메인 액터를 막지 않고 백그라운드로 다시 센다", bg.isComputingDerivedGeometry && excludeCall < .milliseconds(200))
+                    var waited = 0
+                    while bg.isComputingDerivedGeometry && waited < 3000 { try await Task.sleep(for: .milliseconds(10)); waited += 1 }
+                    print("[MEASURE] derived-refresh-after-exclude=\(excludeStart.duration(to: .now)) excluded-points=\(bg.excludedPointCount)")
+                    check("#21 백그라운드 결과가 지금 상태와 맞게 반영된다",
+                          !bg.isComputingDerivedGeometry && bg.derivedKey == bg.currentDerivedKey && bg.excludedPointCount > 0)
+                } else {
+                    print("[SKIP] #21 보조 개체 제외 검사 — 제외하지 않은 개체가 없다")
+                }
+
+                if let level = bg.activeLevel, let base = bg.levelDrawingCache.cached(LevelDrawingInput(level)),
+                   let extra = doc.objects.first(where: { !LevelDrawingInput(level).excluded.contains($0.id) }) {
+                    var changed = LevelDrawingInput(level)
+                    changed.excluded.insert(extra.id)
+                    let reuseStart = ContinuousClock.now
+                    let reused = try PreparedLevelDrawing.make(changed, reusing: base)
+                    let reuseTime = reuseStart.duration(to: .now)
+                    let full = try PreparedLevelDrawing.make(changed)
+                    print("[MEASURE] reuse-parse=\(reuseTime) full=\(full.preparationSeconds)s")
+                    check("#21 제외만 바뀌면 파싱을 다시 하지 않고 같은 결과를 낸다",
+                          reused.document?.fingerprint == base.document?.fingerprint
+                          && reused.derived.faces.count == full.derived.faces.count
+                          && reused.derived.snapPoints.count == full.derived.snapPoints.count
+                          && reused.derived.totalPointCount == full.derived.totalPointCount)
+                }
+            }
             try await DrawingLoadingReviewSelfTest.run(environment: environment, check: check)
         } catch { check("도면 로딩 검증", false); print(error) }
         print("== Drawing Loading: \(total - failures)/\(total) PASS ==")

@@ -46,7 +46,9 @@ extension AppEnvironment {
         document = nil
         clearDocumentIndexesForLoading()
         renderCache.invalidateAll()
-        closedPolygonFaces = []; totalPolygonCount = 0; vanishedPolygonCount = 0
+        derivedTask?.cancel(); derivedTask = nil
+        applyDerivedGeometry(.empty, key: nil)
+        pointDraft = PointDraft(); vertexDrag = nil; layerEditMode = .point
         loadedSVG = level?.info.svg.isEmpty == false ? level?.info.svg : nil
         let editing = level?.editing ?? LevelEditingState()
         features = editing.features; ownership = editing.ownership
