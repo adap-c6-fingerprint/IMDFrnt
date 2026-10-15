@@ -1,0 +1,232 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		320000000000000000000013 /* sample-floorplan.svg in Resources */ = {isa = PBXBuildFile; fileRef = 320000000000000000000012 /* sample-floorplan.svg */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		320000000000000000000001 /* IM-DFrnt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "IM-DFrnt.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		320000000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		320000000000000000000012 /* sample-floorplan.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "sample-floorplan.svg"; sourceTree = "<group>"; };
+		320000000000000000000015 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
+		320000000000000000000016 /* build-app.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-app.sh"; sourceTree = "<group>"; };
+		320000000000000000000017 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		320000000000000000000002 /* IMDFrnt */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources/IMDFrnt;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		320000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		320000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				320000000000000000000002 /* IMDFrnt */,
+				320000000000000000000011 /* Configuration */,
+				320000000000000000000014 /* Sample */,
+				320000000000000000000015 /* Package.swift */,
+				320000000000000000000016 /* build-app.sh */,
+				320000000000000000000017 /* README.md */,
+				320000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		320000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (320000000000000000000001 /* IM-DFrnt.app */,);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		320000000000000000000011 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (320000000000000000000010 /* Info.plist */,);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		320000000000000000000014 /* Sample */ = {
+			isa = PBXGroup;
+			children = (320000000000000000000012 /* sample-floorplan.svg */,);
+			path = Sample;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		320000000000000000000005 /* IM-DFrnt */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 32000000000000000000000F /* Build configuration list for PBXNativeTarget "IM-DFrnt" */;
+			buildPhases = (
+				320000000000000000000007 /* Sources */,
+				320000000000000000000008 /* Frameworks */,
+				320000000000000000000009 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (320000000000000000000002 /* IMDFrnt */,);
+			name = "IM-DFrnt";
+			packageProductDependencies = ();
+			productName = "IM-DFrnt";
+			productReference = 320000000000000000000001 /* IM-DFrnt.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		320000000000000000000006 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					320000000000000000000005 = {
+						CreatedOnToolsVersion = 27.0;
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = 32000000000000000000000E /* Build configuration list for PBXProject "IM-DFrnt" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base, ko,);
+			mainGroup = 320000000000000000000003;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 320000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (320000000000000000000005 /* IM-DFrnt */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		320000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (320000000000000000000013 /* sample-floorplan.svg in Resources */,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		320000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		32000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		32000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		32000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Configuration/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",);
+				PRODUCT_BUNDLE_IDENTIFIER = com.imdfrnt.prototype;
+				PRODUCT_MODULE_NAME = IMDFrnt;
+				PRODUCT_NAME = "IM-DFrnt";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		32000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Configuration/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",);
+				PRODUCT_BUNDLE_IDENTIFIER = com.imdfrnt.prototype;
+				PRODUCT_MODULE_NAME = IMDFrnt;
+				PRODUCT_NAME = "IM-DFrnt";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		32000000000000000000000E /* Build configuration list for PBXProject "IM-DFrnt" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (32000000000000000000000A /* Debug */, 32000000000000000000000B /* Release */,);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		32000000000000000000000F /* Build configuration list for PBXNativeTarget "IM-DFrnt" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (32000000000000000000000C /* Debug */, 32000000000000000000000D /* Release */,);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 320000000000000000000006 /* Project object */;
+}

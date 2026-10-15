@@ -15,10 +15,26 @@ SVG 도면에서 IMDF GeoJSON을 반자동으로 추출하는 macOS 앱의 **UI 
 
 ## 빌드와 실행
 
-### 1) .app 번들 만들기 (권장)
+### 1) Xcode에서 열고 실행 (권장)
+
+이 폴더의 **`IM-DFrnt.xcodeproj`**를 더블클릭하거나 Xcode의 File → Open으로 엽니다.
+
+1. 상단 Scheme을 **IM-DFrnt**, 실행 대상을 **My Mac**으로 선택합니다.
+2. **⌘R**로 빌드·실행합니다. **⌘B**로 빌드만 할 수도 있습니다.
+3. 로컬 실행용 ad-hoc 서명이 기본이므로 개발자 계정이나 Team을 설정할 필요가 없습니다.
+
+기존 `Sources/IMDFrnt`를 직접 사용하는 macOS 앱 타깃입니다. 소스를 복사하지 않으며 이 폴더 안에 추가한 Swift 파일도 자동으로 포함합니다. Swift 6를 지원하는 Xcode와 macOS 14 이상이 필요합니다.
+
+명령행에서도 Xcode 빌드를 실행할 수 있습니다.
 
 ```bash
-cd ~/Desktop/IM-DFrnt
+xcodebuild -project IM-DFrnt.xcodeproj -scheme IM-DFrnt -configuration Debug -destination 'platform=macOS' build
+```
+
+### 2) 스크립트로 .app 번들 만들기
+
+```bash
+cd IM-DFrnt
 ./build-app.sh
 ```
 
@@ -26,7 +42,7 @@ cd ~/Desktop/IM-DFrnt
 
 > 이 프로토타입은 앱을 자동으로 띄우지 않습니다. 실행은 직접 하십시오.
 
-### 2) 개발 중 실행
+### 3) Swift Package로 개발 중 실행
 
 ```bash
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -36,7 +52,7 @@ swift build && ./.build/debug/IMDFrnt
 `xcode-select`가 CommandLineTools를 가리키고 있어도 위 `DEVELOPER_DIR` 지정으로 빌드됩니다.
 `build-app.sh`는 이 처리를 스크립트 안에서 자동으로 합니다.
 
-### 3) GUI 없이 엔진 점검
+### 4) GUI 없이 엔진 점검
 
 ```bash
 ./IM-DFrnt.app/Contents/MacOS/IM-DFrnt --selftest
@@ -44,11 +60,11 @@ swift build && ./.build/debug/IMDFrnt
 ```
 
 파싱·기하·변환·직렬화·상호작용 계층을 점검하고 결과를 출력한 뒤 종료합니다.
-UI를 눌러보지 않고 회귀를 확인하는 용도입니다. CLI 검사는 SwiftUI/NSApplication 초기화 전에 실행됩니다. 스크립트는 5종 검사의 종료 코드와 전체 로그를 남깁니다. [Self-test 재현 및 검증 범위](../docs/projects/SELF_TESTS.md)를 참고하세요.
+UI를 눌러보지 않고 회귀를 확인하는 용도입니다. CLI 검사는 SwiftUI/NSApplication 초기화 전에 실행됩니다. 스크립트는 6종 검사의 종료 코드와 전체 로그를 남깁니다. [Self-test 재현 및 검증 범위](../docs/projects/SELF_TESTS.md)를 참고하세요.
 
-### Xcode로 열기
+Xcode로 빌드한 앱에도 같은 검사 스크립트를 사용할 수 있습니다. Xcode의 Products → `IM-DFrnt.app` → Show in Finder에서 앱 경로를 확인해 전달합니다.
 
-`Package.swift`를 Xcode로 열면(File ▸ Open) 그대로 실행·디버깅할 수 있습니다. `.xcodeproj`는 별도로 두지 않았습니다.
+`Package.swift`를 직접 여는 기존 방식도 유지합니다. Finder 문서 연결 정보는 두 빌드 방식이 **`Configuration/Info.plist`** 하나를 공유합니다.
 
 ---
 
@@ -188,6 +204,8 @@ Anchor 쌍 하나는 방정식 2개(x·y)를 줍니다. 어파인 변환은 미�
 
 ```
 IM-DFrnt/
+├── IM-DFrnt.xcodeproj/              Xcode macOS 앱 타깃·공유 Scheme
+├── Configuration/Info.plist         두 빌드 방식이 공유하는 앱·문서 연결 정보
 ├── Package.swift
 ├── build-app.sh                     .app 번들 생성
 ├── README.md

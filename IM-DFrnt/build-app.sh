@@ -5,7 +5,6 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="IM-DFrnt"
-BUNDLE_ID="com.imdfrnt.prototype"
 APP_DIR="${1:-$APP_NAME.app}"
 
 # xcode-select가 CommandLineTools를 가리켜도 동작하도록 Xcode 툴체인을 직접 지정한다.
@@ -26,48 +25,8 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp ".build/release/IMDFrnt" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "Sample/sample-floorplan.svg" "$APP_DIR/Contents/Resources/" 2>/dev/null || true
 
-cat > "$APP_DIR/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key><string>$APP_NAME</string>
-    <key>CFBundleDisplayName</key><string>$APP_NAME</string>
-    <key>CFBundleExecutable</key><string>$APP_NAME</string>
-    <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-    <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
-    <key>LSMinimumSystemVersion</key><string>14.0</string>
-    <key>NSHighResolutionCapable</key><true/>
-    <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>UTExportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key><string>com.imdfrnt.project</string>
-            <key>UTTypeDescription</key><string>IM-DFrnt Project</string>
-            <key>UTTypeConformsTo</key><array><string>public.json</string></array>
-            <key>UTTypeTagSpecification</key>
-            <dict><key>public.filename-extension</key><array><string>imdfrnt</string><string>imdfproj</string></array></dict>
-        </dict>
-    </array>
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key><string>IM-DFrnt Project</string>
-            <key>CFBundleTypeRole</key><string>Editor</string>
-            <key>LSHandlerRank</key><string>Owner</string>
-            <key>LSItemContentTypes</key><array><string>com.imdfrnt.project</string></array>
-        </dict>
-        <dict>
-            <key>CFBundleTypeName</key><string>Drawing</string>
-            <key>CFBundleTypeRole</key><string>Editor</string>
-            <key>LSItemContentTypes</key><array><string>public.svg-image</string><string>public.png</string><string>public.jpeg</string></array>
-        </dict>
-    </array>
-</dict>
-</plist>
-PLIST
+# Xcode 앱 타깃과 같은 Finder 문서 연결·버전 정보를 사용한다.
+cp Configuration/Info.plist "$APP_DIR/Contents/Info.plist"
 
 echo "▸ 임시 서명(ad-hoc)"
 codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || echo "  (서명 생략 — 실행에는 지장 없음)"
