@@ -262,3 +262,49 @@
 - 기본 sandbox CLI 실행으로 5개 모드 모두 exit 0: 기본 Building 27/27·Document open 24/24·Project 23/23·Routing 100/100·기존 회귀 ALL PASS. 실제 C5 폴더·ZIP·기존 v4 입력을 포함하면 Building 37/37·Routing 104/104 PASS. 사용자 원본 복구 파일 SHA-256 유지.
 - `IM-DFrnt/run-self-tests.sh`가 모드별 종료 코드·전체 로그·환경·바이너리 SHA-256을 남긴다. 문서 CLI 검사는 공통 요청 처리와 선언·입출력을 확인하며 실제 Finder 이벤트·UI 버튼 입력은 별도 검증이다.
 - [재현 명령과 검증 범위](docs/projects/SELF_TESTS.md). UI 도구 연결은 다시 `Sky Computer Use native pipe startup failed`로 실패했으며 건물·층 관리 UI 확인은 완료로 표시하지 않는다.
+
+## 2026-10-17 — 직접 저장 제거, 프로젝트별 단일 자동 저장 파일
+
+- 사용자 결정: 직접 저장(작업 저장·다른 이름으로 저장)을 없애고 프로젝트마다 자동 저장 파일 하나만 쓴다. 파일은 `~/Library/Application Support/IM-DFrnt/새 도면_YYMMDD_HHmm.imdfrnt`이며 같은 분에 겹치면 `_2`를 붙인다. 빈 프로젝트는 내용이 생기기 전까지 파일을 만들지 않는다.
+- `IMDF 불러오기…` 바로 아래에 `.imdfrnt 불러오기…`(⌘⇧O)를 두고, 자동 저장 폴더에서 시작하는 선택 창을 연다. 앱 메뉴·상단 파일 메뉴·왼쪽 사이드바·빈 캔버스·길찾기 화면에 적용했다.
+- 전환·종료 전 "저장할까요?" 확인을 없애고 자동 저장 후 진행한다. 저장 실패 시에만 취소/계속을 묻는다. 예전 공용 복구본 `autosave.imdfrnt`는 첫 실행에서 `새 도면_…` 이름으로 옮겨 연다.
+- 검사는 실제 자동 저장 폴더 대신 임시 폴더를 쓴다. 기본 sandbox 6개 모드 exit 0: 기존 회귀 ALL PASS, Building 27/27, Project 22/22, Document open 23/23, Routing 100/100, Drawing Loading 54/54. 실제 UI 버튼 입력은 미확인.
+- [사용법](docs/projects/PROJECT_LIFECYCLE.md).
+
+## 2026-10-17 — #53 프로젝트 선택 화면과 저장 후 전환
+
+- [이슈 #53](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/53): 앱을 켜면 지난 작업이 자동으로 열려 프로젝트를 고를 수 없고, `.imdfrnt`를 불러오면 지금 프로젝트에 합쳐지는지 바뀌는지 알 수 없다는 피드백.
+- 프로젝트 선택 창(`App/ProjectPicker.swift`)을 추가했다. 자동 저장 폴더의 프로젝트를 최근 수정 순으로 보여 주고 층 개수·층 이름·수정 시각과 `현재 열림`/`지난 작업`을 표시한다. 층 이름은 SVG·편집 상태를 건너뛰는 가벼운 디코딩으로 백그라운드에서 읽는다.
+- 앱 시작 시 지난 작업을 자동으로 열지 않고 선택 창을 띄운다. 저장된 프로젝트가 없으면 빈 시작 화면, Finder로 파일을 열며 시작하면 선택 창 없이 그 파일을 연다. 진입점은 파일 → 프로젝트 선택…(⌥⌘O)과 상단 프로젝트 이름.
+- 다른 프로젝트 열기·새 프로젝트 만들기는 `‘A’ 프로젝트를 저장하고 ‘B’ 프로젝트로 전환할까요?`를 묻는다(선택 창·.imdfrnt 불러오기·Finder 공통, 빈 새 프로젝트는 묻지 않음). 전환 후 배너로 이전 프로젝트가 따로 저장되어 있음을 알리고, 선택 창에서 취소하면 목록으로 돌아간다.
+- 자체점검(레포 밖 scratch 빌드): Project 24/24, Document open 23/23(.app 번들), Building 27/27, Routing 100/100, Drawing Loading 54/54, 기존 회귀 ALL PASS. 실제 화면의 선택 창·전환 확인은 미확인.
+
+## 2026-10-17 — #49 개체 편집 (Control 클릭으로 점 교체·끼우기)
+
+- [이슈 #49](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/49) 작업 목록에 엔진 디버깅 5번을 추가했다. 선택한 순서대로만 잇던 방식은 중간 점을 지우고 새 점을 찍으면 새 점이 맨 끝에 붙어 도형이 꼬였다.
+- 작성 중인 도형의 점마다 순번(1, 2, 3 …)을 표시한다(모든 레이어). 이미 찍은 점을 Control+클릭하면 그 점과 뒤 순번이 흐려지고, 새 점을 찍은 뒤 흐린 점을 누르면 새 점이 빠진 순번 자리에 들어간다. 같은 점을 두 번 누르면 빼지 않고 그 뒤에 끼운다. 이어지면 흐린 점이 모두 살아난다.
+- 이어 붙이지 않고 Control을 떼면 그 자리가 끊긴 채 남는다(`PointDraft.breaks`). polygon·multipolygon은 경고하고 닫기를 막으며, 끊긴 뒤쪽 점을 Control로 두 번 누르면 다시 잇는다. 아무것도 바꾸지 않고 떼면 그대로 둔다. 편집 상태는 `PointDraft` 안에 있어 cmd+z로 함께 되돌아간다.
+- 저장된 polygon·multipolygon 도형도 꼭짓점을 Control+클릭하면 그 링을 작성 중 도형으로 꺼내 같은 방식으로 고친다. 이어진 채 Control을 떼면(또는 시작점·Return) 원래 feature의 링을 바꾸고, ESC는 원래 도형을 그대로 둔다. Control을 누른 채로는 꼭짓점 끌기를 시작하지 않는다.
+- 자체점검(레포 밖 scratch 빌드): 기존 회귀 ALL PASS(개체 편집 13항목 신규), Project 24/24, Document open 23/23(.app 번들), Building 27/27, Routing 100/100, Drawing Loading 54/54. 실제 화면의 Control+클릭 입력(우클릭으로 바뀌지 않는지 포함)은 미확인.
+
+## 2026-10-18 — #49 MultiPolygon 지정·구멍, 면 단위 기준 변경
+
+- [이슈 #49](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/49) 작업 목록에 추가. IMDF 스펙은 unit·section·geofence·level·footprint·fixture·venue의 geometry를 `POLYGONAL`(Polygon 또는 MultiPolygon)로 정하는데, 앱은 fixture 외에는 링 하나만 만들 수 있었다(위키 src10·src15).
+- 우측 패널 feature 카드에서 저장한 다각형을 MultiPolygon으로 지정한다(`FeatureGroup.multiPolygon`, 선택적 필드라 이전 파일 호환). 지정 중에 다각형을 닫거나 면을 저장하면 그 feature에 링으로 더한다. 구멍은 따로 저장하지 않고 링끼리 감싸는 관계로 정한다(`RingNesting`, 홀수 번 감싸이면 구멍): 기존을 감싸면 기존이 구멍, 기존 안쪽이면 새 것이 구멍. 어긋나게 겹치거나 같은 모양이면 거절하고, 꼭짓점 이동·Control 편집으로 겹치게 되는 것도 막는다. 다각형이 하나일 때만 Polygon으로 되돌린다.
+- 캔버스는 링을 짝홀 규칙으로 칠해 구멍이 비어 보이고, 다각형을 받는 중인 feature는 점선 테두리다. GeoJSON은 바깥 다각형마다 바로 안쪽 구멍을 안쪽 링으로 붙인 MultiPolygon으로 내보낸다(링 방향은 기존처럼 정렬하지 않음).
+- 면 단위는 도면 개체(SVG 선분)가 아니라 **저장된 개체의 경계로 막힌 면**만 고른다(`App/SavedFeatureFaces.swift`). 상단바에서 '현재 레이어 기준 / 모든 레이어 기준'을 고르며, 지금 레이어에 같은 모양으로 저장된 면은 고를 수 없다. 이렇게 만든 feature는 면 기록 없이 링만 두어 점으로 그린 도형처럼 꼭짓점 이동·Control 편집이 된다. footprint는 종전대로 면 단위 대상이 아니다.
+- 기존 면 단위 자체점검(제외 모드·드래그·저장·fixture 묶기·진행률)은 도면 개체 면을 전제로 해서 저장된 개체 기준으로 다시 썼다. 자체점검: 기존 회귀 ALL PASS(MultiPolygon 9항목·면 기준 6항목 신규), Project 24/24, Document open 23/23(.app 번들), Building 27/27, Routing 100/100, Drawing Loading 54/54. 실제 화면 확인은 미확인.
+
+- 추가(#49): 점 단위에서 이미 개체로 저장된 꼭짓점도 다시 골라 새 개체를 만든다. 예전에는 도면의 꼭짓점·교점만 찍혀, ⌥로 만든 점이나 저장된 개체 경계로 만든 면의 꼭짓점은 "꼭짓점·교점이 아닌 자리"로 막혔고 옆 unit과 같은 좌표를 공유할 수 없었다(같은 층 unit 사이 틈·겹침 금지). 이제 도면 점과 이 층 모든 개체의 꼭짓점 중 가장 가까운 점에 그 좌표 그대로 붙는다. 자체점검 2항목 추가.
+
+- 추가(#49): unit 레이어 상단바(점·면 단위 모두)와 도구 메뉴에 '빈틈·겹침' 토글을 두었다. 켜면 같은 층 unit 사이의 빈틈은 빨간 점무늬, 겹침은 빨간 빗금으로 도면에 칠하고 개수를 보여 준다(`App/UnitCoverage.swift`, CoreGraphics 교집합·합집합·차집합). 빈틈은 이 층에 level 다각형이 있으면 level에서 unit 전체를 뺀 곳, 없으면 unit에 둘러싸인 빈 곳이다. MultiPolygon unit의 구멍은 짝홀 규칙으로 빠진다. 0.03 폭처럼 무늬가 안 들어가는 얇은 틈도 보이게 빨간 테두리를 함께 긋는다. 자체점검 6항목 추가. 실제 화면 확인은 미확인.
+
+- 추가(#49): 캔버스의 일련번호 태그(unit-014 등)에 마우스를 올리면 그 개체를 주황색(카드를 펼쳤을 때와 같은 강조색)으로 칠하고, 떼면 초록색으로 돌아간다. 태그는 Canvas에 그린 그림이라 그릴 때 태그 사각형을 기억해 두고 `onContinuousHover`로 마우스 위치를 판정한다. 모든 레이어에 적용된다. 실제 화면 확인은 미확인.
+
+## 2026-10-18 — #38 모든 층을 합친 IMDF 아카이브 내보내기
+
+- [이슈 #38](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/38)에 목표·작업 목록·완료 조건을 채웠다. 기존 내보내기는 지금 층·지금 type 하나의 `.geojson`이었는데, IMDF는 type 하나의 파일에 모든 층을 담고 `level_id`로 층을 가린다.
+- `Export/IMDFArchive.swift`: 모든 층의 feature를 `{type}.geojson`으로 합쳐 `manifest.json`과 함께 ZIP 최상위에 담는다(`/usr/bin/zip -j`, 불러오기의 `/usr/bin/unzip`과 짝). 규격은 OGC 20-094 Archives·Manifest 절(위키 src18)과 C5 예제를 따랐다. 규격상 확장자는 `.zip`이라 저장 창 기본값도 `.zip`이다.
+- 각 층의 level feature id는 그 층의 UUID이고, 같은 층 feature의 빈 `level_id`를 채운다. level의 빈 ordinal·name·short_name은 건물·층 관리 값, 건물·주소가 하나뿐이면 빈 `building_ids`·`address_id`도 채운다. 일련번호는 층마다 따로 매겨지므로 참조는 같은 층을 먼저 찾는다. `address`·`venue`는 필수 파일이라 비어도 넣고 경고한다. 새로 발급한 id는 층별 대장(`editing.ids`)에 되돌려 넣는다.
+- 층별 Anchor 미지정·좌표 없음·level 다각형 없음/중복은 층 이름을 붙여 막는다. 가져온 IMDF의 feature·헤더·기타 파일은 그대로 싣는다. 진행률 팝업과 함께 백그라운드에서 만들며 도구 메뉴(⌘⇧E)·상단 파일 메뉴에 있다.
+- 자체점검: 기존 회귀 ALL PASS(아카이브 10항목 신규), Project 24/24, Document open 23/23(.app 번들), Building 27/27, Routing 100/100, Drawing Loading 54/54. 레포 밖 임시 진단으로 C5 예제 IMDF를 불러와 그대로 내보내면 12개 파일 모두 feature id·내용이 원본과 같고 manifest의 `created`만 새 시각이다. 실제 화면 확인과 Apple 검증 도구 확인은 미확인.

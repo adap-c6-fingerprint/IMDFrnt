@@ -58,6 +58,8 @@ struct LeftSidebar: View {
             }
             Button("IMDF 불러오기…") { env.importIMDF() }
                 .controlSize(.small).disabled(env.isImportingIMDF)
+            Button(".imdfrnt 불러오기…") { env.openProject() }
+                .controlSize(.small).disabled(env.isProjectBusy)
             Button { env.enterRoutingScreen() } label: {
                 Label("길찾기 노드 편집", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -175,8 +177,9 @@ struct LeftSidebar: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
                     HStack(spacing: 0) {
-                        Capsule().fill(ClosedPolygonAppearance.faceFill)
+                        Capsule().fill(ClosedPolygonAppearance.savedFill)
                             .frame(width: geo.size.width * env.taggedPointFraction)
+                        // 캔버스의 태깅 색과 같은 색이다. 막대와 도면이 같은 것을 같은 색으로 말해야 대조된다.
                         Capsule().fill(env.canvasBackground.excludedStroke)
                             .frame(width: geo.size.width * env.excludedPointFraction)
                     }
@@ -193,7 +196,7 @@ struct LeftSidebar: View {
             }
 
             HStack(spacing: 10) {
-                progressLegend(ClosedPolygonAppearance.faceFill, "태깅된 점")
+                progressLegend(ClosedPolygonAppearance.savedFill, "태깅된 점")
                 progressLegend(env.canvasBackground.excludedStroke, "제외된 점")
             }
             Text("처리된 점 수 / 전체 점(꼭짓점·교점) 수")
@@ -245,6 +248,20 @@ struct LeftSidebar: View {
                        systemImage: "square.dashed.inset.filled",
                        isOn: false) {
                 env.enterAuxiliaryScreen()
+            }
+            if env.excludedCount > 0 {
+                HStack(spacing: 6) {
+                    Text("제외된 개체 진하기").font(.caption).foregroundStyle(.secondary).fixedSize()
+                    Slider(value: $env.excludedAuxiliaryOpacity, in: 0...1)
+                        .controlSize(.mini)
+                    Text(env.excludedAuxiliaryOpacity < 0.005 ? "숨김"
+                         : String(format: "%.0f%%", env.excludedAuxiliaryOpacity * 100))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .trailing)
+                }
+                .padding(.leading, 32).padding(.trailing, 8)
+                .help("메인 도면에서 보조 개체로 제외한 개체를 얼마나 진하게 보일지 정합니다. 0이면 숨깁니다. 이 Mac에 기억됩니다.")
+                // 제외한 개체만 대상이라 하나라도 제외했을 때만 보인다. 실행취소 대상이 아니다 — 보기 설정이다.
             }
 
             // 신기능 3항. **Openings 레이어일 때만 보인다** — 다른 type에서 열어 주면
@@ -318,6 +335,28 @@ struct LeftSidebar: View {
                         ? Color.green.opacity(0.14) : Color.orange.opacity(0.14),
                         in: RoundedRectangle(cornerRadius: 6))
             .disabled(env.document == nil)
+
+            Button {
+                env.enterMapAlignScreen()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "map").frame(width: 15)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("지도 정렬").font(.callout.weight(.medium))
+                        Text("\(env.mapAlignProgress.done) / \(env.mapAlignProgress.total)층 정렬됨")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 7).padding(.horizontal, 8)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            .disabled(env.mapAlignLevels.isEmpty)
+            .help("도면을 위성사진 위에 직접 맞추고, 맞춘 도면에서 Anchor를 찍습니다(신기능 11항). ⌘⇧K")
+            // 기존 'Anchor 지정'(1:1 찍기)은 그대로 둔다(사용자 결정, 2026-10-15).
 
             Text(env.anchors.isConfigured
                  ? "좌표 변환이 가능합니다."

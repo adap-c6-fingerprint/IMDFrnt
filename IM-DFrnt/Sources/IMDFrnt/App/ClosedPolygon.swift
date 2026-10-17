@@ -29,20 +29,19 @@ extension AppEnvironment {
     // MARK: 고르기
 
     var selectedFaces: [ClosedPolygonFinder.Face] {
-        closedPolygonFaces.filter { faceSelection.contains($0.id) }
+        faceModeFaces.filter { faceSelection.contains($0.id) }
     }
 
     func isFaceSelected(_ id: String) -> Bool { faceSelection.contains(id) }
 
     /// 아직 고를 수 있는 면의 수. 이미 저장된 면은 뺀다.
     var selectableFaceCount: Int {
-        let saved = savedPolygonFaceIDs
-        return closedPolygonFaces.filter { !saved.contains($0.id) }.count
+        faceModeFaces.filter { !closedPolygonIsSaved($0) }.count
     }
 
-    /// 이미 어떤 feature가 가져간 면인가.
+    /// 이미 어떤 feature가 가져간 면인가. 면으로 저장한 기록이 있거나, 지금 레이어에 같은 모양의 다각형이 있으면 저장된 것이다.
     func closedPolygonIsSaved(_ face: ClosedPolygonFinder.Face) -> Bool {
-        savedPolygonFaceIDs.contains(face.id)
+        savedPolygonFaceIDs.contains(face.id) || faceOwner(face) != nil
     }
 
     var savedPolygonFaceIDs: Set<String> {
@@ -55,7 +54,7 @@ extension AppEnvironment {
     /// 캔버스 클릭. 두 모드 모두 **고른 것을 뒤집는다** — 포함 모드는 빈 상태에서 더해 가고,
     /// 제외 모드는 전부 고른 상태에서 빼 나간다. 클릭 한 번의 뜻은 같다.
     func handleFaceClick(at point: LocalPoint) {
-        guard let hit = closedPolygonFaces
+        guard let hit = faceModeFaces
             .filter({ !closedPolygonIsSaved($0) && $0.contains(point) })
             .min(by: { $0.area < $1.area })
         else { return }
@@ -70,7 +69,7 @@ extension AppEnvironment {
     /// **드래그는 클릭과 달리 뒤집지 않는다.** 수십 개가 한꺼번에 뒤집히면 결과를 예측할 수 없다
     /// (선분 드래그 선택과 같은 규칙).
     func handleFaceMarquee(rect: CGRect, mode: HitTester.MarqueeMode) {
-        let hits = closedPolygonFaces.filter { face in
+        let hits = faceModeFaces.filter { face in
             guard !closedPolygonIsSaved(face) else { return false }
             switch mode {
             case .enclose: return rect.contains(face.boundingBox)
@@ -93,7 +92,7 @@ extension AppEnvironment {
     }
 
     func selectAllFaces() {
-        faceSelection = Set(closedPolygonFaces.filter { !closedPolygonIsSaved($0) }.map(\.id))
+        faceSelection = Set(faceModeFaces.filter { !closedPolygonIsSaved($0) }.map(\.id))
     }
 
     func clearFaceSelection() { faceSelection = [] }
@@ -117,6 +116,14 @@ extension AppEnvironment {
         guard let type = layers.activePropertyType, type.requiresClosedRing else { return }
         let picked = selectedFaces.filter { !closedPolygonIsSaved($0) }
         guard !picked.isEmpty else { return }
+        if let target = multiPolygonTarget(for: type) {
+            let added = picked.filter {
+                addRingToMultiPolygon($0.ring, target: target, faceID: $0.memberIDs.isEmpty ? nil : $0.id, members: $0.memberIDs)
+            }
+            if !added.isEmpty { faceSelection = [] }
+            return
+            // 우측 패널에서 MultiPolygon으로 지정한 feature가 있으면 고른 면을 그 feature에 하나씩 더한다.
+        }
 
         let batches: [[ClosedPolygonFinder.Face]] = type.requiredGeometry == .multiPolygon
             ? ClosedPolygonFinder.connectedGroups(of: picked)
@@ -137,7 +144,9 @@ extension AppEnvironment {
                 var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: members)
                 for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
                 f.polygonRings = batch.map(\.ring)
-                f.polygonFaceIDs = Set(batch.map(\.id))
+                if !members.isEmpty { f.polygonFaceIDs = Set(batch.map(\.id)) }
+                // 저장된 feature 경계로 찾은 면은 도면 개체가 없다. 면 기록 없이 링만 두면 점으로 그린 도형처럼
+                // 꼭짓점 이동·Control 개체 편집이 되고, 같은 면을 다시 고르는 것은 같은 모양 검사가 막는다.
 
                 try? ownership.claim(free, for: f.id)
                 features.insert(f)

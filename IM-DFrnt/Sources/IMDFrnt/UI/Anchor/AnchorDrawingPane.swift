@@ -103,7 +103,9 @@ struct AnchorDrawingPane: View {
             Image(systemName: "hand.point.up.left.fill")
                 .foregroundStyle(env.canvasBackground.marker(.pending))
             if let p = env.pendingAnchorLocal {
-                Text(String(format: "찍은 점: %.1f, %.1f — 이제 지도에서 같은 지점을 클릭", p.x, p.y))
+                let serial = env.anchorLayerPoint(near: p)?.feature.serialNumber
+                Text(serial.map { "anchor 레이어 \($0) — 이제 지도에서 같은 지점을 클릭" }
+                     ?? String(format: "찍은 점: %.1f, %.1f — 이제 지도에서 같은 지점을 클릭", p.x, p.y))
                     .font(.caption)
                 Button("취소") { env.pendingAnchorLocal = nil }
                     .buttonStyle(.toolbarIcon)
@@ -137,6 +139,10 @@ struct AnchorDrawingPane: View {
                            lineWidth: CanvasZoom.strokeWidth(o.style.strokeWidth, at: scale))
             }
 
+            for item in env.anchorLayerPoints {
+                drawLayerPoint(ctx, at: item.point, serial: item.feature.serialNumber)
+            }
+            // anchor 레이어에서 찍어 둔 점. 쌍 표시보다 먼저 그려, 쌍이 된 점은 쌍 번호가 위에 보이게 한다.
             for (i, pair) in env.anchors.pairs.enumerated() {
                 drawMarker(ctx, at: pair.local, index: i + 1,
                            color: env.canvasBackground.marker(
@@ -177,6 +183,19 @@ struct AnchorDrawingPane: View {
         }
     }
 
+    /// anchor 레이어 점: 보라색 마름모와 일련번호. Anchor 쌍(십자)과 모양이 달라 겹쳐도 구별된다.
+    private func drawLayerPoint(_ ctx: GraphicsContext, at p: LocalPoint, serial: String) {
+        let r: CGFloat = 8 / scale
+        var diamond = Path()
+        diamond.move(to: CGPoint(x: p.x, y: p.y - r)); diamond.addLine(to: CGPoint(x: p.x + r, y: p.y))
+        diamond.addLine(to: CGPoint(x: p.x, y: p.y + r)); diamond.addLine(to: CGPoint(x: p.x - r, y: p.y))
+        diamond.closeSubpath()
+        ctx.fill(diamond, with: .color(.purple.opacity(0.25)))
+        ctx.stroke(diamond, with: .color(.purple), lineWidth: 1.6 / scale)
+        ctx.draw(Text(serial).font(.system(size: 9)).foregroundStyle(.purple),
+                 at: CGPoint(x: p.x, y: p.y + r * 1.9))
+    }
+
     private func toLocal(_ p: CGPoint) -> LocalPoint {
         LocalPoint((p.x - offset.width) / scale, (p.y - offset.height) / scale)
     }
@@ -204,7 +223,11 @@ struct AnchorDrawingPane: View {
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if draggingAnchor == nil && moved < 5 {
                     if isOutliningBuilding { outlinePoints.append(toLocal(value.location)) }
-                    else { env.pendingAnchorLocal = toLocal(value.location) }
+                    else {
+                        let p = toLocal(value.location)
+                        env.pendingAnchorLocal = env.anchorLayerPoint(near: p, within: 14 / Double(scale))?.point ?? p
+                        // anchor 레이어 점 근처를 누르면 그 점의 좌표를 그대로 쓴다. 눈대중 클릭 오차가 끼지 않는다.
+                    }
                 }
                 draggingAnchor = nil
                 panning = false

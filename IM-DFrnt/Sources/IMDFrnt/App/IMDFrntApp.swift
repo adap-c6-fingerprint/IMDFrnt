@@ -11,7 +11,7 @@ struct IMDFrntApp: App {
             let folder = URL(fileURLWithPath: CommandLine.arguments[i + 1], isDirectory: true)
             let defaults = UserDefaults(suiteName: "com.imdfrnt.qa.\(folder.lastPathComponent)")!
             _env = StateObject(wrappedValue: AppEnvironment(
-                recoveryURL: folder.appendingPathComponent("autosave.imdfrnt"), projectDefaults: defaults))
+                autosaveFolder: folder, projectDefaults: defaults))
         } else {
             _env = StateObject(wrappedValue: AppEnvironment())
         }
@@ -34,23 +34,19 @@ struct IMDFrntApp: App {
                 Button("새 프로젝트") { env.newProject() }
                     .keyboardShortcut("n")
                     .disabled(env.isProjectBusy)
+                Button("프로젝트 선택…") { env.showProjectPickerIfIdle() }
+                    .keyboardShortcut("o", modifiers: [.command, .option])
+                    .disabled(env.isProjectBusy)
                 Divider()
                 Button("IMDF 불러오기…") { env.importIMDF() }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                     .disabled(env.isProjectBusy)
+                Button(".imdfrnt 불러오기…") { env.openProject() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+                    .disabled(env.isProjectBusy)
                 Button("도면 열기…") { env.openFile() }
                     .keyboardShortcut("o")
                     .disabled(env.isProjectBusy)
-                Divider()
-                Button("프로젝트 열기 (.imdfrnt)…") { env.openProject() }
-                    .keyboardShortcut("o", modifiers: [.command, .shift])
-                    .disabled(env.isProjectBusy)
-                Button("작업 저장") { env.saveProject() }
-                    .keyboardShortcut("s")
-                    .disabled(!env.hasSomethingToPersist || env.isProjectBusy)
-                Button("다른 이름으로 저장…") { env.saveProject(as: true) }
-                    .keyboardShortcut("s", modifiers: [.command, .shift])
-                    .disabled(!env.hasSomethingToPersist || env.isProjectBusy)
                 Divider()
                 Button("작업 몫 나눠주기…") { env.shareSelectionAsAssignment() }
                     .disabled(!env.canShareAssignment)
@@ -80,17 +76,26 @@ struct IMDFrntApp: App {
                 Button("Anchor 지정 화면") { env.enterAnchorScreen() }
                     .keyboardShortcut("k")
                     .disabled(env.showRoutingScreen)
+                Button("지도 정렬 화면") { env.enterMapAlignScreen() }
+                    .keyboardShortcut("k", modifiers: [.command, .shift])
+                    .disabled(env.showRoutingScreen || env.mapAlignLevels.isEmpty)
                 Button("전체 선택 해제") { env.requestClearSelection(.main) }
                     .keyboardShortcut(.escape, modifiers: [])
                     .disabled(env.selection.isEmpty)
                 // 상단바 버튼과 같은 확인 팝업을 태운다(명세 디버깅 7번).
                 // 손으로 고른 선택이 한 번에 날아가는 것은 어느 경로로 눌러도 똑같이 위험하다.
                 Toggle("겹치는 곳 윤곽 표시", isOn: $env.showOverlapHighlight)
+                Toggle("unit 빈틈·겹침 표시", isOn: $env.showUnitCoverage)
+                    .disabled(env.layers.activePropertyType != .unit)
                 Button("모든 개체 원위치") { env.resetPositions() }
                     .disabled(!env.hasAnyOffset)
                 Divider()
                 Button(env.showRoutingScreen ? "길찾기 GeoJSON 내보내기" : "geojson 내보내기") { env.export() }
                     .keyboardShortcut("e")
+                Button("IMDF 아카이브 내보내기… (모든 층)") { env.exportIMDFArchive() }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .disabled(env.isProjectBusy || env.buildingProject.levels.isEmpty)
+                // 층별 geojson은 지금 층·지금 type 하나다. IMDF는 type마다 모든 층을 한 파일에 담아 ZIP으로 전달한다(#38).
             }
         }
     }
@@ -105,9 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func connectEnvironment(_ environment: AppEnvironment) {
         guard env !== environment else { return }
         env = environment
-        // Preserve old recovery before processing a launch-time document request.
-        // The shared opener then confirms unsaved work instead of overwriting it.
-        environment.restoreAutosaveIfAvailable()
+        // Finder로 파일을 열며 시작했으면 그 파일이 바로 열리므로 선택 창을 띄우지 않는다.
+        if !documentOpener.hasPendingRequests { environment.presentProjectPickerAtLaunch() }
         documentOpener.attach(environment)
         environment.startAutosaveLoop()
     }

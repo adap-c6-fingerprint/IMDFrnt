@@ -15,6 +15,7 @@ struct RootView: View {
             editorContent
         }
         .sheet(isPresented: $env.showBuildingManager) { BuildingManager().environmentObject(env) }
+        .sheet(isPresented: $env.showProjectPicker) { ProjectPicker().environmentObject(env) }
         .navigationTitle(env.projectDisplayName)
         .navigationSubtitle(env.projectSaveStatus)
     }
@@ -23,6 +24,9 @@ struct RootView: View {
         Group {
             if env.showRoutingScreen {
                 RoutingScreen()
+            } else if env.showMapAlignScreen {
+                MapAlignScreen()
+                // 신기능 11항(#31). 지도를 넓게 써야 하는 작업이라 Anchor 화면처럼 전체 화면 전환이다.
             } else if env.showAnchorScreen {
                 AnchorScreen()
                 // 명세 9항: Anchor 지정은 시트가 아니라 전체 화면 전환이다.
@@ -59,11 +63,10 @@ struct RootView: View {
         }
         .disabled(env.isProjectBusy)
         .overlay {
-            if env.isImportingIMDF {
-                ProgressView("IMDF를 불러오는 중…").padding(24)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-            }
+            if let task = env.longTask, task.isVisible { LongTaskOverlay(task: task) }
+            // IMDF 불러오기도 이 팝업으로 진행률을 보인다. 끝나면 `longTask`가 비워져 저절로 닫힌다.
         }
+        .animation(.easeOut(duration: 0.15), value: env.longTask?.isVisible)
         .environment(\.canvasBackground, env.canvasBackground)
         // 상단바 색은 시스템 외관이 아니라 캔버스 배경을 따라야 한다(디버깅 10번).
         // `ButtonStyle`은 `@EnvironmentObject`를 못 받으므로 여기서 한 번 흘려보낸다.
@@ -116,6 +119,14 @@ struct RootView: View {
             Button("확인", role: .cancel) { env.exportBlockers = [] }
         } message: {
             Text(env.exportBlockers.map(\.message).joined(separator: "\n\n"))
+        }
+        .alert("IMDF 아카이브를 만들 수 없습니다", isPresented: Binding(
+            get: { !env.archiveExportBlockers.isEmpty },
+            set: { if !$0 { env.archiveExportBlockers = [] } }
+        )) {
+            Button("확인", role: .cancel) { env.archiveExportBlockers = [] }
+        } message: {
+            Text(env.archiveExportBlockers.joined(separator: "\n\n"))
         }
         // 명세 디버깅 7번. 보조 개체 창에서도 떠야 하므로 화면 분기 **바깥**의 최상위에 붙인다.
         .alert("전체 선택 해제", isPresented: Binding(
@@ -190,6 +201,8 @@ struct RootView: View {
                 .foregroundStyle(.white)
                 .shadow(radius: 6, y: 2)
                 .padding(.top, 8)
+                .allowsHitTesting(false)
+                // 배너는 알림일 뿐이다. 클릭을 받으면 그 아래 '작업 화면으로 돌아가기' 같은 버튼이 눌리지 않는다.
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .id(b.id)
                 .task(id: b.id) {

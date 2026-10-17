@@ -47,6 +47,10 @@ struct FeatureGroup: Identifiable, Hashable, Codable {
     /// **선택적(Optional)인 이유**는 이전에 저장한 프로젝트 파일에 이 키가 없기 때문이다.
     /// 기본값을 둔 비선택 필드는 키가 없으면 해독에 실패한다.
 
+    var multiPolygon: Bool?
+    /// 우측 패널에서 MultiPolygon으로 지정한 면 feature. 링들의 포함 관계로 구멍을 정한다(`RingNesting`).
+    /// fixture는 type 자체가 MultiPolygon이라 이 값 없이도 MultiPolygon이다. 이전 파일을 위해 선택적이다.
+
     /// 원본 SVG 개체와 무관하게 점으로 그린 feature인가.
     var isPointDrawn: Bool { memberIDs.isEmpty && (drawnVertices != nil || (!polygonRings.isEmpty && polygonFaceIDs.isEmpty)) }
 

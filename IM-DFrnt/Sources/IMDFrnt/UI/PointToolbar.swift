@@ -58,6 +58,7 @@ struct PointToolbar: View {
             .toggleStyle(.switch)
             .controlSize(.mini)
             .help("켜면 찍은 점과 저장한 도형의 꼭짓점을 끌어 옮길 수 있습니다. 끄면 고정되고 드래그는 화면 이동입니다.")
+            UnitCoverageToggle()
         }
         .buttonStyle(.toolbarIcon)
         .padding(.horizontal, 12).padding(.vertical, 8)

@@ -231,12 +231,34 @@ struct SegmentationStore: Equatable, Codable, Sendable {
     @discardableResult
     mutating func segmentize(_ id: VectorObjectID, geometry: PathGeometry,
                              tolerance: Double) -> [SegmentationDefect] {
-        let segs = CurveFlattener.flatten(geometry, tolerance: tolerance)
-        let defects = SegmentationValidator.validate(segs, epsilon: 1e-4)
-        guard defects.isEmpty else { return defects }
-        segmentations[id] = Segmentation(sourceObjectID: id, segments: segs,
-                                         tolerance: tolerance, createdAt: Date())
-        return []
+        switch Self.prepare(id, geometry: geometry, tolerance: tolerance) {
+        case .success(let s): segmentations[id] = s; return []
+        case .failure(let defects): return defects.defects
+        }
+    }
+
+    /// 계산된 선분화 결과를 넣는다. 많은 개체를 백그라운드에서 선분화한 뒤 한 번에 반영할 때 쓴다.
+    mutating func insert(_ s: Segmentation) { segmentations[s.sourceObjectID] = s }
+
+    struct Rejected: Error { let defects: [SegmentationDefect] }
+
+    /// 선분화 계산만 한다(저장소를 바꾸지 않아 백그라운드에서 돌릴 수 있다).
+    ///
+    /// **교차는 막지 않는다**(2026-10-18 요청). 작은 곡선을 거칠게 펴서 생긴 교차는 더 잘게 다시 잘라 없애고,
+    /// 그래도 남는 교차는 원본 도면 자체가 꼬인 것이라 그대로 받아들인다. 끝점이 벌어진 것만 거절한다.
+    static func prepare(_ id: VectorObjectID, geometry: PathGeometry,
+                        tolerance: Double) -> Result<Segmentation, Rejected> {
+        var t = tolerance
+        var segs = CurveFlattener.flatten(geometry, tolerance: t)
+        var defects = SegmentationValidator.validate(segs, epsilon: 1e-4)
+        while t > 0.01, defects.contains(where: \.isCrossing), !defects.contains(where: \.isGap) {
+            t = max(0.01, t / 4)
+            segs = CurveFlattener.flatten(geometry, tolerance: t)
+            defects = SegmentationValidator.validate(segs, epsilon: 1e-4)
+        }
+        let gaps = defects.filter(\.isGap)
+        guard gaps.isEmpty else { return .failure(Rejected(defects: gaps)) }
+        return .success(Segmentation(sourceObjectID: id, segments: segs, tolerance: t, createdAt: Date()))
     }
 
     mutating func desegmentize(_ id: VectorObjectID) {

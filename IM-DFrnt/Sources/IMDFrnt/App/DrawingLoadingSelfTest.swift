@@ -17,7 +17,7 @@ enum DrawingLoadingSelfTest {
         let suite = "IMDFrntDrawingTest.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? FileManager.default.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
-        func environment() -> AppEnvironment { AppEnvironment(recoveryURL: directory.appendingPathComponent("recovery.imdfrnt"), projectDefaults: defaults) }
+        func environment() -> AppEnvironment { AppEnvironment(autosaveFolder: directory, projectDefaults: defaults) }
         do {
             var file = ProjectFile.empty()
             if let path = argument("--drawing-test-project") {
@@ -65,7 +65,7 @@ enum DrawingLoadingSelfTest {
                     if round == 1 { check("재전환 파싱·파생 계산 반복 없음 \(level.info.name)", readyImmediately && env.levelDrawingCache.preparationCount == beforeCount) }
                 }
             }
-            env.lastExplicitSavedProject = env.makeProjectFile()
+            env.lastRecoveryProject = env.makeProjectFile()
             check("층 선택·캐시는 저장 데이터 변경 없음", !env.hasUnsavedChanges && env.projectContents.semanticContents == file.commonProject().semanticContents)
             env.cancelLevelDrawingLoads()
 
@@ -158,7 +158,9 @@ enum DrawingLoadingSelfTest {
             await opened.waitForLevelDrawing()
             opened.updateProjectLevel(a) { $0.name = "미저장 이름" }
             let unsaved = opened.makeProjectFile()!
-            let cancelled = await opened.openDocumentAsync(at: directory.appendingPathComponent("recovery.imdfrnt"), confirmingChanges: { false })
+            let otherURL = directory.appendingPathComponent("other.imdfrnt")
+            try ProjectFile.empty().encoded().write(to: otherURL)
+            let cancelled = await opened.openDocumentAsync(at: otherURL, confirmingChanges: { false })
             check("비동기 열기 취소는 미저장 작업 유지", cancelled == .cancelled && opened.makeProjectFile()!.hasSameContents(as: unsaved))
             var asked = false
             let failed = await opened.openDocumentAsync(at: badURL, confirmingChanges: { asked = true; return true })

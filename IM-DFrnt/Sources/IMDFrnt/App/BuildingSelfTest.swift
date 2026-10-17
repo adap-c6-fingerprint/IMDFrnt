@@ -15,7 +15,7 @@ enum BuildingSelfTest {
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? FileManager.default.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
         func environment() -> AppEnvironment {
-            AppEnvironment(recoveryURL: directory.appendingPathComponent("recovery.imdfrnt"), projectDefaults: defaults)
+            AppEnvironment(autosaveFolder: directory, projectDefaults: defaults)
         }
         do {
             let env = environment()
@@ -24,8 +24,9 @@ enum BuildingSelfTest {
             let initialBuilding = env.globalFeatures("building")
             env.autosaveTick()
             let recovered = environment()
-            try recovered.restoreRecovery(from: directory.appendingPathComponent("recovery.imdfrnt"))
-            check("Level 없이 작성한 건물 정보도 복구 시 미저장으로 유지", recovered.hasUnsavedChanges && recovered.globalFeatures("building") == initialBuilding)
+            let autosaved = try env.projectURL.map { try ProjectFile.decoded(from: Data(contentsOf: $0)) }
+            if let autosaved { try recovered.adopt(autosaved, from: env.projectURL) }
+            check("Level 없이 작성한 건물 정보도 자동 저장 파일로 복원", autosaved != nil && !recovered.hasUnsavedChanges && recovered.globalFeatures("building") == initialBuilding)
             env.openSample()
             check("첫 SVG 입력은 기존 건물과 프로젝트 ID 보존", env.globalFeatures("building") == initialBuilding && env.buildingProject.levels.count == 1)
             env.undo()
@@ -85,7 +86,8 @@ enum BuildingSelfTest {
             env.undo()
             check("Footprint 삭제 Undo", env.globalFeatures("footprint").count == 1)
             let url = directory.appendingPathComponent("two-levels.imdfrnt")
-            check("공통 건물·여러 층 저장", env.saveProject(to: url))
+            env.projectURL = url
+            check("공통 건물·여러 층 저장", env.persist(showingBanner: false))
             let file = try ProjectFile.decoded(from: Data(contentsOf: url))
             check("v5 파일은 Level 내부에 저장, 중복 RoutingGraph 없음", file.version == 5 && file.routing == nil && file.hasDrawing == false && file.buildingProject?.levels.count == 2)
             let reopened = environment()

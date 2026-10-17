@@ -24,14 +24,19 @@ struct DerivedGeometry: Sendable {
 
     static let empty = DerivedGeometry(faces: [], snapPoints: [], totalPointCount: 0)
 
-    static func make(document: DrawingDocument?, key: DerivedGeometryKey) throws -> DerivedGeometry {
+    static func make(document: DrawingDocument?, key: DerivedGeometryKey,
+                     reporter: LongTaskReporter? = nil) throws -> DerivedGeometry {
         guard let doc = document else { return .empty }
         try Task.checkCancellation()
+        reporter?.report(0.05, "꼭짓점·교점 찾는 중")
         let all = SnapPointExtractor.points(in: doc.objects, segmentation: key.segmentation)
         try Task.checkCancellation()
         let remaining = key.excluded.isEmpty ? doc.objects : doc.objects.filter { !key.excluded.contains($0.id) }
+        reporter?.report(0.3, "보조 개체를 뺀 점 정리 중")
         let snaps = key.excluded.isEmpty ? all : SnapPointExtractor.points(in: remaining, segmentation: key.segmentation)
         try Task.checkCancellation()
+        reporter?.report(0.5, "닫힌 면 찾는 중")
+        // 단계별 진행률이다. 면 찾기는 내부를 나눠 셀 수 없어 마지막 구간을 통째로 쓴다.
 
         var sources: [ClosedPolygonFinder.SourceSegment] = []
         for o in remaining {
@@ -41,6 +46,7 @@ struct DerivedGeometry: Sendable {
         for s in key.closingSegments { sources.append(.init(segment: s, objectID: nil)) }
         let faces = ClosedPolygonFinder.faces(in: sources)
         try Task.checkCancellation()
+        reporter?.report(1, "완료")
         return DerivedGeometry(faces: faces, snapPoints: snaps, totalPointCount: all.count)
     }
 
@@ -81,6 +87,7 @@ extension AppEnvironment {
         guard !isInstallingLevelDrawing else { return }
         guard let doc = document else {
             derivedTask?.cancel(); derivedTask = nil
+            if let derivedLongTask { endLongTask(derivedLongTask) }
             applyDerivedGeometry(.empty, key: nil)
             return
         }
@@ -94,10 +101,16 @@ extension AppEnvironment {
         let token = UUID()
         derivedToken = token
         isComputingDerivedGeometry = true
+        if let derivedLongTask { endLongTask(derivedLongTask) }
+        let progress = beginLongTask("점·면 계산 중", detail: "꼭짓점·교점 찾는 중", showAfter: 1_000_000_000)
+        derivedLongTask = progress
+        let reporter = longTaskReporter(progress)
         derivedTask = Task { [weak self] in
             let result = try? await Task.detached(priority: .userInitiated) {
-                try DerivedGeometry.make(document: doc, key: key)
+                try DerivedGeometry.make(document: doc, key: key, reporter: reporter)
             }.value
+            defer { if self?.derivedToken == token { self?.endLongTask(progress) } }
+            // 1초 안에 끝나면 팝업이 아예 뜨지 않는다. opening 하나 저장할 때마다 깜빡이지 않게 한다.
             guard let self, !Task.isCancelled, self.derivedToken == token, let result else { return }
             guard self.document?.fingerprint == doc.fingerprint, self.currentDerivedKey == key else {
                 self.isComputingDerivedGeometry = false
@@ -113,7 +126,7 @@ extension AppEnvironment {
         derivedKey = key
         isComputingDerivedGeometry = false
         closedPolygonFaces = g.faces
-        let ids = Set(g.faces.map(\.id))
+        let ids = Set(faceModeFaces.map(\.id))
         if !faceSelection.isSubset(of: ids) { faceSelection.formIntersection(ids) }
         // 사라진 면의 선택을 들고 있으면 저장 버튼의 개수와 화면이 어긋난다.
         snapPoints = g.snapPoints

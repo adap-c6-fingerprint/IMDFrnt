@@ -34,6 +34,9 @@ enum SegmentationDefect: Hashable {
     case crossing(Int, Int, at: LocalPoint)
     // 인접하지 않은 선분이 서로를 가로지름 — 명세 8-4-3) "교차해서는 안 된다" 위반
 
+    var isCrossing: Bool { if case .crossing = self { return true }; return false }
+    var isGap: Bool { if case .gap = self { return true }; return false }
+
     var message: String {
         switch self {
         case .gap(let i, let d):

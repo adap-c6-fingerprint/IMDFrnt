@@ -19,13 +19,12 @@ enum DrawingLoadingReviewSelfTest {
         func anchorOnlyEnvironment() -> AppEnvironment {
             let env = environment()
             env.openSample()
-            env.lastExplicitSavedProject = env.makeProjectFile()
+            _ = env.persist(showingBanner: false)
             env.perform("기준점 추가") {
                 env.anchors.add(local: LocalPoint(0, 0), geo: GeoPoint(longitude: 129, latitude: 36), label: "origin")
                 env.anchors.add(local: LocalPoint(100, 0), geo: GeoPoint(longitude: 129.001, latitude: 36), label: "east")
                 env.anchors.add(local: LocalPoint(0, 100), geo: GeoPoint(longitude: 129, latitude: 35.999), label: "south")
             }
-            _ = env.persist(showingBanner: false)
             return env
         }
         for (name, data) in drawings {
@@ -35,10 +34,10 @@ enum DrawingLoadingReviewSelfTest {
             check("Finder \(name): Feature·노드 없이 기준점만 미저장인 입력", env.hasUnsavedChanges && env.anchors.pairs.count == 3 && env.features.features.isEmpty && env.routing.nodes.isEmpty)
             let before = env.snapshot
             let undo = env.undoStack.undoEntries, redo = env.undoStack.redoEntries
-            let recovery = try Data(contentsOf: env.recoveryURL)
+            let recovery = try Data(contentsOf: env.projectURL!)
             var asked = false
             let result = await env.openDocumentAsync(at: url, confirmingChanges: { asked = true; return false })
-            let recoveryAfter = try Data(contentsOf: env.recoveryURL)
+            let recoveryAfter = try Data(contentsOf: env.projectURL!)
             check("Finder \(name): 기준점만 수정한 경우에도 확인 요청·취소", asked && result == .cancelled)
             check("Finder \(name): 취소는 기준점·도면·복구본·Undo 보존",
                 env.snapshot == before && env.undoStack.undoEntries == undo && env.undoStack.redoEntries == redo
@@ -47,27 +46,26 @@ enum DrawingLoadingReviewSelfTest {
         let svgURL = directory.appendingPathComponent(drawings[0].0)
         let saveCancelled = anchorOnlyEnvironment()
         let beforeSaveCancel = saveCancelled.snapshot
+        let blocker = directory.appendingPathComponent("not-a-folder")
+        try Data("block".utf8).write(to: blocker)
+        saveCancelled.projectURL = blocker.appendingPathComponent("project.imdfrnt")
         let saveCancelResult = await saveCancelled.openDocumentAsync(at: svgURL, confirmingChanges: {
-            saveCancelled.resolveUnsavedChanges(.save, saving: { false })
+            saveCancelled.persist(showingBanner: false)
         })
-        check("Finder 도면 열기의 저장 창 취소는 교체도 취소", saveCancelResult == .cancelled && saveCancelled.snapshot == beforeSaveCancel)
+        check("Finder 도면 열기 전 자동 저장 실패는 교체도 취소", saveCancelResult == .cancelled && saveCancelled.snapshot == beforeSaveCancel)
 
         let saved = anchorOnlyEnvironment()
-        let originalURL = directory.appendingPathComponent("before-replacement.imdfrnt")
-        let originalAnchors = saved.anchors
-        let saveResult = await saved.openDocumentAsync(at: svgURL, confirmingChanges: {
-            saved.resolveUnsavedChanges(.save, saving: { saved.saveProject(to: originalURL) })
-        })
-        let original = try? ProjectFile.decoded(from: Data(contentsOf: originalURL))
-        check("Finder 교체 전 저장 승인은 기존 기준점을 파일에 보존",
-            saveResult == .opened && original?.commonProject().levels.first?.info.anchors == originalAnchors
+        let savedURL = saved.projectURL
+        let saveResult = await saved.openDocumentAsync(at: svgURL)
+        let autosaved = try? ProjectFile.decoded(from: Data(contentsOf: savedURL!))
+        check("Finder 교체 뒤에도 같은 프로젝트 파일에 자동 저장",
+            saveResult == .opened && saved.projectURL == savedURL && !saved.hasUnsavedChanges
+            && autosaved?.commonProject().levels.first?.info.sourceName == drawings[0].0
             && saved.document?.sourceName == drawings[0].0 && saved.anchors.pairs.isEmpty)
 
         let discarded = anchorOnlyEnvironment()
-        let discardResult = await discarded.openDocumentAsync(at: svgURL, confirmingChanges: {
-            discarded.resolveUnsavedChanges(.discard, saving: { false })
-        })
-        check("Finder 변경 폐기 승인 후에만 도면과 기준점을 교체", discardResult == .opened && discarded.document?.sourceName == drawings[0].0 && discarded.anchors.pairs.isEmpty)
+        let discardResult = await discarded.openDocumentAsync(at: svgURL, confirmingChanges: { true })
+        check("Finder 진행 승인 후에만 도면과 기준점을 교체", discardResult == .opened && discarded.document?.sourceName == drawings[0].0 && discarded.anchors.pairs.isEmpty)
         discarded.undo(); await discarded.waitForLevelDrawing()
         check("Finder 승인된 도면 교체 Undo는 기준점 복원", discarded.anchors.pairs.count == 3 && discarded.document?.sourceName == SampleFloorplan.name)
 

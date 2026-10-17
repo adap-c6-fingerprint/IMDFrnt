@@ -8,22 +8,26 @@ struct ProjectFileToolbar: View {
         HStack(spacing: 14) {
             Menu("파일") {
                 Button("새 프로젝트") { env.newProject() }
+                Button("프로젝트 선택…") { env.showProjectPickerIfIdle() }
                 Divider()
                 Button("IMDF 불러오기…") { env.importIMDF() }
+                Button(".imdfrnt 불러오기…") { env.openProject() }
                 Button("도면 열기…") { env.openFile() }
-                Button("프로젝트 열기 (.imdfrnt)…") { env.openProject() }
                 Divider()
-                Button("작업 저장") { env.saveProject() }
-                    .disabled(!env.hasSomethingToPersist)
-                Button("다른 이름으로 저장…") { env.saveProject(as: true) }
-                    .disabled(!env.hasSomethingToPersist)
+                Button("IMDF 아카이브 내보내기… (모든 층)") { env.exportIMDFArchive() }
+                    .disabled(env.buildingProject.levels.isEmpty)
             }
             .fixedSize()
             .disabled(env.isProjectBusy)
-            Label(env.hasSomethingToPersist ? env.projectDisplayName : "IM-DFrnt", systemImage: "doc")
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-                .help(env.projectURL?.path ?? "저장 위치를 선택하지 않았습니다.")
+            Button { env.showProjectPickerIfIdle() } label: {
+                Label(env.hasSomethingToPersist ? env.projectDisplayName : "IM-DFrnt", systemImage: "building.2")
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .disabled(env.isProjectBusy)
+            .help((env.projectURL?.path ?? "아직 자동 저장 전입니다.") + "\n눌러서 다른 프로젝트를 선택합니다.")
+            // 지금 어떤 프로젝트가 열려 있는지 보이는 자리에서 바로 전환할 수 있게 한다.
             Text(env.projectSaveStatus)
                 .font(.caption)
                 .foregroundStyle(env.hasUnsavedChanges ? Color.orange : Color.secondary)

@@ -22,7 +22,11 @@ struct AuxiliaryDrawingPane: View {
                 env.canvasBackground.fill
 
                 if let doc = env.document {
-                    canvas(doc)
+                    AuxiliaryCanvasLayer(doc: doc, scale: scale, offset: offset)
+                        .equatable()
+                        // 드래그 선택 사각형(`marquee`)이 바뀔 때마다 도면 전체를 다시 그리지 않게 따로 뗐다.
+                        // 도면은 확대·이동·제외 상태가 바뀔 때만 다시 그린다.
+                        .contentShape(Rectangle())
                         .overlay { MarqueeOverlay(marquee: marquee, background: env.canvasBackground) }
                         .gesture(gesture(doc: doc))
                         .onAppear { fit(doc: doc, viewport: geo.size) }
@@ -49,23 +53,47 @@ struct AuxiliaryDrawingPane: View {
         .onDisappear { zoomMonitor.stop() }
     }
 
-    // MARK: 그리기
+}
 
-    private func canvas(_ doc: DrawingDocument) -> some View {
+/// 보조 개체 창의 도면 그리기.
+///
+/// **렉의 원인 세 가지를 여기서 없앴다(2026-10-17).**
+/// ① 프레임마다 개체 전부의 `Path`를 원본 지오메트리에서 새로 만들었다 → 메인 캔버스와 같은 `renderCache`를 쓴다.
+/// ② 화면 밖 개체까지 다 그렸다 → 보이는 영역과 겹치는 개체만 그린다.
+/// ③ 드래그 선택 사각형이 움직일 때마다 도면 전체를 다시 그렸다 → 이 뷰를 떼어 `Equatable`로 막았다.
+struct AuxiliaryCanvasLayer: View, Equatable {
+    @EnvironmentObject var env: AppEnvironment
+    let doc: DrawingDocument
+    let scale: CGFloat
+    let offset: CGSize
+
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.doc.fingerprint == b.doc.fingerprint && a.scale == b.scale && a.offset == b.offset
+    }
+    // 제외·선택·강조 상태는 `env`가 바뀌면 SwiftUI가 따로 다시 그리게 한다. 여기서는 확대·이동만 비교한다.
+
+    var body: some View {
         // 강조 집합은 **루프 바깥에서 한 번만** 받는다. 개체마다 다시 물으면 개체 수만큼
         // 집합을 새로 만들게 되고, 그것이 '똑같이 생긴 개체 모두 보기'에서 화면이
         // 멈추던 원인이었다(엔진 디버깅 1-1번).
         let highlighted = env.auxiliaryHighlightedIDs
         let twinPending = env.auxiliaryTwinPendingIDs
         // ✅ 2026-08-30 — 강조 집합과 같은 이유로 **루프 바깥에서 한 번만** 받는다.
+        let selection = env.auxiliarySelection
+        let segmentation = env.segmentation
 
-        return Canvas { ctx, _ in
+        return Canvas { ctx, size in
+            let visible = CGRect(x: -offset.width / scale, y: -offset.height / scale,
+                                 width: size.width / scale, height: size.height / scale)
             ctx.translateBy(x: offset.width, y: offset.height)
             ctx.scaleBy(x: scale, y: scale)
 
             for o in doc.objects {
-                let path = env.geometry(for: o).swiftUIPath
-                let isSelected = env.auxiliarySelection.contains(o.id)
+                let cache = env.renderCache.entry(for: o, segmentation: segmentation)
+                guard cache.box.insetBy(dx: -o.style.strokeWidth - 2 / scale,
+                                        dy: -o.style.strokeWidth - 2 / scale).intersects(visible) else { continue }
+                let path = cache.path
+                let isSelected = selection.contains(o.id)
                 let isExcluded = env.auxiliary.isExcluded(o.id)
                 let isTwinPending = twinPending.contains(o.id) // ✅ 2026-08-30
                 let opacity = AuxiliaryOpacity.value(for: o.id, highlighted: highlighted)
@@ -93,15 +121,14 @@ struct AuxiliaryDrawingPane: View {
                 if isExcluded {
                     // 제외된 개체는 옅게만 두면 '아직 안 고른 것'과 구별이 안 된다.
                     // bounding box에 사선 표시를 얹어 상태를 눈으로 확정한다.
-                    drawStrikeThrough(ctx, box: o.boundingBox,
-                                      color: env.canvasBackground.excludedStroke.opacity(opacity))
+                    Self.drawStrikeThrough(ctx, box: o.boundingBox,
+                                           color: env.canvasBackground.excludedStroke.opacity(opacity), scale: scale)
                 }
             }
         }
-        .contentShape(Rectangle())
     }
 
-    private func drawStrikeThrough(_ ctx: GraphicsContext, box: CGRect, color: Color) {
+    static func drawStrikeThrough(_ ctx: GraphicsContext, box: CGRect, color: Color, scale: CGFloat) {
         let b = box.insetBy(dx: -2 / scale, dy: -2 / scale)
         var p = Path()
         p.move(to: CGPoint(x: b.minX, y: b.minY)); p.addLine(to: CGPoint(x: b.maxX, y: b.maxY))
@@ -110,6 +137,9 @@ struct AuxiliaryDrawingPane: View {
         ctx.stroke(Path(b), with: .color(color),
                    style: StrokeStyle(lineWidth: 1 / scale, dash: [3 / scale, 3 / scale]))
     }
+}
+
+extension AuxiliaryDrawingPane {
 
     private var legend: some View {
         let twinPendingCount = env.auxiliaryTwinPendingIDs.count

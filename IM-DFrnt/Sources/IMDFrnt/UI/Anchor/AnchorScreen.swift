@@ -182,6 +182,19 @@ struct AnchorScreen: View {
                         }
                     }
 
+                    if let t = env.overlayTransform {
+                        ForEach(env.anchorLayerPoints.filter { env.anchorPair(at: $0.point) == nil },
+                                id: \.feature.id) { item in
+                            Annotation(item.feature.serialNumber, coordinate: t.apply(item.point).clCoordinate,
+                                       anchor: .center) {
+                                Circle().stroke(Color.purple, lineWidth: 2)
+                                    .background(Circle().stroke(Color.white, lineWidth: 4))
+                                    .frame(width: 12, height: 12)
+                            }
+                        }
+                        // 아직 쌍이 아닌 anchor 레이어 점은 위경도가 없다. 지금 변환식(2쌍부터)으로 짐작한 자리에 보여 준다.
+                    }
+
                     if showOverlay, let t = env.overlayTransform, let doc = env.document {
                         ForEach(overlayLines(doc: doc, transform: t), id: \.0) { item in
                             MapPolyline(coordinates: item.1)

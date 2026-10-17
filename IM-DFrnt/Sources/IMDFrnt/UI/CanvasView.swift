@@ -46,6 +46,7 @@ struct CanvasView: View {
     /// 꼭짓점을 끄는 드래그인가(#21). 시작할 때 정하고 끝까지 유지한다.
     @State private var dragIsVertex = false
     @State private var pointKeys: PointKeyMonitor?
+    @State private var labelHitBoxes = FeatureLabelHitBoxes()
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -89,28 +90,43 @@ struct CanvasView: View {
                             .font(.caption).padding(10).toolbarCard(cornerRadius: 8)
                             .allowsHitTesting(false)
                     } else if env.isPolygonWorkMode {
-                        PolygonToolbar()
+                        CanvasBarFit { PolygonToolbar() }
                         // 폴리곤 type에서는 선택 대상이 개체가 아니라 면이라 상단바가 다르다.
                         // **선택이 없어도 항상 뜬다** — 이 모드에서는 무엇을 더 해야 하는지가 곧 안내다.
                     } else if env.isPointWorkMode {
-                        PointToolbar()
+                        CanvasBarFit { PointToolbar() }
                         // #21: property type 레이어의 기본 작업은 점 단위다.
                     } else if !env.selection.isEmpty {
-                        SelectionToolbar()
+                        CanvasBarFit { SelectionToolbar() }
                     }
                     Spacer()
                 }
                 .padding(.top, 12)
+                .frame(width: geo.size.width, height: geo.size.height)
+                // 캔버스 크기에 못 박는다. 없으면 상단바가 제 폭을 고집해 캔버스 칸을 넓히고,
+                // 넓어진 캔버스가 오른쪽 사이드바를 덮는다(창을 좁혔을 때).
 
                 VStack {
                     Spacer()
-                    HStack {
-                        zoomControls(doc: displayedDocument, viewport: geo.size)
-                        Spacer()
-                        if !env.showRoutingScreen { modeChip }
+                    ViewThatFits(in: .horizontal) {
+                        HStack {
+                            zoomControls(doc: displayedDocument, viewport: geo.size).fixedSize()
+                            Spacer()
+                            if !env.showRoutingScreen { modeChip.fixedSize() }
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !env.showRoutingScreen { modeChip.fixedSize() }
+                            zoomControls(doc: displayedDocument, viewport: geo.size).fixedSize()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // 한 줄에 안 들어가면 모드 표시를 확대 막대 위로 올린다.
+                        CanvasBarFit {
+                            zoomControls(doc: displayedDocument, viewport: geo.size)
+                        }
                     }
                     .padding(12)
                 }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
             .background(
                 GeometryReader { proxy in
@@ -198,11 +214,23 @@ struct CanvasView: View {
     }
 
     private func canvas(doc: DrawingDocument, viewport: CGSize) -> some View {
+        featureLabelCanvas(doc: doc, viewport: viewport)
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                var hit: FeatureGroupID?
+                if case .active(let p) = phase { hit = labelHitBoxes.boxes.last { $0.1.contains(p) }?.0 }
+                // 나중에 그린 태그가 위에 보이므로 뒤에서부터 찾는다.
+                if env.hoveredFeature != hit { env.hoveredFeature = hit }
+            }
+    }
+
+    private func featureLabelCanvas(doc: DrawingDocument, viewport: CGSize) -> some View {
         Canvas { ctx, size in
             let s = effectiveScale
             let visible = visibleDocRect(viewport: size)
             let states = env.renderStates()
             // 표시 상태는 프레임마다 개체별로 다시 판정하지 않고 **사전 하나**를 받아 쓴다(제안 3).
+            let screenCtx = ctx
+            // 변환 전의 화면 좌표 붓. 개체 이름표처럼 확대와 무관하게 같은 크기로 그릴 것에 쓴다.
             ctx.translateBy(x: offset.width, y: offset.height)
             ctx.scaleBy(x: s, y: s)
             // 도면 중심을 축으로 90° 단위 회전. 표시 전용이라 도면 좌표는 그대로다.
@@ -274,12 +302,21 @@ struct CanvasView: View {
                     ? env.canvasBackground.marker(.displayPoint)
                     : (st.isSelected
                         ? env.canvasBackground.selection
-                        : (st.isDisabled
-                            ? env.canvasBackground.disabledStroke
-                            : env.canvasBackground.resolve(o.style.stroke)))
+                        : (st.isHighlighted
+                            ? ClosedPolygonAppearance.highlightFill
+                            : (st.isTaggedHere
+                                ? ClosedPolygonAppearance.savedFill
+                                : (st.isTaggedOtherLayer
+                                    ? ClosedPolygonAppearance.otherLayerFill
+                                    : (st.isDisabled
+                                        ? env.canvasBackground.disabledStroke
+                                        : env.canvasBackground.resolve(o.style.stroke))))))
+                // 강조 중인 feature의 구성원은 이미 소유된 개체여도 강조색이 이긴다 —
+                // 지금 보고 있는 것을 찾으려는 표시라서다.
+                // 다른 레이어에서 태깅한 개체는 회색(비활성) 대신 옅은 초록이다. 고를 수 없는 것은 같다.
                 let width = CanvasZoom.strokeWidth(
                     o.style.strokeWidth, at: s,
-                    emphasis: st.isSelected || st.isBorrowed ? 2.0 : 1.0)
+                    emphasis: st.isSelected || st.isBorrowed || st.isHighlighted ? 2.0 : 1.0)
                 let style = StrokeStyle(lineWidth: width,
                                         dash: st.isBorrowed
                                             ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
@@ -308,21 +345,39 @@ struct CanvasView: View {
             // 어디서 닫혔는지 확인할 수 없다.
             if env.isPolygonWorkMode {
                 let saved = env.savedPolygonFaceIDs
-                for face in env.closedPolygonFaces {
+                var highlighted = env.features.features.reduce(into: Set<String>()) { out, f in
+                    if !f.isInTrash, env.isFeatureHighlighted(f.id) { out.formUnion(f.polygonFaceIDs) }
+                }
+                var taggedHere = env.features.features.reduce(into: Set<String>()) { out, f in
+                    if !f.isInTrash, f.featureType == env.layers.activePropertyType { out.formUnion(f.polygonFaceIDs) }
+                }
+                let faces = env.faceModeFaces
+                for face in faces {
+                    guard let owner = env.faceOwner(face) else { continue }
+                    taggedHere.insert(face.id)
+                    if env.isFeatureHighlighted(owner) { highlighted.insert(face.id) }
+                }
+                // 저장된 개체 경계로 찾은 면은 면 기록이 없다. 같은 모양으로 저장된 feature로 색을 정한다.
+                for face in faces {
                     guard face.boundingBox.intersects(visible) else { continue }
                     var facePath = Path()
                     facePath.addLines(face.ring.map(\.cg))
                     facePath.closeSubpath()
 
-                    let isSaved = saved.contains(face.id)
+                    let isSaved = saved.contains(face.id) || taggedHere.contains(face.id)
                     let isPicked = env.faceSelection.contains(face.id)
                     var dim = 1.0
                     if case .ungroupedOnly = env.mode, isSaved { dim = 0.25 }
                     // 면 단위 '미저장만 보기'(신기능 5-4 4번). 저장한 면을 지우지 않고 옅게 눌러
                     // 남은 것이 드러나게 한다 — 지우면 어디까지 했는지 대조할 수가 없다.
-                    let fill = isSaved ? ClosedPolygonAppearance.savedFill
-                                       : ClosedPolygonAppearance.faceFill
-                    let fillOpacity = isSaved ? ClosedPolygonAppearance.savedFillOpacity
+                    let isHighlighted = highlighted.contains(face.id)
+                    let fill = isHighlighted ? ClosedPolygonAppearance.highlightFill
+                        : (isSaved ? (taggedHere.contains(face.id) ? ClosedPolygonAppearance.savedFill
+                                                                   : ClosedPolygonAppearance.otherLayerFill)
+                                   : ClosedPolygonAppearance.faceFill)
+                    let fillOpacity = isHighlighted ? ClosedPolygonAppearance.highlightFillOpacity
+                        : isSaved ? (taggedHere.contains(face.id) ? ClosedPolygonAppearance.savedFillOpacity
+                                                                  : ClosedPolygonAppearance.otherLayerFillOpacity)
                         : (isPicked ? ClosedPolygonAppearance.selectedFillOpacity
                                     : ClosedPolygonAppearance.faceFillOpacity)
                     ctx.fill(facePath, with: .color(fill.opacity(fillOpacity * dim)))
@@ -342,7 +397,12 @@ struct CanvasView: View {
                 }
             }
 
+            if env.isPointWorkMode || env.isPolygonWorkMode { drawOtherLayerFeatures(in: ctx, scale: s, visible: visible) }
+            // 다른 레이어에서 점으로 그린 feature는 지금 레이어의 도형 아래에 깐다.
             if env.isPointWorkMode { drawPointWork(in: ctx, scale: s, visible: visible) }
+            if env.isShowingUnitCoverage { drawUnitCoverage(in: ctx, scale: s, visible: visible) }
+            drawFeatureLabels(in: screenCtx, document: doc, scale: s, viewport: size)
+            if env.isPointWorkMode { drawDraftOrderLabels(in: screenCtx, scale: s) }
 
             // 겹침 윤곽 — 개체를 옮겨보는 대신 겹치는 곳을 제자리에 표시한다(명세 2-3 대체).
             let overlap = moves.isMoving ? OverlapDetector.Result() : env.overlapHighlight
@@ -407,20 +467,76 @@ struct CanvasView: View {
         .contentShape(Rectangle())
     }
 
+    /// 다른 레이어(property type)에서 태깅한 feature의 좌표 도형 — 점으로 그린 링·선·점과 문 닫기 선분.
+    /// 편집 중인 레이어만 보이면 이미 다른 레이어가 무엇을 그렸는지 모른 채 겹쳐 그리게 된다(2026-10-17 요청).
+    /// 옅은 초록·얇은 선·꼭짓점 손잡이 없음으로, 지금 레이어 것과 구분되고 고를 수도 없다.
+    /// 구성원 개체로 이뤄진 부분은 개체 루프가 `isTaggedOtherLayer`로 이미 같은 색을 칠한다.
+    private func drawOtherLayerFeatures(in ctx: GraphicsContext, scale s: CGFloat, visible: CGRect) {
+        guard let type = env.layers.activePropertyType else { return }
+        let color = ClosedPolygonAppearance.otherLayerFill
+        let stroke = color.opacity(ClosedPolygonAppearance.otherLayerStrokeOpacity)
+        let width = CanvasZoom.screenLength(1, at: s)
+        for f in env.features.features where !f.isInTrash && f.featureType != type {
+            if !(env.isPolygonWorkMode && !f.polygonFaceIDs.isEmpty) {
+                // 면 모드에서 면으로 저장한 링은 면 루프가 이미 옅은 초록으로 칠했다. 두 번 칠하면 진해진다.
+                var area = Path()
+                for ring in f.polygonRings where ring.count >= 3 { area.addLines(ring.map(\.cg)); area.closeSubpath() }
+                if !area.isEmpty, area.boundingRect.intersects(visible) {
+                    ctx.fill(area, with: .color(color.opacity(ClosedPolygonAppearance.otherLayerFillOpacity)),
+                             style: FillStyle(eoFill: true))
+                    ctx.stroke(area, with: .color(stroke), lineWidth: width)
+                    // MultiPolygon의 구멍이 비어 보이게 짝홀 규칙으로 칠한다.
+                }
+            }
+            let v = f.drawnVertices ?? []
+            if v.count >= 2 {
+                var line = Path(); line.addLines(v.map(\.cg))
+                ctx.stroke(line, with: .color(stroke), lineWidth: CanvasZoom.screenLength(2, at: s))
+            }
+            for p in v {
+                let r = CanvasZoom.screenLength(v.count == 1 ? 4 : 2, at: s)
+                ctx.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(stroke))
+            }
+            if let c = f.closureSegment {
+                var line = Path(); line.move(to: c.start.cg); line.addLine(to: c.end.cg)
+                ctx.stroke(line, with: .color(stroke), lineWidth: CanvasZoom.screenLength(2, at: s))
+            }
+        }
+    }
+
     /// 점 단위 편집(#21). **저장된 도형 → 꼭짓점·교점 → 작성 중인 도형 순서로 그린다.**
     /// 작성 중인 것이 맨 위에 와야 지금 찍은 점이 다른 표시에 가려지지 않는다.
     private func drawPointWork(in ctx: GraphicsContext, scale s: CGFloat, visible: CGRect) {
         guard let type = env.layers.activePropertyType else { return }
-        let saved = ClosedPolygonAppearance.savedFill
         let handle = CanvasZoom.screenLength(3.5, at: s)
-        for f in env.features.features(ofType: type) {
-            for r in f.polygonRings.indices {
+        let all = env.features.features(ofType: type)
+        for f in all.filter({ !env.isFeatureHighlighted($0.id) }) + all.filter({ env.isFeatureHighlighted($0.id) }) {
+            // 강조할 feature를 마지막에 그린다. 겹친 이웃 도형에 가려지면 어디인지 못 찾는다.
+            let isHighlighted = env.isFeatureHighlighted(f.id)
+            let saved = isHighlighted ? ClosedPolygonAppearance.highlightFill : ClosedPolygonAppearance.savedFill
+            let emphasis: CGFloat = isHighlighted ? 2 : 1
+            let isTarget = env.multiPolygonTargetID == f.id
+            var area = Path()
+            for r in f.polygonRings.indices where env.pointDraft.source != PointDraftSource(featureID: f.id, ring: r) {
+                let ring = env.previewRing(of: f, ring: r)
+                if ring.count >= 3 { area.addLines(ring.map(\.cg)); area.closeSubpath() }
+            }
+            if !area.isEmpty, area.boundingRect.intersects(visible) {
+                ctx.fill(area, with: .color(saved.opacity(isHighlighted ? ClosedPolygonAppearance.highlightFillOpacity
+                                                                        : ClosedPolygonAppearance.savedFillOpacity)),
+                         style: FillStyle(eoFill: true))
+                // 링을 한 경로로 짝홀 규칙으로 칠한다. MultiPolygon의 구멍(다른 링 안의 링)이 비어 보인다.
+            }
+            for r in f.polygonRings.indices where env.pointDraft.source != PointDraftSource(featureID: f.id, ring: r) {
+                // 고치는 중인 링은 작성 중 도형으로 그린다. 원래 모양을 겹쳐 그리면 빠진 점이 그대로 보인다.
                 let ring = env.previewRing(of: f, ring: r)
                 guard ring.count >= 3 else { continue }
                 var path = Path(); path.addLines(ring.map(\.cg)); path.closeSubpath()
                 guard path.boundingRect.intersects(visible) else { continue }
-                ctx.fill(path, with: .color(saved.opacity(ClosedPolygonAppearance.savedFillOpacity)))
-                ctx.stroke(path, with: .color(saved), lineWidth: CanvasZoom.screenLength(1.5, at: s))
+                ctx.stroke(path, with: .color(saved),
+                           style: StrokeStyle(lineWidth: CanvasZoom.screenLength(1.5 * emphasis * (isTarget ? 1.5 : 1), at: s),
+                                              dash: isTarget ? [6, 3].map { CanvasZoom.screenLength($0, at: s) } : []))
+                // 다각형을 받고 있는 MultiPolygon은 점선 테두리로 표시한다.
                 if env.isVertexMoveEnabled, f.isPointDrawn {
                     for p in ring {
                         ctx.stroke(Path(CGRect(x: p.x - handle, y: p.y - handle, width: handle * 2, height: handle * 2)),
@@ -431,10 +547,10 @@ struct CanvasView: View {
             let v = env.previewDrawnVertices(of: f)
             if v.count >= 2 {
                 var line = Path(); line.addLines(v.map(\.cg))
-                ctx.stroke(line, with: .color(saved), lineWidth: CanvasZoom.screenLength(3, at: s))
+                ctx.stroke(line, with: .color(saved), lineWidth: CanvasZoom.screenLength(3 * emphasis, at: s))
             }
             for p in v {
-                let r = CanvasZoom.screenLength(v.count == 1 ? 5 : 3, at: s)
+                let r = CanvasZoom.screenLength((v.count == 1 ? 5 : 3) * emphasis, at: s)
                 ctx.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(saved))
             }
         }
@@ -456,12 +572,22 @@ struct CanvasView: View {
         let draft = env.previewDraftPoints
         guard !draft.isEmpty else { return }
         let accent = env.canvasBackground.selection
-        if draft.count >= 2 {
-            var line = Path(); line.addLines(draft.map(\.cg))
-            ctx.stroke(line, with: .color(accent),
-                       style: StrokeStyle(lineWidth: CanvasZoom.screenLength(2, at: s), lineJoin: .round))
+        let state = env.pointDraft
+        let dimmed = 0.25
+        for i in 0..<max(0, draft.count - 1) where state.isConnected(i) {
+            var line = Path(); line.move(to: draft[i].cg); line.addLine(to: draft[i + 1].cg)
+            ctx.stroke(line, with: .color(accent.opacity(state.isDimmed(i + 1) ? dimmed : 1)),
+                       style: StrokeStyle(lineWidth: CanvasZoom.screenLength(2, at: s), lineCap: .round))
+            // 끊긴 자리(5-7)와 개체 편집 중 새 점 ↔ 흐린 점 사이는 긋지 않는다.
         }
-        if draft.count >= 3, env.activeGeometryKind.isAreal {
+        if state.source != nil, draft.count >= 3 {
+            var closing = Path(); closing.move(to: draft.last!.cg); closing.addLine(to: draft[0].cg)
+            let open = !state.breaks.isEmpty || state.edit != nil
+            ctx.stroke(closing, with: .color(accent.opacity(state.isDimmed(draft.count - 1) ? dimmed : 1)),
+                       style: StrokeStyle(lineWidth: CanvasZoom.screenLength(2, at: s), lineCap: .round,
+                                          dash: open ? [4, 3].map { CanvasZoom.screenLength($0, at: s) } : []))
+            // 저장된 도형은 이미 닫힌 링이다. 마지막 점과 첫 점 사이도 변으로 그린다.
+        } else if draft.count >= 3, env.activeGeometryKind.isAreal, state.breaks.isEmpty, state.edit == nil {
             var closing = Path(); closing.move(to: draft.last!.cg); closing.addLine(to: draft[0].cg)
             ctx.stroke(closing, with: .color(accent.opacity(0.5)),
                        style: StrokeStyle(lineWidth: CanvasZoom.screenLength(1, at: s),
@@ -471,10 +597,126 @@ struct CanvasView: View {
         for (i, p) in draft.enumerated() {
             let r = CanvasZoom.screenLength(i == 0 ? 6 : 4, at: s)
             let dot = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
-            ctx.fill(dot, with: .color(i == 0 ? env.canvasBackground.fill : accent))
-            ctx.stroke(dot, with: .color(accent), lineWidth: CanvasZoom.screenLength(i == 0 ? 2.5 : 1, at: s))
+            let opacity = state.isDimmed(i) ? dimmed : 1
+            ctx.fill(dot, with: .color((i == 0 ? env.canvasBackground.fill : accent).opacity(opacity)))
+            ctx.stroke(dot, with: .color(accent.opacity(opacity)), lineWidth: CanvasZoom.screenLength(i == 0 ? 2.5 : 1, at: s))
             // 시작점은 속이 빈 큰 원(◎)이다. 다시 누르면 닫힌다는 것을 모양으로 보여준다.
         }
+    }
+
+    /// unit 사이 빈틈은 빨간 점무늬, 겹침은 빨간 빗금으로 칠한다. 무늬 간격·선 굵기는 화면 기준이라 확대와 무관하다.
+    /// 0.03 폭의 틈처럼 무늬가 들어가지 않을 만큼 얇은 곳도 보이도록 테두리를 함께 긋는다.
+    private func drawUnitCoverage(in ctx: GraphicsContext, scale s: CGFloat, visible: CGRect) {
+        let red = Color.red
+        let coverage = env.unitCoverage
+        let spacing = CanvasZoom.screenLength(7, at: s)
+        for (paths, dotted) in [(coverage.gaps, true), (coverage.overlaps, false)] {
+            for cg in paths {
+                let box = cg.boundingBoxOfPath
+                guard box.insetBy(dx: -spacing, dy: -spacing).intersects(visible) else { continue }
+                let shape = Path(cg)
+                ctx.fill(shape, with: .color(red.opacity(0.12)), style: FillStyle(eoFill: true))
+                var clipped = ctx
+                clipped.clip(to: shape, style: FillStyle(eoFill: true))
+                let area = box.intersection(visible.insetBy(dx: -spacing, dy: -spacing))
+                if dotted {
+                    let r = CanvasZoom.screenLength(1.4, at: s)
+                    var dots = Path()
+                    var y = (area.minY / spacing).rounded(.down) * spacing
+                    while y <= area.maxY {
+                        var x = (area.minX / spacing).rounded(.down) * spacing
+                        while x <= area.maxX {
+                            dots.addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+                            x += spacing
+                        }
+                        y += spacing
+                    }
+                    clipped.fill(dots, with: .color(red))
+                } else {
+                    var hatch = Path()
+                    var c = ((area.minX - area.maxY) / spacing).rounded(.down) * spacing
+                    while c <= area.maxX - area.minY {
+                        hatch.move(to: CGPoint(x: c + area.minY, y: area.minY))
+                        hatch.addLine(to: CGPoint(x: c + area.maxY, y: area.maxY))
+                        c += spacing
+                    }
+                    // x - y = c 인 45° 선을 같은 간격으로 긋는다.
+                    clipped.stroke(hatch, with: .color(red), lineWidth: CanvasZoom.screenLength(1, at: s))
+                }
+                ctx.stroke(shape, with: .color(red), lineWidth: CanvasZoom.screenLength(1.5, at: s))
+            }
+        }
+    }
+
+    /// 작성 중인 도형의 점마다 찍은 순번(1, 2, 3 …)을 단다(엔진 디버깅 5-1, 모든 레이어).
+    /// 화면 좌표로 그려 확대와 무관하게 글자 크기가 같다. 흐린 점은 순번도 흐리다.
+    private func drawDraftOrderLabels(in ctx: GraphicsContext, scale s: CGFloat) {
+        let draft = env.previewDraftPoints
+        let state = env.pointDraft
+        let accent = env.canvasBackground.selection
+        for (i, p) in draft.enumerated() {
+            let center = docToScreen(p.cg, scale: s)
+            let text = ctx.resolve(Text("\(i + 1)")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.white))
+            let size = text.measure(in: CGSize(width: 60, height: 20))
+            let tag = CGRect(x: center.x + 7, y: center.y - size.height - 7,
+                             width: max(size.width + 6, size.height + 2), height: size.height + 2)
+            // 점 오른쪽 위에 붙인다. 점 위에 얹으면 점을 다시 누를 자리를 가린다.
+            let opacity = state.isDimmed(i) ? 0.3 : 0.9
+            ctx.fill(Path(roundedRect: tag, cornerRadius: tag.height / 2), with: .color(accent.opacity(opacity)))
+            ctx.draw(text, at: CGPoint(x: tag.midX, y: tag.midY), anchor: .center)
+        }
+    }
+
+    /// 지금 레이어에서 태깅한 feature마다 왼쪽 위에 우측 사이드바의 표시명(일련번호)을 단다.
+    /// 지울 것을 찾으려고 사이드바 카드를 하나하나 펼쳐 보지 않아도 되게 하려는 것이다.
+    /// 화면 좌표로 그려 확대와 무관하게 글자 크기가 같다. 강조 중인 것은 강조색 바탕이다.
+    private func drawFeatureLabels(in ctx: GraphicsContext, document doc: DrawingDocument,
+                                   scale s: CGFloat, viewport: CGSize) {
+        labelHitBoxes.boxes = []
+        guard let type = env.layers.activePropertyType else { return }
+        let screen = CGRect(origin: .zero, size: viewport)
+        for f in env.features.features(ofType: type) {
+            var points = f.polygonRings.flatMap { $0 }.map(\.cg) + (f.drawnVertices ?? []).map(\.cg)
+            if let c = f.closureSegment { points += [c.start.cg, c.end.cg] }
+            for id in f.memberIDs {
+                guard let o = doc.object(id) else { continue }
+                let b = env.renderCache.entry(for: o, segmentation: env.segmentation).box
+                points += [CGPoint(x: b.minX, y: b.minY), CGPoint(x: b.maxX, y: b.minY),
+                           CGPoint(x: b.minX, y: b.maxY), CGPoint(x: b.maxX, y: b.maxY)]
+            }
+            let onScreen = points.map { docToScreen($0, scale: s) }
+            guard let minX = onScreen.map(\.x).min(), let minY = onScreen.map(\.y).min(),
+                  let maxX = onScreen.map(\.x).max(), let maxY = onScreen.map(\.y).max(),
+                  CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                    .insetBy(dx: -40, dy: -20).intersects(screen) else { continue }
+            // 회전한 도면에서도 화면 기준 왼쪽 위에 단다. 도면 기준으로 달면 회전 따라 이름표가 돌아간다.
+
+            let text = ctx.resolve(Text(f.serialNumber)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white))
+            let size = text.measure(in: CGSize(width: 300, height: 30))
+            let tag = CGRect(x: minX - 2, y: minY - size.height - 5, width: size.width + 8, height: size.height + 3)
+            // 도형 바로 위에 붙인다. 안쪽에 두면 작은 방·문 선을 이름표가 덮는다.
+            let color = env.isFeatureHighlighted(f.id) ? ClosedPolygonAppearance.highlightFill
+                                                       : ClosedPolygonAppearance.savedFill
+            ctx.fill(Path(roundedRect: tag, cornerRadius: 3), with: .color(color.opacity(0.9)))
+            ctx.draw(text, at: CGPoint(x: tag.minX + 4, y: tag.minY + 1.5), anchor: .topLeading)
+            labelHitBoxes.boxes.append((f.id, tag))
+            // 태그 자리를 기억해 둔다. 마우스가 그 위에 오면 이 feature를 주황색으로 강조한다.
+        }
+    }
+
+    /// 도면 좌표 → 화면 좌표. 그리기 변환(이동 → 확대 → 도면 중심 회전)과 같은 순서다.
+    private func docToScreen(_ p: CGPoint, scale s: CGFloat) -> CGPoint {
+        var q = p
+        if env.canvasRotation != 0 {
+            let c = docCenter, r = env.rotationDegrees * .pi / 180
+            let dx = p.x - c.x, dy = p.y - c.y
+            q = CGPoint(x: c.x + dx * cos(r) - dy * sin(r), y: c.y + dx * sin(r) + dy * cos(r))
+        }
+        return CGPoint(x: q.x * s + offset.width, y: q.y * s + offset.height)
     }
 
     private func drawCross(_ ctx: GraphicsContext, at p: LocalPoint, scale s: CGFloat, color: Color) {
@@ -644,7 +886,7 @@ struct CanvasView: View {
                     dragIsMarquee = !env.showRoutingScreen && env.isSelectModeActive && !env.isPointWorkMode
                     // 점 단위 편집에는 개체를 고르는 사각형 선택이 없다(#21, 선분 단위 작업 폐지).
                     dragIsVertex = false
-                    if env.isPointWorkMode, env.isVertexMoveEnabled,
+                    if env.isPointWorkMode, env.isVertexMoveEnabled, !NSEvent.modifierFlags.contains(.control),
                        let target = env.vertexHit(at: toLocal(value.startLocation),
                                                   tolerance: 6 / Double(effectiveScale)) {
                         dragIsVertex = true
@@ -739,7 +981,8 @@ struct CanvasView: View {
                     } else {
                         env.vertexDrag = nil
                         env.handlePointClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
-                                             freePoint: NSEvent.modifierFlags.contains(.option))
+                                             freePoint: NSEvent.modifierFlags.contains(.option),
+                                             editing: NSEvent.modifierFlags.contains(.control))
                         // 꼭짓점 위를 끌지 않고 눌렀으면 클릭이다(시작점으로 닫기·점 지우기).
                     }
                 } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
@@ -750,7 +993,8 @@ struct CanvasView: View {
                         // 폴리곤 type에서는 클릭이 개체가 아니라 **면**을 고른다(신기능 5-4).
                     } else if env.isPointWorkMode, !env.mode.blocksSelection {
                         env.handlePointClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
-                                             freePoint: NSEvent.modifierFlags.contains(.option))
+                                             freePoint: NSEvent.modifierFlags.contains(.option),
+                                             editing: NSEvent.modifierFlags.contains(.control))
                         // #21: property type 레이어의 클릭은 개체가 아니라 **점**을 찍는다.
                         // display point·Anchor 찍기 중이면 아래 종전 경로가 받는다.
                     } else {
@@ -819,10 +1063,10 @@ struct CanvasView: View {
                 .font(.title3)
             Button("IMDF 불러오기…") { env.importIMDF() }
                 .buttonStyle(.borderedProminent).disabled(env.isImportingIMDF)
-            Button("프로젝트 열기 (.imdfrnt)…") { env.openProject() }
+            Button(".imdfrnt 불러오기…") { env.openProject() }
                 .buttonStyle(.bordered)
                 .disabled(env.isProjectBusy)
-                .help("저장한 프로젝트의 도면·층·노드·연결을 불러옵니다. (⌘⇧O)")
+                .help("자동 저장된 프로젝트의 도면·층·노드·연결을 불러옵니다. (⌘⇧O)")
             Button(env.showRoutingScreen && env.currentRoutingFloor == nil ? "층 추가" : "도면 불러오기…") {
                 if env.showRoutingScreen {
                     if env.currentRoutingFloor == nil { env.addRoutingFloor() } else { env.importRoutingDrawing() }
@@ -895,4 +1139,10 @@ struct CanvasView: View {
         .padding(.horizontal, 10).padding(.vertical, 7)
         .toolbarCapsuleCard()
     }
+}
+
+/// 캔버스에 그린 일련번호 태그의 화면 위치. 그릴 때마다 채우고, 마우스오버 판정이 읽는다.
+/// 그리기 중에 값을 바꿔도 화면을 다시 그리지 않도록 관찰 대상이 아닌 참조 타입으로 둔다.
+final class FeatureLabelHitBoxes {
+    var boxes: [(FeatureGroupID, CGRect)] = []
 }

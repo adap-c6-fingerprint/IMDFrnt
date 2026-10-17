@@ -221,6 +221,8 @@ struct RightSidebar: View {
                 .font(.caption).foregroundStyle(.orange)
         }
 
+        if env.canDesignateMultiPolygon(f) { multiPolygonSection(f) }
+
         VStack(alignment: .leading, spacing: 6) {
             ForEach(PropertySchema.fields(for: f.featureType)) { field in
                 PropertySlotRow(feature: f, field: field)
@@ -245,6 +247,41 @@ struct RightSidebar: View {
 
         Divider()
         coordinateTable(f)
+    }
+
+    /// 저장한 다각형을 MultiPolygon으로 지정하고 다각형·구멍을 더한다. 스펙상 POLYGONAL인 모든 type이 대상이다.
+    private func multiPolygonSection(_ f: FeatureGroup) -> some View {
+        let isTarget = env.multiPolygonTargetID == f.id
+        let summary = env.multiPolygonSummary(f)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(f.isMultiPolygon ? "MultiPolygon · 다각형 \(summary.polygons) · 구멍 \(summary.holes)" : "Polygon")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                if !f.isMultiPolygon {
+                    Button("MultiPolygon으로 지정") { env.designateMultiPolygon(f.id) }
+                        .controlSize(.small)
+                } else {
+                    if f.multiPolygon == true, f.polygonRings.count == 1 {
+                        Button("Polygon으로") { env.releaseMultiPolygon(f.id) }
+                            .controlSize(.small)
+                    }
+                    Button(isTarget ? "추가 끝내기" : "다각형 추가") {
+                        if isTarget { env.finishMultiPolygonAdding() } else { env.designateMultiPolygon(f.id) }
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .tint(isTarget ? .orange : .accentColor)
+                }
+            }
+            if isTarget || !f.isMultiPolygon {
+                Text("지정한 뒤 다각형을 닫거나 면을 저장하면 이 feature에 더해집니다. 기존 다각형을 감싸면 기존 것이 구멍이 되고, 기존 다각형 안쪽이면 새 것이 구멍이 됩니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(7)
+        .background((isTarget ? Color.orange : Color.secondary).opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
     }
 
     /// 명세 7-3-5·6) 좌표 표
@@ -371,17 +408,11 @@ struct PropertySlotRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.key == "category",
                   !PropertySchema.categoryOptions(for: feature.featureType).isEmpty {
-            Picker("", selection: Binding(
-                get: { if case .string(let s) = value { return s }; return "" },
-                set: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0),
-                                          in: feature.id) }
-            )) {
-                Text("null").tag("")
-                ForEach(PropertySchema.categoryOptions(for: feature.featureType), id: \.self) {
-                    Text($0).tag($0)
-                }
+            SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
+                             options: PropertySchema.categoryOptions(for: feature.featureType)) {
+                env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
             }
-            .labelsHidden().controlSize(.small)
+            // 드롭다운 대신 검색해서 고른다. 모든 레이어의 category 칸이 이 한 곳을 지난다.
         } else if field.type == .boolean {
             Toggle("", isOn: Binding(
                 get: { if case .boolean(let b) = value { return b }; return false },
@@ -421,18 +452,12 @@ struct PropertySlotRow: View {
                                    in: feature.id)
             })
         } else if case .reference(let refType) = field.type {
-            Picker("", selection: Binding(
-                get: { if case .string(let s) = value { return s }; return "" },
-                set: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0),
-                                          in: feature.id) }
-            )) {
-                Text("null").tag("")
-                ForEach(env.features.features(ofType: refType)) { f in
-                    Text(f.serialNumber).tag(f.serialNumber)
-                }
+            SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
+                             options: env.features.features(ofType: refType).map(\.serialNumber)) {
+                env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
             }
-            .labelsHidden().controlSize(.small)
             .help("일련번호로 고르면 내보내기 때 해당 feature의 UUID로 치환됩니다.")
+            // 참조 칸(unit_id·anchor_id 등)도 드롭다운이었다. 일련번호가 수백 개면 찾을 수 없어 같은 검색 칸을 쓴다.
         } else {
             textField("null", get: { if case .string(let s) = value { return s }; return "" },
                       set: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0),

@@ -20,7 +20,7 @@ enum DocumentOpeningSelfTest {
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? FileManager.default.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
         func environment(_ name: String) -> AppEnvironment {
-            AppEnvironment(recoveryURL: directory.appendingPathComponent(name + "-recovery.imdfrnt"), projectDefaults: defaults)
+            AppEnvironment(autosaveFolder: directory.appendingPathComponent(name, isDirectory: true), projectDefaults: defaults)
         }
         func wait(_ coordinator: DocumentOpenCoordinator) async {
             for _ in 0..<100 where coordinator.hasPendingRequests { try? await Task.sleep(for: .milliseconds(10)) }
@@ -55,16 +55,15 @@ enum DocumentOpeningSelfTest {
 
             let env = environment("direct")
             check("외부 프로젝트 열기로 ID·데이터·저장 위치 복원", env.openDocument(at: firstURL) == .opened && env.projectID == first.projectID && env.routing.node(nodeID) != nil && env.projectURL == firstURL && !env.hasUnsavedChanges)
-            let recovery = try ProjectFile.decoded(from: Data(contentsOf: env.recoveryURL))
-            check("외부 열기 후 복구본도 같은 프로젝트", recovery.hasSameContents(as: env.makeProjectFile()!))
+            let reopenedFile = try ProjectFile.decoded(from: Data(contentsOf: firstURL))
+            check("외부 열기한 파일 자체가 이 프로젝트의 자동 저장 파일", reopenedFile.hasSameContents(as: env.makeProjectFile()!))
             env.updateRoutingNode(nodeID, field: "name") { $0.name = "미저장 편집" }
             let unsaved = env.makeProjectFile()!
             var asked = false
             check("현재 프로젝트 재열기는 미저장 수정 보존·중복 질문 없음", env.openDocument(at: firstURL, confirmingChanges: { asked = true; return false }) == .opened && !asked && env.hasUnsavedChanges && env.makeProjectFile()!.hasSameContents(as: unsaved))
-            let beforeRecovery = try Data(contentsOf: env.recoveryURL)
+            let beforeRecovery = try Data(contentsOf: firstURL)
             check("다른 프로젝트 열기 취소는 현재 작업·파일 위치 유지", env.openDocument(at: secondURL, confirmingChanges: { false }) == .cancelled && env.projectURL == firstURL && env.makeProjectFile()!.hasSameContents(as: unsaved))
-            check("취소는 복구본도 바꾸지 않음", try Data(contentsOf: env.recoveryURL) == beforeRecovery)
-            check("저장 창 취소/실패는 외부 열기도 취소", env.openDocument(at: secondURL, confirmingChanges: { env.resolveUnsavedChanges(.save, saving: { false }) }) == .cancelled && env.makeProjectFile()!.hasSameContents(as: unsaved))
+            check("취소는 프로젝트 파일도 바꾸지 않음", try Data(contentsOf: firstURL) == beforeRecovery)
             let brokenURL = directory.appendingPathComponent("broken.imdfrnt")
             try Data("broken".utf8).write(to: brokenURL)
             asked = false
@@ -75,7 +74,8 @@ enum DocumentOpeningSelfTest {
                 env.isImportingIMDF = true; defer { env.isImportingIMDF = false }
                 return env.openDocument(at: secondURL) == .failed && env.makeProjectFile()!.hasSameContents(as: unsaved)
             }())
-            check("폐기 승인 후 다른 프로젝트와 저장 위치 적용", env.openDocument(at: secondURL, confirmingChanges: { true }) == .opened && env.projectID == second.projectID && env.document == nil && env.projectURL == secondURL && !env.hasUnsavedChanges)
+            check("기존 작업 자동 저장 후 다른 프로젝트와 파일 위치 적용", env.openDocument(at: secondURL) == .opened && env.projectID == second.projectID && env.document == nil && env.projectURL == secondURL && !env.hasUnsavedChanges &&
+                  (try? ProjectFile.decoded(from: Data(contentsOf: firstURL)))?.commonProject().routingGraph.node(nodeID)?.name == "미저장 편집")
             check("이전 .imdfproj 파일도 같은 경로로 열기", env.openDocument(at: legacyURL) == .opened && env.projectID == first.projectID && env.routing.node(nodeID) != nil)
 
             let queued = DocumentOpenCoordinator()
