@@ -10,6 +10,8 @@ struct SearchablePicker: View {
     // 빈 문자열이면 null이다.
     let options: [String]
     let onSelect: (String) -> Void
+    var label: (String) -> String = { $0 }
+    // 화면에 보일 이름. category는 `한국어(영어)`다(#52). 고른 값·저장 값은 `options`의 원문이다.
 
     @State private var isOpen = false
     @State private var query = ""
@@ -21,7 +23,7 @@ struct SearchablePicker: View {
             isOpen = true
         } label: {
             HStack(spacing: 4) {
-                Text(selection.isEmpty ? "null" : selection)
+                Text(selection.isEmpty ? "null" : label(selection))
                     .foregroundStyle(selection.isEmpty ? .secondary : .primary)
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 2)
@@ -37,7 +39,7 @@ struct SearchablePicker: View {
         .popover(isPresented: $isOpen, arrowEdge: .bottom) { panel }
     }
 
-    private var matches: [String] { Self.filter(options, query: query) }
+    private var matches: [String] { Self.filter(options, query: query, label: label) }
 
     private var panel: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -55,7 +57,7 @@ struct SearchablePicker: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if query.isEmpty { row("", title: "null") }
                     // 검색 중에는 null을 빼야 Return이 맨 위 검색 결과를 고른다.
-                    ForEach(matches, id: \.self) { row($0, title: $0) }
+                    ForEach(matches, id: \.self) { row($0, title: label($0)) }
                     if matches.isEmpty && !query.isEmpty {
                         Text("'\(query)'와 맞는 항목이 없습니다").font(.caption).foregroundStyle(.secondary)
                             .padding(8)
@@ -97,12 +99,14 @@ struct SearchablePicker: View {
 
     /// 검색어로 좁힌다. 대소문자와 공백·밑줄·하이픈을 무시한다 — "rest room"으로 `restroom.male`이,
     /// "unit 3"으로 `unit-003`이 걸려야 한다. 앞에서부터 맞는 항목을 먼저 보인다.
-    static func filter(_ options: [String], query: String) -> [String] {
+    static func filter(_ options: [String], query: String, label: (String) -> String = { $0 }) -> [String] {
         let q = plain(query), qn = numbered(query)
         guard !q.isEmpty else { return options }
-        let hits = options.filter { plain($0).contains(q) || numbered($0).contains(qn) }
+        let hits = options.filter { plain($0).contains(q) || numbered($0).contains(qn) || plain(label($0)).contains(q) }
         // 원래 글자 그대로("unit-00" → `unit-003`)와 번호를 맞춘 꼴("unit 3" → `unit-003`) 둘 다 본다.
-        return hits.filter { plain($0).hasPrefix(q) } + hits.filter { !plain($0).hasPrefix(q) }
+        // 보이는 이름으로도 찾는다 — "화장실"로 `restroom` 계열이 걸린다(#52).
+        func first(_ o: String) -> Bool { plain(o).hasPrefix(q) || plain(label(o)).hasPrefix(q) }
+        return hits.filter(first) + hits.filter { !first($0) }
     }
 
     /// 소문자로 바꾸고 공백·밑줄·하이픈·점을 뺀다.

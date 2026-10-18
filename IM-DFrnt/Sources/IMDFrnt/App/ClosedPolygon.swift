@@ -55,7 +55,7 @@ extension AppEnvironment {
     /// 제외 모드는 전부 고른 상태에서 빼 나간다. 클릭 한 번의 뜻은 같다.
     func handleFaceClick(at point: LocalPoint) {
         guard let hit = faceModeFaces
-            .filter({ !closedPolygonIsSaved($0) && $0.contains(point) })
+            .filter({ !closedPolygonIsSaved($0) && faceContains($0, point) })
             .min(by: { $0.area < $1.area })
         else { return }
         // **겹친 면이 있으면 작은 쪽을 고른다.** 방은 건물 외곽 안에 들어 있어 늘 겹치는데,
@@ -118,7 +118,9 @@ extension AppEnvironment {
         guard !picked.isEmpty else { return }
         if let target = multiPolygonTarget(for: type) {
             let added = picked.filter {
-                addRingToMultiPolygon($0.ring, target: target, faceID: $0.memberIDs.isEmpty ? nil : $0.id, members: $0.memberIDs)
+                let ok = addRingToMultiPolygon($0.ring, target: target, faceID: $0.memberIDs.isEmpty ? nil : $0.id, members: $0.memberIDs)
+                if ok { for hole in faceHoles($0) { addRingToMultiPolygon(hole, target: target) } }
+                return ok
             }
             if !added.isEmpty { faceSelection = [] }
             return
@@ -132,6 +134,8 @@ extension AppEnvironment {
         // 폴리곤 type은 면 하나가 feature 하나다 — 방 둘이 벽을 나눠 쓴다고 한 방이 되면 안 된다.
 
         var madeSerials: [String] = []
+        var movedTotal = 0
+        var shared: [String] = []
         perform("다각형 \(picked.count)개 저장") {
             for batch in batches {
                 let members = batch.reduce(into: Set<VectorObjectID>()) { $0.formUnion($1.memberIDs) }
@@ -144,20 +148,36 @@ extension AppEnvironment {
                 var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: members)
                 for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
                 f.polygonRings = batch.map(\.ring)
+                let holes = batch.flatMap { faceHoles($0) }
+                if !holes.isEmpty, type.requiredGeometry == .polygon {
+                    f.polygonRings += holes
+                    f.multiPolygon = true
+                }
+                // level 기준 면은 안쪽에 떠 있는 unit 자리를 구멍으로 갖는다. 링 관계로 구멍을 정하는 MultiPolygon으로 저장한다.
+                if type.requiredGeometry == .polygon {
+                    let (aligned, moved) = alignRings(f.polygonRings, type: type, excluding: nil)
+                    f.polygonRings = aligned
+                    movedTotal += moved
+                }
+                // 면의 꼭짓점도 이웃 도형의 꼭짓점·변에 맞춘다. 도면 선으로 찾은 면은 이웃과 0.01~0.05씩 어긋나기 쉽다.
                 if !members.isEmpty { f.polygonFaceIDs = Set(batch.map(\.id)) }
                 // 저장된 feature 경계로 찾은 면은 도면 개체가 없다. 면 기록 없이 링만 두면 점으로 그린 도형처럼
                 // 꼭짓점 이동·Control 개체 편집이 되고, 같은 면을 다시 고르는 것은 같은 모양 검사가 막는다.
 
                 try? ownership.claim(free, for: f.id)
                 features.insert(f)
+                if type.requiredGeometry == .polygon {
+                    shared += insertSharedVertices(of: f.polygonRings, type: type, excluding: f.id)
+                }
                 madeSerials.append(serial)
             }
             faceSelection = []
         }
 
-        notify(madeSerials.count == 1
+        notify((madeSerials.count == 1
                ? "\(madeSerials[0]) 로 저장했습니다."
                : "\(type.displayName) feature \(madeSerials.count)개를 저장했습니다(면 \(picked.count)개).")
+               + Self.alignmentNote(moved: movedTotal, shared: Array(Set(shared)).sorted()))
     }
 
     // 다각형 기준 진행률(5-5-2)은 점 기준으로 바뀌었다(#21, `PointEditing.swift`).

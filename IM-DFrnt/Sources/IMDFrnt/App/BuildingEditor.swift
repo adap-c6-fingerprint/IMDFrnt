@@ -57,6 +57,8 @@ extension AppEnvironment {
         doorClosures = editing.doorClosures; serials = editing.serials; ids = editing.ids
         anchors = level?.info.anchors ?? AnchorStore()
         layers = LayerStore(); layers.bootstrap()
+        categoryFilters = [:]
+        // 층마다 저장된 category가 다르다. 앞 층에서 고른 필터가 남으면 새 층 카드가 까닭 없이 비어 보인다.
         for type in Set(features.features.map(\.featureType)).sorted(by: { $0.rawValue < $1.rawValue }) {
             _ = layers.addPropertyTypeLayer(type)
         }

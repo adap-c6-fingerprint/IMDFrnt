@@ -126,7 +126,8 @@ enum IMDFArchive {
             // 일련번호는 층마다 따로 매겨져 'unit-001'이 층마다 있다. 같은 층의 것을 먼저 찾고,
             // 다른 층에서 하나뿐인 것(건물·주소처럼 한 번만 그리는 것)은 그대로 이어 준다.
             let exporter = GeoJSONExporter(document: p.document, segmentation: p.level.editing.segmentation,
-                                           georeferencer: p.georeferencer, borrow: p.level.editing.borrow)
+                                           georeferencer: p.georeferencer, borrow: p.level.editing.borrow,
+                                           levelID: p.level.id)
             var ids = p.ids
             for f in p.features {
                 var feature = exporter.serialize(f, ids: &ids, serialToUUID: serialToUUID)

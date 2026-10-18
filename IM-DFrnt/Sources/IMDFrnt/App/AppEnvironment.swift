@@ -411,6 +411,24 @@ final class AppEnvironment: ObservableObject {
         didSet { if oldValue != hoveredFeature { invalidateRenderStates() } }
     }
 
+    /// 우측 패널의 category 필터(#52). type마다 고른 category 값이고, 비어 있으면 전부 보인다.
+    /// category가 null인 feature는 빈 문자열로 고른다. 화면 상태라 실행취소 대상인 `LayerStore`에 두지 않는다.
+    @Published var categoryFilters: [IMDFFeatureType: Set<String>] = [:] {
+        didSet { invalidateRenderStates() }
+    }
+
+    /// feature의 category 값. null이면 빈 문자열이다.
+    static func categoryValue(of f: FeatureGroup) -> String {
+        if case .string(let s) = f.value("category") { return s }
+        return ""
+    }
+
+    /// category 필터를 통과하는가. 걸러진 feature는 카드 목록과 캔버스(도형·이름표)에서 빠진다.
+    func passesCategoryFilter(_ f: FeatureGroup) -> Bool {
+        guard let picked = categoryFilters[f.featureType], !picked.isEmpty else { return true }
+        return picked.contains(Self.categoryValue(of: f))
+    }
+
     /// 카드 하나의 개별 토글.
     func toggleFeatureExpansion(_ id: FeatureGroupID) {
         if expandedFeatures.contains(id) {
@@ -449,6 +467,8 @@ final class AppEnvironment: ObservableObject {
     @Published var exportBlockers: [ExportBlocker] = []
     /// IMDF 아카이브를 막은 이유. 층 이름을 붙인 문장 목록이다.
     @Published var archiveExportBlockers: [String] = []
+    /// 클라이언트용 묶음(#54)을 막은 이유. 지도·길찾기·통합 검증 문장 목록이다.
+    @Published var clientDatasetBlockers: [String] = []
     @Published var banner: Banner?
     @Published var showAnchorScreen = false
     /// 지도 정렬 화면(신기능 11항, #31). Anchor 화면과 같은 전체 화면 전환이다.
@@ -529,6 +549,7 @@ final class AppEnvironment: ObservableObject {
         assignment = nil
         layers = LayerStore()
         layers.bootstrap()
+        categoryFilters = [:]
         buildingProject = BuildingProject()
         showBuildingManager = false
         routingFloorID = nil
@@ -802,6 +823,11 @@ final class AppEnvironment: ObservableObject {
     }
 
     /// 이름과 동작을 유지한다 — `--selftest`와 UI가 이미 이 이름으로 20곳 넘게 쓰고 있다.
+    /// property type 레이어의 투명도. 그 type으로 저장된 다각형·선·점을 그릴 때 곱한다. 레이어가 없으면 100%.
+    func polygonOpacity(for type: IMDFFeatureType) -> Double {
+        layers.layers.first { $0.kind == .propertyType(type) }?.opacity ?? 1
+    }
+
     func renderState(for object: VectorObject) -> ObjectRenderState {
         if let table = renderStateCache, let hit = table[object.id] { return hit }
         return renderStates()[object.id] ?? computeRenderState(for: object)
@@ -828,9 +854,11 @@ final class AppEnvironment: ObservableObject {
         // 목록에 이름만 생기고 화면은 그대로였다.
         if let active = layers.activeLayer {
             if active.isHidden { visible = false }
-            opacity *= active.opacity
-            // 레이어별 투명도(2026-08-27). 상위 기본 레이어·property type 레이어·속성 필터
-            // 레이어에서 그려지는 개체는 **지금 열려 있는 레이어의 것**이므로 그 값을 곱한다.
+            if case .propertyType = active.kind {} else { opacity *= active.opacity }
+            // 레이어별 투명도(2026-08-27). 상위 기본 레이어·속성 필터 레이어에서 그려지는 개체는
+            // **지금 열려 있는 레이어의 것**이므로 그 값을 곱한다.
+            // property type 레이어의 투명도는 도면 개체가 아니라 그 레이어에 표시된 다각형에 건다
+            // (2026-10-18 요청, `polygonOpacity(for:)`). 태깅한 개체(예전 방식 구성원)만 주인 type 값을 따른다.
             // 하위 기본 레이어(고스트)는 따로 그려지므로 캔버스가 자기 값을 직접 쓴다.
             // 숨긴 레이어의 개체는 보이지 않는다. 눈 아이콘이 상태만 바꾸고 화면이 안 바뀌면
             // 사용자는 기능이 고장 난 것으로 읽는다.
@@ -850,6 +878,10 @@ final class AppEnvironment: ObservableObject {
            features.feature(ex)?.memberIDs.contains(object.id) == true {
             visible = false
         }
+        if let owner = ownerFeature, let f = features.feature(owner), !passesCategoryFilter(f) {
+            visible = false
+        }
+        // category 필터로 걸러진 feature의 구성원 개체도 숨긴다(#52). 점으로 그린 도형은 캔버스가 따로 거른다.
 
         switch mode {
         case .ungroupedOnly:
@@ -872,6 +904,8 @@ final class AppEnvironment: ObservableObject {
             // 명세 5항: 선택된 개체 이외에는 70% opacity
         }
         if isDisabled { opacity *= 0.85 }
+        if let ownerType, activeType != nil { opacity *= polygonOpacity(for: ownerType) }
+        // 예전 방식(구성원 개체)으로 태깅한 feature는 그 개체 선이 곧 표시된 도형이다. 주인 type 레이어의 투명도를 따른다.
 
         return ObjectRenderState(opacity: opacity, isVisible: visible,
                                  isSelected: isSelected, isDisabled: isDisabled,
@@ -1456,6 +1490,16 @@ final class AppEnvironment: ObservableObject {
     var unitCoverageCache: UnitCoverageCache?
     /// 저장된 feature로 찾은 면. 화면을 그릴 때마다 읽으므로 경계가 같으면 다시 찾지 않는다.
     var savedFaceCache: SavedFeatureFaceCache?
+    /// fixture 점 단위에서 '닫을 때 똑같이 생긴 개체에도 저장'. 켜면 쌍둥이 자리마다 개별 fixture를 함께 만든다.
+    @Published var savesFixtureTwins = false
+    /// 찍은 점 → 쌍둥이 자리. 화면을 그릴 때마다 읽으므로 점과 도면 점이 같으면 다시 찾지 않는다.
+    var fixtureTwinCache: FixtureTwinCache?
+    /// 펼친 unit과 겹치는 unit. 화면을 그릴 때마다 읽으므로 펼친 것과 unit 링이 같으면 다시 계산하지 않는다.
+    var unitOverlapCache: UnitOverlapCache?
+    /// unit 레이어 점 단위의 도구(그리기·보조 선분·자르기·점 끼우기). 바꾸면 작성 중인 점을 비운다.
+    @Published var unitPointTool: UnitPointTool = .draw {
+        didSet { if oldValue != unitPointTool { cancelPointDraft() } }
+    }
     /// '꼭짓점 이동' 모드. 꺼져 있으면(고정) 드래그는 화면 이동이다.
     @Published var isVertexMoveEnabled = false
     /// 꼭짓점을 끄는 중이면 그 대상과 지금 위치. 놓을 때 한 번만 실행취소 칸을 쌓는다.
@@ -2250,7 +2294,8 @@ final class AppEnvironment: ObservableObject {
             serialToUUID[f.serialNumber] = ids.id(for: f.id)
         }
         let exporter = GeoJSONExporter(document: doc, segmentation: segmentation,
-                                       georeferencer: georeferencer, borrow: borrow)
+                                       georeferencer: georeferencer, borrow: borrow, levelID: activeLevel?.id)
+        // level_id는 지금 층(층 관리)의 UUID다. IMDF 아카이브 내보내기와 같은 값이 나온다.
         var assigner = ids
         let collection = exporter.buildFeatureCollection(type: type, features: features.features,
                                                          ids: &assigner, serialToUUID: serialToUUID)

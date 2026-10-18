@@ -149,6 +149,7 @@ extension AppEnvironment {
     /// 지금 무엇을 해야 하는지 한 줄로. 상단바가 그대로 띄운다.
     var pointStageHint: String {
         let n = pointDraft.points.count
+        if let tool = unitToolInUse { return tool.hint(points: n) }
         switch activeGeometryKind {
         case .point:
             return "점 하나를 찍으면 바로 저장합니다."
@@ -170,6 +171,7 @@ extension AppEnvironment {
             if pointDraft.source != nil {
                 return "저장된 도형을 고치는 중입니다. 시작점(◎)을 누르거나 Return으로 반영하고, ESC로 취소합니다."
             }
+            if n == 0 { return "꼭짓점을 순서대로 찍으세요. (0/3 이상) 저장된 도형의 꼭짓점은 Shift+클릭으로 뺍니다." }
             if n < 3 { return "꼭짓점을 순서대로 찍으세요. (\(n)/3 이상)" }
             return "시작점(◎)을 다시 누르면 도형이 닫히고 저장됩니다."
         case .none:
@@ -183,10 +185,22 @@ extension AppEnvironment {
     /// ① 점이 셋 이상이면 시작점을 눌러 닫는다 ② 이미 찍은 점을 다시 누르면 지운다
     /// ③ 꼭짓점·교점 근처면 그 점에 붙인다 ④ ⌥(Option)을 누른 채면 그 자리에 새 점을 만든다.
     /// `editing`은 Control을 누른 채 누른 클릭이다(엔진 디버깅 5번 개체 편집).
-    func handlePointClick(at point: LocalPoint, tolerance: Double, freePoint: Bool, editing: Bool = false) {
+    /// `removing`은 Shift를 누른 채 누른 클릭이다. 저장된 도형의 꼭짓점을 뺀다(2026-10-18 요청).
+    func handlePointClick(at point: LocalPoint, tolerance: Double, freePoint: Bool, editing: Bool = false,
+                          removing: Bool = false) {
         guard isPointWorkMode, let type = layers.activePropertyType else { return }
         let radius = tolerance * 1.5
         let kind = type.requiredGeometry
+        if removing, pointDraft.isEmpty {
+            removeSavedVertex(near: point, radius: radius)
+            return
+            // 작성 중인 도형이 있으면 아래 종전 경로가 받는다. 찍은 점을 다시 누르면 지우는 것과 같다.
+        }
+        if let tool = unitToolInUse {
+            handleUnitToolClick(tool, at: point, radius: radius, freePoint: freePoint, editing: editing)
+            return
+            // unit의 보조 선분·자르기·점 끼우기 도구는 다각형을 그리지 않는다.
+        }
         if editing, kind.isAreal, pointDraft.edit != nil || pointDraftIndex(near: point, radius: radius) != nil {
             handlePointEditClick(at: point, radius: radius, freePoint: freePoint)
             return
@@ -233,7 +247,15 @@ extension AppEnvironment {
     }
 
     /// 새로 찍을 자리. 꼭짓점·교점에 붙이고, 없으면 ⌥(Option)일 때만 그 자리에 만든다.
-    private func pointTarget(near point: LocalPoint, radius: Double, freePoint: Bool) -> LocalPoint? {
+    /// `edges`면 꼭짓점이 없을 때 저장된 개체의 변·보조 선분 위에도 붙는다(보조 선분·자르기 도구).
+    /// 고른 점은 마지막으로 이웃 도형의 꼭짓점·변에 맞춘다(`alignPoint`). 실오라기를 찍는 순간에 막는다.
+    func pointTarget(near point: LocalPoint, radius: Double, freePoint: Bool, edges: Bool = false) -> LocalPoint? {
+        rawPointTarget(near: point, radius: radius, freePoint: freePoint, edges: edges).map {
+            alignPoint($0, to: alignmentNeighbors(for: layers.activePropertyType, excluding: pointDraft.source?.featureID))
+        }
+    }
+
+    private func rawPointTarget(near point: LocalPoint, radius: Double, freePoint: Bool, edges: Bool) -> LocalPoint? {
         let snap = snapPointIndex.nearest(to: point, within: radius)?.point
         let saved = savedFeatureVertex(near: point, radius: radius)
         switch (snap, saved) {
@@ -245,6 +267,7 @@ extension AppEnvironment {
         // 이미 개체로 저장된 점도 다시 고른다. 옆 unit과 같은 꼭짓점을 정확히 같은 좌표로 써야
         // unit끼리 겹치거나 틈이 생기지 않는다(IMDF: 같은 층 unit 사이 빈틈·겹침 금지).
         // ⌥로 만든 점처럼 도면 점이 아닌 꼭짓점은 도면 점 목록에 없어 예전에는 찍히지 않았다.
+        if edges, let e = savedEdgePoint(near: point, radius: radius) { return e }
         if freePoint { return point }
         notify(isComputingDerivedGeometry
                ? "꼭짓점·교점을 계산하는 중입니다. 잠시 후 다시 찍으세요."
@@ -353,6 +376,59 @@ extension AppEnvironment {
         // 저장된 도형은 이어진 상태로 Control을 떼는 순간 반영한다. 꼬이면 경고하고 작성 중으로 남긴다.
     }
 
+    /// Shift+클릭한 자리의 저장된 꼭짓점을 뺀다. 지금 레이어의 링·선만 대상이다.
+    /// 3점 미만이 되거나, 꼬이거나, 같은 feature의 다른 다각형과 어긋나게 겹치면 빼지 않는다.
+    /// 같은 점을 쓰는 이웃 도형은 건드리지 않는다 — 함께 빼면 이웃의 경계까지 바뀌어 틈·겹침이 생길 수 있다.
+    func removeSavedVertex(near p: LocalPoint, radius: Double) {
+        guard let type = layers.activePropertyType else { return }
+        var hit: (FeatureGroup, ring: Int, index: Int, LocalPoint)?
+        var bestDistance = Double.infinity
+        for f in features.features(ofType: type) {
+            for (r, ring) in f.polygonRings.enumerated() {
+                for (i, v) in ring.enumerated() where v.distance(to: p) <= radius && v.distance(to: p) < bestDistance {
+                    hit = (f, r, i, v); bestDistance = v.distance(to: p)
+                }
+            }
+            for (i, v) in (f.drawnVertices ?? []).enumerated() where v.distance(to: p) <= radius && v.distance(to: p) < bestDistance {
+                hit = (f, -1, i, v); bestDistance = v.distance(to: p)
+            }
+        }
+        guard let (f, r, i, v) = hit else {
+            notify("Shift+클릭한 자리에 지울 꼭짓점이 없습니다. 저장된 도형의 꼭짓점을 누르세요.", isError: true)
+            return
+        }
+        let sharing = features.features.filter { o in
+            !o.isInTrash && o.id != f.id
+                && (o.polygonRings.contains { $0.contains { $0.distance(to: v) < 1e-9 } }
+                    || (o.drawnVertices ?? []).contains { $0.distance(to: v) < 1e-9 })
+        }.map(\.serialNumber)
+        let note = sharing.isEmpty ? "" : " \(sharing.joined(separator: ", "))도 이 점을 씁니다(그쪽은 그대로 둠)."
+        if r < 0 {
+            guard var line = f.drawnVertices, line.count > 2 else {
+                notify("\(f.serialNumber)는 점이 \(f.drawnVertices?.count ?? 0)개뿐이라 뺄 수 없습니다. 지우려면 우측 패널에서 feature를 지우세요.", isError: true)
+                return
+            }
+            line.remove(at: i)
+            perform("\(f.serialNumber) 꼭짓점 빼기") { features.update(f.id) { $0.drawnVertices = line } }
+            notify("\(f.serialNumber)에서 꼭짓점을 뺐습니다.\(note)")
+            return
+        }
+        var rings = f.polygonRings
+        rings[r].remove(at: i)
+        guard rings[r].count >= 3 else {
+            notify("\(f.serialNumber)의 다각형은 꼭짓점이 3개 이상이어야 해서 더 뺄 수 없습니다.", isError: true)
+            return
+        }
+        if PolygonValidity.selfIntersects(rings[r]) || PolygonValidity.isDegenerate(rings[r]) || !RingNesting.isValid(rings) {
+            notify("이 꼭짓점을 빼면 도형이 꼬이거나 면이 사라지거나 다른 다각형과 겹칩니다. 빼지 않았습니다.", isError: true)
+            return
+        }
+        perform("\(f.serialNumber) 꼭짓점 빼기") {
+            features.update(f.id) { $0.polygonRings = rings; $0.polygonFaceIDs = [] }
+        }
+        notify("\(f.serialNumber)에서 꼭짓점을 뺐습니다. (남은 꼭짓점 \(rings[r].count)개)\(note)")
+    }
+
     /// Control+클릭한 자리에 지금 레이어의 저장된 도형 꼭짓점이 있는가.
     private func savedRingVertex(near p: LocalPoint, radius: Double) -> (feature: FeatureGroupID, ring: Int, index: Int)? {
         guard let type = layers.activePropertyType else { return nil }
@@ -381,6 +457,11 @@ extension AppEnvironment {
     /// 시작점 재선택(또는 상단바 버튼)으로 도형을 닫고 저장한다.
     /// **미완성·자기 교차·넓이 0인 도형은 확정하지 않는다**(#21 완료 조건).
     func closePointDraft() {
+        if let tool = unitToolInUse {
+            if tool == .cut { cutUnitsAlongDraft() }
+            return
+            // 보조 선분·자르기는 닫을 다각형이 없다. Return은 자르기 도구에서만 '자르기'다.
+        }
         guard let type = layers.activePropertyType, type.requiredGeometry.isAreal else { return }
         guard pointDraft.edit == nil, pointDraft.breaks.isEmpty else {
             notify("선분이 끊겨 있어 닫을 수 없습니다. Control을 누른 채 끊긴 뒤쪽 점을 두 번 누르거나 새 점으로 이으세요.",
@@ -403,17 +484,20 @@ extension AppEnvironment {
         }
         if let source = pointDraft.source, let f = features.feature(source.featureID),
            f.polygonRings.indices.contains(source.ring) {
+            let (alignedRing, moved) = alignRings([ring], type: type, excluding: source.featureID)
             var rings = f.polygonRings
-            rings[source.ring] = ring
+            rings[source.ring] = alignedRing[0]
             guard RingNesting.isValid(rings) else {
                 notify("고친 다각형이 같은 feature의 다른 다각형과 어긋나게 겹칩니다. 완전히 감싸거나 떨어지게 고치세요.", isError: true)
                 return
             }
+            var shared: [String] = []
             perform("\(f.serialNumber) 개체 편집") {
-                features.update(source.featureID) { $0.polygonRings[source.ring] = ring }
+                features.update(source.featureID) { $0.polygonRings[source.ring] = alignedRing[0] }
+                shared = insertSharedVertices(of: alignedRing, type: type, excluding: source.featureID)
                 pointDraft = PointDraft()
             }
-            notify("\(f.serialNumber)을 고쳤습니다. (꼭짓점 \(ring.count)개)")
+            notify("\(f.serialNumber)을 고쳤습니다. (꼭짓점 \(alignedRing[0].count)개)" + Self.alignmentNote(moved: moved, shared: shared))
             return
         }
         if let target = multiPolygonTarget(for: type) {
@@ -467,13 +551,23 @@ extension AppEnvironment {
         let serial = serials.next(for: type)
         var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: [])
         for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
-        f.polygonRings = [ring]
+        let (aligned, moved) = alignRings([ring], type: type, excluding: nil)
+        f.polygonRings = aligned
         // 링이 정본이다(`VertexExtractor`). 원본 개체를 구성원으로 갖지 않으므로 소유권도 주장하지 않는다.
+        let twins = type == .fixture && savesFixtureTwins ? fixtureTwinPlacements(for: pointDraft.points) : []
+        var added = 0
+        var shared: [String] = []
         perform("\(serial) 저장") {
             features.insert(f)
+            shared = insertSharedVertices(of: aligned, type: type, excluding: f.id)
             pointDraft = PointDraft()
+            added = insertFixtureTwins(rings: f.polygonRings, properties: f.properties,
+                                       placements: twins, except: f.id).added
         }
-        notify("\(serial) 로 저장했습니다. (꼭짓점 \(ring.count)개)")
+        // 쌍둥이 자리도 같은 실행취소 칸에 넣는다. cmd+z 한 번에 함께 사라진다.
+        notify("\(serial) 로 저장했습니다. (꼭짓점 \(aligned[0].count)개)"
+               + (added > 0 ? " 똑같이 생긴 \(added)곳에도 개별 fixture로 저장했습니다." : "")
+               + Self.alignmentNote(moved: moved, shared: shared))
     }
 
     // MARK: 꼭짓점 이동·고정

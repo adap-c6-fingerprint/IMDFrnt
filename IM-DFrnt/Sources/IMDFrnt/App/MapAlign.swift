@@ -100,6 +100,23 @@ extension AppEnvironment {
         return true
     }
 
+    /// 지도에 올리거나 가운데로 가져올 수 있는 가장 넓은 화면 폭(m). 이보다 넓으면(전국 보기 등) 막는다 —
+    /// 도면 크기를 화면 폭에 맞춰 정하므로, 전국 보기에서 올리면 도면이 수 km 크기로 엉뚱한 곳에 놓인다(2026-10-18 실제 발생).
+    static let maxPlacingWidthMeters = 3_000.0
+
+    /// 이미 올린 층을 **지금 보는 지도 가운데로** 다시 가져온다. 크기도 지금 화면 폭에 맞춘다.
+    /// 회전·쌓는 순서·표시·투명도는 그대로이고, 확정은 풀린다(실행취소 한 칸).
+    func bringToMapCenter(_ levelID: UUID, canvasSize: CGSize, mapCenter: GeoPoint, visibleWidthMeters: Double) {
+        guard let level = buildingProject.levels.first(where: { $0.id == levelID }),
+              var a = level.info.mapAlignment, canvasSize.width > 0, canvasSize.height > 0 else { return }
+        let fresh = MapAlignment.initial(center: mapCenter, visibleWidthMeters: visibleWidthMeters, canvasSize: canvasSize)
+        a.center = fresh.center
+        a.canvasCenter = fresh.canvasCenter
+        a.metersPerUnit = fresh.metersPerUnit
+        a.isConfirmed = false
+        commitMapAlignment(levelID, a, name: "\(level.info.name) 지도 가운데로 가져오기")
+    }
+
     enum StackMove { case front, back, forward, backward }
 
     /// 맨앞으로 / 맨뒤로 / 앞으로 / 뒤로 보내기. 순서를 0부터 다시 매겨 저장한다(실행취소 한 칸).

@@ -67,6 +67,9 @@ struct GeoJSONExporter {
     let segmentation: SegmentationStore
     let georeferencer: Georeferencer
     var borrow = BorrowRegistry()
+    var levelID: UUID? = nil
+    // 이 feature들이 속한 층(건물·층 관리의 층)의 UUID. 있으면 `level_id`와 level feature의 `id`를 이 값으로 쓴다.
+    // 슬롯에 남은 값(예전에 고른 일련번호 등)보다 앞선다 — 어느 층인지는 층 관리가 정한다.
 
     func buildFeatureCollection(type: IMDFFeatureType,
                                 features: [FeatureGroup],
@@ -83,7 +86,7 @@ struct GeoJSONExporter {
     func serialize(_ f: FeatureGroup,
                            ids: inout IDAssigner,
                            serialToUUID: [String: UUID]) -> [String: Any] {
-        let uuid = ids.id(for: f.id)
+        let uuid = f.featureType == .level ? (levelID ?? ids.id(for: f.id)) : ids.id(for: f.id)
         let kind = GeometryClassifier.classify(f, document: document)
 
         var props: [String: Any] = [:]
@@ -98,6 +101,10 @@ struct GeoJSONExporter {
                 continue
             }
             let v = f.value(field.key)
+            if field.key == "level_id", let levelID {
+                props[field.key] = levelID.uuidString.lowercased()
+                continue
+            }
             if case .reference = field.type {
                 // 사람은 슬롯에 unit-014 같은 일련번호를 넣고, 파일에는 UUID가 들어간다.
                 if case .string(let s) = v, let mapped = serialToUUID[s] {

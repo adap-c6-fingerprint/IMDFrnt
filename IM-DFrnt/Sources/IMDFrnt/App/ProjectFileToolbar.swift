@@ -16,6 +16,8 @@ struct ProjectFileToolbar: View {
                 Divider()
                 Button("IMDF 아카이브 내보내기… (모든 층)") { env.exportIMDFArchive() }
                     .disabled(env.buildingProject.levels.isEmpty)
+                Button("클라이언트용 묶음 내보내기… (지도+길찾기)") { env.exportClientDataset() }
+                    .disabled(env.buildingProject.levels.isEmpty)
             }
             .fixedSize()
             .disabled(env.isProjectBusy)

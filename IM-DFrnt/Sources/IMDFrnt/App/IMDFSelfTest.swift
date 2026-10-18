@@ -108,6 +108,13 @@ enum IMDFSelfTest {
                 }!
                 let c = (feature["geometry"] as! [String: Any])["coordinates"] as! [Double]
                 check("실제 C5 지도에서 기준점 없이 원본 좌표 내보내기 \(flag)", abs(c[0] - 129.3258293) < 1e-10 && abs(c[1] - 36.0141502) < 1e-10)
+                let dataset = try ClientDataset.build(projectData: env.makeProjectFile()!.encoded(), datasetID: "c5-check", documents: [:])
+                let unitIDs = { (features: [Any]) in Set(features.compactMap { (($0 as? [String: Any])?["id"] as? String)?.lowercased() }) }
+                let original = unitIDs(real.files["unit.geojson"]?["features"]?.array.map(\.anyValue) ?? [])
+                let exported = unitIDs((try JSONSerialization.jsonObject(with: dataset.files["IMDFData/unit.geojson"]!) as? [String: Any])?["features"] as? [Any] ?? [])
+                check("실제 C5로 클라이언트 묶음: 원본 unit ID 유지·노드 2개 \(flag)",
+                      !original.isEmpty && original == exported && dataset.nodeCount == 2)
+                print("  클라이언트 묶음 경고: " + dataset.warnings.joined(separator: " | "))
                 if let index = CommandLine.arguments.firstIndex(of: "--routing-imdf-test-output"),
                    CommandLine.arguments.indices.contains(index + 1) {
                     try RoutingExporter.encoded(env.routing).write(

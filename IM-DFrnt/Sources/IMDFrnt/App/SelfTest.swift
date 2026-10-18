@@ -105,9 +105,14 @@ enum SelfTest {
               covOverlapped.overlaps.count == 1 && covOverlapped.gaps.isEmpty
                   && abs((covOverlapped.overlaps.first.map(UnitCoverage.area) ?? 0) - 1000) < 1)
         let covRingOfUnits = UnitCoverage.analyze(units: [covBox(0, 0, 300, 100), covBox(0, 200, 300, 300), covBox(0, 100, 100, 200), covBox(200, 100, 300, 200)], levels: [])
-        check("unit 빈틈·겹침: level이 없으면 unit에 둘러싸인 빈 곳을 빈틈으로 본다",
-              covRingOfUnits.gaps.count == 1 && covRingOfUnits.overlaps.isEmpty
-                  && abs((covRingOfUnits.gaps.first.map(UnitCoverage.area) ?? 0) - 10_000) < 1)
+        check("unit 빈틈·겹침: level이 없으면 빈틈을 계산하지 않는다(level 기준)",
+              covRingOfUnits.gaps.isEmpty && !covRingOfUnits.hasLevel,
+              "빈틈 \(covRingOfUnits.gaps.count)개")
+        let covOuterGap = UnitCoverage.analyze(units: [covBox(0, 0, 300, 100), covBox(0, 200, 300, 300), covBox(0, 100, 100, 200), covBox(200, 100, 300, 200)],
+                                               levels: [covBox(0, 0, 400, 300)])
+        check("unit 빈틈·겹침: level 기준이면 unit에 둘러싸인 곳과 바깥 테두리 쪽 빈 곳을 모두 찾는다",
+              covOuterGap.hasLevel && covOuterGap.gaps.count == 2
+              && abs(covOuterGap.gaps.map(UnitCoverage.area).reduce(0, +) - 40_000) < 1)
         let covUncovered = UnitCoverage.analyze(units: [covBox(0, 0, 100, 100), covBox(100, 0, 200, 100)], levels: [covBox(0, 0, 300, 100)])
         check("unit 빈틈·겹침: level 안에서 unit이 덮지 않은 곳을 빈틈으로 본다",
               covUncovered.gaps.count == 1 && abs((covUncovered.gaps.first.map(UnitCoverage.area) ?? 0) - 10_000) < 1)
@@ -339,6 +344,18 @@ enum SelfTest {
         assigner.retire(f.id)
         let reissued = assigner.id(for: f.id)
         check("폐기 UUID 재사용 금지", reissued != firstUUID)
+
+        let floorID = UUID()
+        var leveled = f
+        leveled.properties["level_id"] = .string("level-001")
+        // 예전 화면에서 고른 일련번호가 남아 있어도 층 UUID가 앞선다.
+        var levelAssigner = IDAssigner()
+        let levelExporter = GeoJSONExporter(document: doc, segmentation: seg, georeferencer: geo, levelID: floorID)
+        let leveledProps = (levelExporter.buildFeatureCollection(type: .unit, features: [leveled], ids: &levelAssigner,
+                                                                 serialToUUID: ["level-001": UUID()])["features"]
+                            as? [[String: Any]])?.first?["properties"] as? [String: Any]
+        check("level_id: 층 관리의 층 UUID(소문자)로 자동 지정된다",
+              leveledProps?["level_id"] as? String == floorID.uuidString.lowercased())
 
         // 7. 내보내기 차단 조건
         let blocked = ExportValidator(document: doc, features: [f],
@@ -2668,6 +2685,23 @@ enum SelfTest {
               op.layers.layers.first { $0.id == ghostLayer.id }!.opacity == 0.5,
               "원위치 대조용이라 작업 레이어를 옅게 했다고 함께 옅어지면 대조가 안 된다")
 
+        // property type 레이어의 투명도는 도면 개체가 아니라 표시된 다각형에 건다(2026-10-18 요청).
+        let pop = AppEnvironment()
+        pop.document = doc
+        pop.declareOpeningComplete()
+        pop.selectPropertyType(.unit)
+        if let unitLayer = pop.layers.layers.first(where: { $0.kind == .propertyType(.unit) }) {
+            pop.layers.setOpacity(0.3, for: unitLayer.id)
+            let free = doc.objects.first { pop.ownership.ownerOf($0.id) == nil }!
+            check("레이어 투명도: property type 레이어 값은 도면 원본 개체에 곱하지 않는다",
+                  abs(pop.renderState(for: free).opacity - 1.0) < 1e-9,
+                  "개체 투명도 \(pop.renderState(for: free).opacity)")
+            check("레이어 투명도: property type 레이어 값은 그 type의 다각형 투명도가 된다",
+                  abs(pop.polygonOpacity(for: .unit) - 0.3) < 1e-9 && pop.polygonOpacity(for: .fixture) == 1)
+        } else {
+            check("레이어 투명도: unit 레이어가 만들어진다", false)
+        }
+
         // MARK: 곡선 개체 창 (명세 3-3, 2026-08-27 전용 창으로 전환)
 
         let cv = AppEnvironment()
@@ -3325,6 +3359,287 @@ enum SelfTest {
             check("#21 저장: 이 필드가 없는 이전 파일도 읽힌다", legacy != nil && legacy?.drawnVertices == nil)
         }
 
+        // MARK: fixture — 똑같이 생긴 개체에 같은 태깅 (2026-10-18 요청)
+
+        // 같은 모양의 가구 셋(쌍둥이)과 크기가 다른 하나. 하나를 점으로 그리면 나머지 둘 자리에도 같은 fixture를 둔다.
+        func fixtureRect(_ x: Double, _ y: Double, _ w: Double, _ ord: Int) -> VectorObject {
+            VectorObject(id: UUID(),
+                         geometry: PathGeometry(subpaths: [Subpath(
+                            start: LocalPoint(x, y),
+                            segments: [.line(to: LocalPoint(x + w, y)), .line(to: LocalPoint(x + w, y + 6)),
+                                       .line(to: LocalPoint(x, y + 6))],
+                            isClosed: true)]),
+                         style: .default, sourceElement: "rect", ordinal: ord)
+        }
+        let tw = AppEnvironment()
+        tw.document = DrawingDocument(objects: [fixtureRect(0, 0, 10, 0), fixtureRect(50, 0, 10, 1),
+                                                fixtureRect(0, 40, 10, 2), fixtureRect(50, 40, 12, 3)],
+                                      canvasSize: CGSize(width: 100, height: 100), sourceName: "fixture 쌍둥이")
+        tw.declareOpeningComplete()
+        tw.selectPropertyType(.fixture)
+        let corners = [LocalPoint(0, 0), LocalPoint(10, 0), LocalPoint(10, 6), LocalPoint(0, 6)]
+        func drawFixture() {
+            for p in corners { tw.handlePointClick(at: p, tolerance: 0.01, freePoint: false) }
+            tw.handlePointClick(at: corners[0], tolerance: 0.01, freePoint: false)
+        }
+        tw.handlePointClick(at: corners[0], tolerance: 0.01, freePoint: false)
+        check("fixture 쌍둥이: 점 하나만 찍어도 똑같이 생긴 자리를 보여 준다",
+              tw.draftFixtureTwins.count == 2, "\(tw.draftFixtureTwins.count)곳 — 크기가 다른 개체는 빠진다")
+        tw.cancelPointDraft()
+
+        tw.savesFixtureTwins = true
+        drawFixture()
+        let together = tw.features.features(ofType: .fixture)
+        let movedStarts = Set(together.compactMap { $0.polygonRings.first?.first })
+        check("fixture 쌍둥이: 닫을 때 함께 저장하면 자리마다 개별 Polygon fixture가 생긴다",
+              together.count == 3 && together.allSatisfy { $0.polygonRings.count == 1 }
+              && movedStarts == [LocalPoint(0, 0), LocalPoint(50, 0), LocalPoint(0, 40)],
+              "fixture \(together.count)개")
+        tw.undo()
+        check("fixture 쌍둥이: 실행취소 한 번에 함께 저장한 것이 모두 사라진다",
+              tw.features.features(ofType: .fixture).isEmpty)
+
+        tw.savesFixtureTwins = false
+        drawFixture()
+        check("fixture 쌍둥이: 함께 저장을 끄면 그린 것 하나만 저장된다", tw.features.features(ofType: .fixture).count == 1)
+        if let base = tw.features.features(ofType: .fixture).first {
+            check("fixture 쌍둥이: 저장한 카드에서도 똑같이 생긴 자리를 찾는다", tw.fixtureTwinPlacements(of: base).count == 2)
+            tw.updateProperty("category", value: .string("toilet"), in: base.id)
+            tw.applyTaggingToFixtureTwins(base.id)
+            let tagged = tw.features.features(ofType: .fixture)
+            check("fixture 쌍둥이: 같은 태깅으로 저장하면 속성까지 같은 fixture가 자리마다 생긴다",
+                  tagged.count == 3 && tagged.allSatisfy { $0.value("category") == .string("toilet") })
+            tw.updateProperty("category", value: .string("sink"), in: base.id)
+            tw.applyTaggingToFixtureTwins(base.id)
+            let retagged = tw.features.features(ofType: .fixture)
+            check("fixture 쌍둥이: 다시 누르면 새로 만들지 않고 이미 저장된 자리의 속성만 맞춘다",
+                  retagged.count == 3 && retagged.allSatisfy { $0.value("category") == .string("sink") })
+        }
+
+        // MARK: unit — 펼친 unit과 겹치는 unit 빨강, 이름표로 구멍 뚫기 (2026-10-18 요청)
+
+        let uo = AppEnvironment()
+        uo.document = tw.document
+        uo.declareOpeningComplete()
+        uo.selectPropertyType(.unit)
+        func unitSquare(_ serial: String, _ x: Double, _ y: Double, _ w: Double) -> FeatureGroup {
+            var f = FeatureGroup(featureType: .unit, serialNumber: serial, memberIDs: [])
+            f.polygonRings = [[LocalPoint(x, y), LocalPoint(x + w, y), LocalPoint(x + w, y + w), LocalPoint(x, y + w)]]
+            return f
+        }
+        let hall = unitSquare("unit-901", 0, 0, 100)
+        let inner = unitSquare("unit-902", 20, 20, 20)
+        let straddle = unitSquare("unit-903", 90, 40, 30)
+        let neighbor = unitSquare("unit-904", 100, 0, 30)
+        for f in [hall, inner, straddle, neighbor] { uo.features.insert(f) }
+        uo.expandedFeature = hall.id
+        check("unit 겹침: 펼친 unit과 넓이 있게 겹치는 unit만 빨강 대상이다",
+              uo.unitsOverlappingExpanded == [inner.id, straddle.id],
+              "벽만 맞닿은 unit-904는 겹친 것이 아니다")
+        check("unit 겹침: MultiPolygon이 아니면 이름표를 눌러도 구멍을 뚫지 않는다",
+              uo.handleFeatureTagClick(inner.id) && uo.features.feature(hall.id)?.polygonRings.count == 1)
+        uo.designateMultiPolygon(hall.id)
+        _ = uo.handleFeatureTagClick(inner.id)
+        let holed = uo.features.feature(hall.id)
+        check("unit 겹침: 통째로 안쪽인 unit 이름표를 누르면 그 모양 그대로 구멍이 된다",
+              holed?.polygonRings.count == 2 && holed?.polygonRings.last == inner.polygonRings[0]
+              && holed.map { uo.multiPolygonSummary($0).holes } == 1)
+        _ = uo.handleFeatureTagClick(straddle.id)
+        let cut = uo.features.feature(hall.id)
+        check("unit 겹침: 걸친 unit 이름표를 누르면 겹친 만큼 깎여 더는 겹치지 않는다",
+              cut.map { AppEnvironment.overlapArea($0.polygonRings, straddle.polygonRings) < UnitCoverage.minimumArea } == true
+              && cut.map { abs(UnitCoverage.area(UnitCoverage.path($0.polygonRings)) - (10_000 - 400 - 300)) < 1e-9 } == true
+              && uo.unitsOverlappingExpanded.isEmpty,
+              "넓이 \(cut.map { UnitCoverage.area(UnitCoverage.path($0.polygonRings)) } ?? -1)")
+        let expandedBeforeTag = uo.expandedFeature
+        check("unit 겹침: 겹치지 않은 unit의 이름표는 구멍을 뚫지 않고 그 unit을 고른다",
+              uo.handleFeatureTagClick(neighbor.id) && uo.expandedFeature == neighbor.id
+              && uo.features.feature(neighbor.id)?.polygonRings == neighbor.polygonRings)
+        uo.expandedFeature = expandedBeforeTag
+        // 2026-10-18 요청으로 바뀐 동작이다. 예전에는 클릭을 점 찍기로 넘겼다.
+        uo.undo(); uo.undo()
+        check("unit 겹침: 실행취소로 구멍 뚫기를 하나씩 되돌린다",
+              uo.features.feature(hall.id)?.polygonRings == hall.polygonRings)
+
+        // MARK: unit — level 기준 면, 보조 선분·자르기·점 끼우기 (2026-10-18 요청)
+
+        func rectRing(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double) -> [LocalPoint] {
+            [LocalPoint(x0, y0), LocalPoint(x1, y0), LocalPoint(x1, y1), LocalPoint(x0, y1)]
+        }
+        func levelEnv(level: [LocalPoint], units: [[LocalPoint]]) -> AppEnvironment {
+            let e = AppEnvironment()
+            e.document = tw.document
+            e.declareOpeningComplete()
+            for (i, ring) in ([level] + units).enumerated() {
+                var f = FeatureGroup(featureType: i == 0 ? .level : .unit,
+                                     serialNumber: i == 0 ? "level-001" : String(format: "unit-%03d", 900 + i), memberIDs: [])
+                f.polygonRings = [ring]
+                e.features.insert(f)
+            }
+            e.selectPropertyType(.unit)
+            e.setLayerEditMode(.face)
+            e.setFaceBoundaryScope(.level)
+            return e
+        }
+        let lv = levelEnv(level: rectRing(0, 0, 300, 100), units: [rectRing(0, 0, 100, 100), rectRing(200, 0, 300, 100)])
+        check("level 기준: unit 레이어에서만 고를 수 있는 기준이다",
+              FaceBoundaryScope.options(for: .unit).contains(.level) && !FaceBoundaryScope.options(for: .fixture).contains(.level))
+        check("level 기준: level 안에서 unit이 덮지 않은 곳만 면으로 잡힌다",
+              lv.faceModeFaces.count == 1 && abs((lv.faceModeFaces.first?.area ?? 0) - 10_000) < 1e-6,
+              "면 \(lv.faceModeFaces.count)개")
+        lv.handleFaceClick(at: LocalPoint(150, 50))
+        lv.saveSelectedFaces()
+        check("level 기준: 고른 빈틈을 저장하면 unit이 level을 빈틈없이 덮는다",
+              lv.features.features(ofType: .unit).count == 3 && lv.unitCoverage.gaps.isEmpty
+              && lv.unitCoverage.overlaps.isEmpty && lv.faceModeFaces.isEmpty)
+
+        let island = levelEnv(level: rectRing(0, 0, 300, 300), units: [rectRing(100, 100, 200, 200)])
+        let ring = island.faceModeFaces.first
+        check("level 기준: 안쪽에 떠 있는 unit은 면의 구멍으로 빠진다",
+              island.faceModeFaces.count == 1 && ring.map { island.faceHoles($0).count } == 1
+              && abs((ring?.area ?? 0) - 80_000) < 1e-6)
+        island.handleFaceClick(at: LocalPoint(150, 150))
+        check("level 기준: 구멍(이미 덮인 unit) 자리를 눌러도 바깥 면이 잡히지 않는다", island.faceSelection.isEmpty)
+        island.handleFaceClick(at: LocalPoint(50, 50))
+        island.saveSelectedFaces()
+        let donut = island.features.features(ofType: .unit).first { $0.polygonRings.count == 2 }
+        check("level 기준: 구멍 있는 면은 구멍 있는 MultiPolygon unit으로 저장된다",
+              donut?.multiPolygon == true && island.unitCoverage.isEmpty)
+
+        let split = levelEnv(level: rectRing(0, 0, 300, 100), units: [rectRing(0, 0, 100, 100)])
+        split.setLayerEditMode(.point)
+        split.unitPointTool = .guide
+        split.handlePointClick(at: LocalPoint(200, 0), tolerance: 0.01, freePoint: false)
+        split.handlePointClick(at: LocalPoint(200, 100), tolerance: 0.01, freePoint: false)
+        check("보조 선분: 두 점(변 위에도 붙음)을 찍으면 선분이 생긴다",
+              split.features.guides == [LineSegment(start: LocalPoint(200, 0), end: LocalPoint(200, 100))])
+        split.setLayerEditMode(.face)
+        check("보조 선분: level 기준 면을 둘로 나눈다", split.faceModeFaces.count == 2, "면 \(split.faceModeFaces.count)개")
+        split.setFaceBoundaryScope(.currentLayer)
+        split.setLayerEditMode(.point)
+        split.unitPointTool = .guide
+        split.handlePointClick(at: LocalPoint(200, 50), tolerance: 0.01, freePoint: false, editing: true)
+        check("보조 선분: Control+클릭으로 지운다", split.features.guides.isEmpty)
+        split.undo()
+        check("보조 선분: 실행취소로 되살아난다", split.features.guides.count == 1)
+        if let data = try? JSONEncoder().encode(split.features),
+           var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            let round = try? JSONDecoder().decode(FeatureStore.self, from: data)
+            json.removeValue(forKey: "guides")
+            let legacy = (try? JSONSerialization.data(withJSONObject: json)).flatMap { try? JSONDecoder().decode(FeatureStore.self, from: $0) }
+            check("보조 선분: 저장 왕복이 되고 이 키가 없는 이전 파일도 읽힌다",
+                  round?.guides.count == 1 && legacy != nil && legacy?.guides.isEmpty == true)
+        }
+
+        let cutEnv = levelEnv(level: rectRing(0, 0, 300, 100), units: [rectRing(0, 0, 100, 100)])
+        cutEnv.setLayerEditMode(.point)
+        if let u = cutEnv.features.features(ofType: .unit).first {
+            cutEnv.updateProperty("category", value: .string("room"), in: u.id)
+        }
+        cutEnv.unitPointTool = .cut
+        cutEnv.handlePointClick(at: LocalPoint(40, -20), tolerance: 0.01, freePoint: false)
+        cutEnv.handlePointClick(at: LocalPoint(40, 120), tolerance: 0.01, freePoint: false)
+        cutEnv.closePointDraft()
+        let pieces = cutEnv.features.features(ofType: .unit)
+        let areas = pieces.map { UnitCoverage.area(UnitCoverage.path($0.polygonRings)) }.sorted()
+        check("자르기: 선이 가로지른 unit이 둘로 나뉘고 조각마다 원래 속성을 가진다",
+              pieces.count == 2 && abs(areas[0] - 4000) < 1e-9 && abs(areas[1] - 6000) < 1e-9
+              && pieces.allSatisfy { $0.value("category") == .string("room") }
+              && pieces.allSatisfy { $0.polygonRings.flatMap { $0 }.allSatisfy { p in [0, 40, 100].contains(p.x) && [0, 100].contains(p.y) } },
+              "넓이 \(areas)")
+        cutEnv.unitPointTool = .cut
+        cutEnv.handlePointClick(at: LocalPoint(150, -20), tolerance: 0.01, freePoint: false)
+        cutEnv.handlePointClick(at: LocalPoint(150, 120), tolerance: 0.01, freePoint: false)
+        cutEnv.closePointDraft()
+        check("자르기: unit을 가로지르지 않는 선은 아무것도 바꾸지 않는다", cutEnv.features.features(ofType: .unit).count == 2)
+        cutEnv.cancelPointDraft()
+
+        let ins = levelEnv(level: rectRing(0, 0, 200, 100), units: [rectRing(0, 0, 100, 100), rectRing(100, 0, 200, 100)])
+        ins.setLayerEditMode(.point)
+        ins.unitPointTool = .insertVertex
+        ins.handlePointClick(at: LocalPoint(100, 30), tolerance: 0.01, freePoint: false)
+        let insUnits = ins.features.features(ofType: .unit)
+        check("점 끼우기: 변 위를 누르면 그 자리에 꼭짓점이 들어가고, 같은 변을 쓰는 이웃 unit에도 들어간다",
+              insUnits.count == 2 && insUnits.allSatisfy { $0.polygonRings[0].count == 5 && $0.polygonRings[0].contains(LocalPoint(100, 30)) }
+              && insUnits.allSatisfy { !PolygonValidity.selfIntersects($0.polygonRings[0]) })
+
+        // 구멍이 바깥 테두리에 닿은 MultiPolygon unit(level 기준으로 저장한 복도처럼)은 면 추적에서 다른 모양으로 잡힌다.
+        let notched = levelEnv(level: rectRing(0, 0, 300, 300), units: [])
+        var corridor = FeatureGroup(featureType: .unit, serialNumber: "unit-950", memberIDs: [])
+        corridor.polygonRings = [rectRing(0, 0, 300, 300), rectRing(100, 0, 200, 100)]
+        corridor.multiPolygon = true
+        notched.features.insert(corridor)
+        notched.setFaceBoundaryScope(.currentLayer)
+        let notchFace = notched.faceModeFaces.first { abs($0.area - 80_000) < 1e-6 }
+        check("면 단위: 같은 모양이 아니어도 저장된 unit이 거의 다 덮은 면은 그 unit의 것이다",
+              notchFace.map { notched.faceOwner($0) } == corridor.id && notched.selectableFaceCount == 1,
+              "면 \(notched.faceModeFaces.map { Int($0.area) }) · 고를 수 있음 \(notched.selectableFaceCount)")
+        notched.expandedFeature = corridor.id
+        check("면 단위: 그 unit을 펼치면 그 면이 강조 대상이다",
+              notchFace.flatMap { notched.faceOwner($0) }.map { notched.isFeatureHighlighted($0) } == true)
+        notched.setFaceBoundaryScope(.level)
+        check("level 기준: 구멍 자리(아직 안 덮인 곳)만 면으로 남는다",
+              notched.faceModeFaces.count == 1 && abs((notched.faceModeFaces.first?.area ?? 0) - 10_000) < 1e-6)
+
+        // Shift+클릭으로 저장된 꼭짓점 빼기 (2026-10-18 요청)
+        let rm = levelEnv(level: rectRing(0, 0, 300, 100), units: [
+            [LocalPoint(0, 0), LocalPoint(50, 0), LocalPoint(100, 0), LocalPoint(100, 100), LocalPoint(0, 100)],
+            [LocalPoint(100, 0), LocalPoint(200, 0), LocalPoint(200, 100), LocalPoint(100, 100)],
+            [LocalPoint(250, 10), LocalPoint(290, 10), LocalPoint(270, 50)]])
+        rm.setLayerEditMode(.point)
+        let rmUnits = rm.features.features(ofType: .unit)
+        rm.handlePointClick(at: LocalPoint(50, 0), tolerance: 0.01, freePoint: false, removing: true)
+        check("꼭짓점 빼기: Shift+클릭한 저장된 꼭짓점이 빠진다",
+              rm.features.feature(rmUnits[0].id)?.polygonRings[0].count == 4
+              && rm.features.feature(rmUnits[0].id)?.polygonRings[0].contains(LocalPoint(50, 0)) == false)
+        rm.handlePointClick(at: LocalPoint(100, 0), tolerance: 0.01, freePoint: false, removing: true)
+        check("꼭짓점 빼기: 같은 점을 쓰는 이웃은 그대로 두고 알린다",
+              rm.features.feature(rmUnits[1].id)?.polygonRings[0].count == 4
+              && (rm.banner?.text.contains("unit-902도 이 점을 씁니다") ?? false),
+              rm.banner?.text ?? "")
+        rm.handlePointClick(at: LocalPoint(270, 50), tolerance: 0.01, freePoint: false, removing: true)
+        check("꼭짓점 빼기: 3점 미만이 되면 빼지 않는다",
+              rm.features.feature(rmUnits[2].id)?.polygonRings[0].count == 3 && rm.banner?.isError == true)
+        check("꼭짓점 빼기: 작성 중인 점이 생기지 않는다", rm.pointDraft.isEmpty)
+        rm.undo(); rm.undo()
+        check("꼭짓점 빼기: 실행취소로 되살아난다",
+              rm.features.feature(rmUnits[0].id)?.polygonRings[0] == rmUnits[0].polygonRings[0])
+
+        // 빈틈·겹침 이름표 — 겹침에는 서로 겹친 두 unit을 단다 (2026-10-18 요청)
+        let cov = levelEnv(level: rectRing(0, 0, 300, 100), units: [rectRing(0, 0, 120, 100), rectRing(100, 0, 200, 100)])
+        let covLabels = cov.unitCoverageLabels.map(\.text)
+        check("빈틈·겹침 이름표: 빈틈과 겹침을 나눠 번호·넓이를 달고, 겹침에는 두 unit을 단다",
+              covLabels == ["빈틈-01 · 10000.0", "겹침-01 unit-901×unit-902 · 2000.00"], "\(covLabels)")
+        check("빈틈·겹침 이름표: 빈틈과 겹침은 다른 색이다", UnitCoverage.gapColor != UnitCoverage.overlapColor)
+
+        // 실오라기 방지 — 이웃 꼭짓점·변에 맞추기 (2026-10-18 요청)
+        let sl = levelEnv(level: rectRing(0, 0, 300, 100), units: [rectRing(0, 0, 100, 100)])
+        sl.setLayerEditMode(.point)
+        sl.handlePointClick(at: LocalPoint(100.04, 20), tolerance: 0.01, freePoint: true)
+        check("실오라기 방지: 이웃 변에서 0.1 안에 찍은 점은 그 변 위로 붙는다",
+              sl.pointDraft.points.last == LocalPoint(100, 20), "\(sl.pointDraft.points)")
+        sl.cancelPointDraft()
+        sl.handlePointClick(at: LocalPoint(100.015, 0.012), tolerance: 0.01, freePoint: true)
+        check("실오라기 방지: 이웃 꼭짓점에서 0.1 안에 찍은 점은 그 꼭짓점이 된다",
+              sl.pointDraft.points.last == LocalPoint(100, 0))
+        sl.cancelPointDraft()
+        // T자 접점: 이웃 변 한가운데 닿는 두 점으로 unit을 그린다.
+        for p in [LocalPoint(100.03, 20), LocalPoint(200, 20), LocalPoint(200, 80), LocalPoint(100.02, 80)] {
+            sl.handlePointClick(at: p, tolerance: 0.01, freePoint: true)
+        }
+        sl.handlePointClick(at: LocalPoint(100, 20), tolerance: 0.01, freePoint: true)
+        let slLeft = sl.features.features(ofType: .unit).first { $0.serialNumber == "unit-901" }
+        check("실오라기 방지: T자 접점의 꼭짓점은 이웃 unit의 변에도 함께 들어간다",
+              slLeft.map { $0.polygonRings[0].contains(LocalPoint(100, 20)) && $0.polygonRings[0].contains(LocalPoint(100, 80)) } == true)
+        check("실오라기 방지: 그렇게 그린 이웃끼리는 겹침이 없다",
+              sl.features.features(ofType: .unit).count == 2 && sl.unitCoverage.overlaps.isEmpty
+              && abs(sl.unitCoverage.gaps.map { abs(UnitCoverage.area($0)) }.reduce(0, +) - (30_000 - 10_000 - 6_000)) < 1e-3,
+              "unit \(sl.features.features(ofType: .unit).map { "\($0.serialNumber) \($0.polygonRings)" }) 겹침 \(sl.unitCoverage.overlaps.count) 빈틈 \(sl.unitCoverage.gaps.map { abs(UnitCoverage.area($0)) })")
+        let raw = [[LocalPoint(100.05, 30), LocalPoint(150, 30), LocalPoint(150, 60), LocalPoint(100.05, 60)]]
+        let fixed = sl.alignRings(raw, type: .unit, excluding: nil)
+        check("실오라기 방지: 저장 직전에도 링을 이웃에 맞춘다(면 단위 저장 등)",
+              fixed.moved == 2 && fixed.rings[0][0] == LocalPoint(100, 30))
+
         // MARK: #31 — 지도 정렬과 (가)·(나) Anchor (신기능 11항, 2026-10-15)
 
         let align = MapAlignment(center: GeoPoint(longitude: 129.3245, latitude: 36.0141),
@@ -3540,6 +3855,47 @@ enum SelfTest {
                       SearchablePicker.filter(pickOptions, query: "  ") == pickOptions)
                 // 이 Mac에 기억되는 값이라 점검이 사용자 설정을 바꿔 놓지 않게 되돌린다.
 
+                let unlabeled = IMDFFeatureType.allCases.flatMap { t in
+                    PropertySchema.categoryOptions(for: t).filter { CategoryLabel.korean($0, type: t) == nil }
+                        .map { "\(t.rawValue).\($0)" }
+                }
+                check("category 한국어: 모든 레이어의 category 값에 한국어 표기가 있다",
+                      unlabeled.isEmpty, unlabeled.prefix(5).joined(separator: ", "))
+                check("category 한국어: `한국어(영어)`로 보이고 type마다 다른 뜻을 구분한다",
+                      CategoryLabel.display("classroom", type: .unit) == "강의실(classroom)"
+                      && CategoryLabel.display("service", type: .opening) == "서비스 출입구(service)"
+                      && CategoryLabel.display("service", type: .amenity) == "서비스(service)"
+                      && CategoryLabel.display("cafe", type: .occupant) == "cafe")
+                check("category 한국어: 한국어로 검색해도 영어 값이 걸린다",
+                      SearchablePicker.filter(pickOptions, query: "화장실",
+                                              label: { CategoryLabel.display($0, type: .unit) }) == ["restroom.male"])
+
+                if let f = ma.features.features.first(where: { !$0.isInTrash }) {
+                    let savedFilters = ma.categoryFilters
+                    let own = AppEnvironment.categoryValue(of: f)
+                    ma.categoryFilters[f.featureType] = ["__없는 category__"]
+                    let hidden = !ma.passesCategoryFilter(f)
+                    let memberHidden = f.memberIDs.first.flatMap { maDoc.object($0) }
+                        .map { !ma.renderState(for: $0).isVisible } ?? true
+                    ma.categoryFilters[f.featureType] = [own]
+                    let shown = ma.passesCategoryFilter(f)
+                    ma.categoryFilters[f.featureType] = nil
+                    let cleared = ma.passesCategoryFilter(f)
+                    check("category 필터: 고른 category의 feature만 남고, 해제하면 전부 돌아온다",
+                          hidden && memberHidden && shown && cleared,
+                          "\(f.serialNumber) category=\(own.isEmpty ? "null" : own)")
+                    ma.categoryFilters = savedFilters
+
+                    let savedExpanded = ma.expandedFeature
+                    ma.collapseAllFeatures()
+                    let picked = ma.handleFeatureTagClick(f.id)
+                    let selected = ma.expandedFeature == f.id && ma.isFeatureExpanded(f.id)
+                    let again = ma.handleFeatureTagClick(f.id)
+                    check("이름표 클릭: 이름표를 누르면 그 feature를 고르고, 다시 누르면 접는다",
+                          picked && selected && again && !ma.isFeatureExpanded(f.id), f.serialNumber)
+                    ma.expandedFeature = savedExpanded
+                }
+
                 let taggedOwnType = ma.renderState(for: victim)
                 check("태깅 색: 다른 레이어가 가져간 개체는 태깅 색으로 칠하지 않는다",
                       ma.layers.activePropertyType == .unit ? taggedOwnType.isTaggedHere : !taggedOwnType.isTaggedHere)
@@ -3595,6 +3951,22 @@ enum SelfTest {
         st.undo()
         check("#31 층 쌓기: 순서 바꾸기도 cmd+z로 되돌아간다", st.mapAlignStack.map(\.id) == [floors[1].id, floors[0].id])
         check("#31 진행: 정렬 완료한 층을 센다", st.mapAlignProgress.done == 1 && st.mapAlignProgress.total == 2)
+
+        let pohang = GeoPoint(longitude: 129.3256, latitude: 36.0137)
+        st.bringToMapCenter(floors[0].id, canvasSize: CGSize(width: 800, height: 600),
+                            mapCenter: pohang, visibleWidthMeters: 400)
+        let brought = st.mapAlignment(of: floors[0].id)
+        check("#31 지도 가운데로 가져오기: 지금 지도 가운데·화면 폭에 맞추고 회전은 그대로, 확정은 풀린다",
+              brought?.center == pohang && abs((brought?.metersPerUnit ?? 0) * 800 - 200) < 1e-9
+              && brought?.rotationDegrees == 12 && brought?.isConfirmed == false)
+        st.undo()
+        let restored = st.mapAlignment(of: floors[0].id)
+        check("#31 지도 가운데로 가져오기: cmd+z로 되돌아간다",
+              restored?.center == lower?.center && restored?.metersPerUnit == lower?.metersPerUnit
+              && restored?.isConfirmed == true)
+        // 쌓는 순서는 위 점검에서 바뀌었으므로 자리·크기·확정만 비교한다.
+        check("#31 지도에 올리기: 전국 보기처럼 너무 넓은 화면에서는 막는 기준이 건물 범위다",
+              AppEnvironment.maxPlacingWidthMeters <= 5_000)
 
         // MARK: 성능 최적화 (07) 성능 최적화 제안.md, 2026-08-26)
         //

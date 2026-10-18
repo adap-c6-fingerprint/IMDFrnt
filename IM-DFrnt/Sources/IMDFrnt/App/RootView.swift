@@ -128,6 +128,14 @@ struct RootView: View {
         } message: {
             Text(env.archiveExportBlockers.joined(separator: "\n\n"))
         }
+        .alert("클라이언트용 묶음을 만들 수 없습니다", isPresented: Binding(
+            get: { !env.clientDatasetBlockers.isEmpty },
+            set: { if !$0 { env.clientDatasetBlockers = [] } }
+        )) {
+            Button("확인", role: .cancel) { env.clientDatasetBlockers = [] }
+        } message: {
+            Text(env.clientDatasetBlockers.joined(separator: "\n\n"))
+        }
         // 명세 디버깅 7번. 보조 개체 창에서도 떠야 하므로 화면 분기 **바깥**의 최상위에 붙인다.
         .alert("전체 선택 해제", isPresented: Binding(
             get: { env.pendingClearSelection != nil },

@@ -39,6 +39,9 @@ struct OwnershipRegistry: Equatable, Codable {
 
 struct FeatureStore: Equatable, Codable {
     private(set) var features: [FeatureGroup] = []
+    /// unit 레이어의 보조 선분(2026-10-18 요청). feature가 아니라 내보내지 않고, 면 단위에서 면을 막는 경계로만 쓴다.
+    /// 층마다 따로 있고 feature와 함께 저장·실행취소된다.
+    private(set) var guides: [LineSegment] = []
 
     /// id → 배열 위치. 조회를 한 번에 끝내기 위한 색인이다(`07) 성능 최적화 제안.md` 제안 3).
     /// 이전에는 `features.first { $0.id == id }`로 목록을 앞에서부터 훑었는데,
@@ -48,17 +51,19 @@ struct FeatureStore: Equatable, Codable {
 
     init() {}
 
-    enum CodingKeys: String, CodingKey { case features }
+    enum CodingKeys: String, CodingKey { case features, guides }
     // 색인은 저장하지 않는다 — 배열에서 언제든 다시 만들 수 있고,
     // 파일에 넣으면 이전에 저장한 프로젝트 파일과 형식이 갈린다.
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         features = try c.decode([FeatureGroup].self, forKey: .features)
+        guides = try c.decodeIfPresent([LineSegment].self, forKey: .guides) ?? []
+        // 보조 선분이 생기기 전의 파일에는 이 키가 없다.
         rebuildIndex()
     }
 
-    static func == (l: FeatureStore, r: FeatureStore) -> Bool { l.features == r.features }
+    static func == (l: FeatureStore, r: FeatureStore) -> Bool { l.features == r.features && l.guides == r.guides }
     // 색인은 배열에서 파생된 값이라 비교 대상이 아니다. 넣으면 실행취소의
     // "바뀐 게 없다" 판정(`AppEnvironment.perform`)이 엉뚱하게 달라질 수 있다.
 
@@ -97,6 +102,10 @@ struct FeatureStore: Equatable, Codable {
         guard let i = indexByID[id], features.indices.contains(i) else { return }
         body(&features[i])
     }
+
+    mutating func addGuide(_ s: LineSegment) { guides.append(s) }
+    mutating func removeGuide(at i: Int) { if guides.indices.contains(i) { guides.remove(at: i) } }
+    mutating func removeAllGuides() { guides = [] }
 }
 
 // MARK: - LayerStore

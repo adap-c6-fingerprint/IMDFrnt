@@ -26,7 +26,12 @@ struct AlignMapView: NSViewRepresentable {
         map.cameraZoomRange = MKMapView.CameraZoomRange(minCenterCoordinateDistance: 1)
         map.mapType = mapType
         controller.mapView = map
+        controller.startForwardingZoom()
         return map
+    }
+
+    static func dismantleNSView(_ map: MKMapView, coordinator: Coordinator) {
+        coordinator.controller.stopForwardingZoom()
     }
 
     func updateNSView(_ map: MKMapView, context: Context) {
@@ -86,6 +91,42 @@ final class MapAlignMapController: ObservableObject {
 
     func setRegion(_ r: MKCoordinateRegion) {
         mapView?.setRegion(r, animated: false)
+    }
+
+    /// 끌기 시작할 때의 지도 중심에서 화면 이동량만큼 지도를 옮긴다. 확대 배율은 그대로다.
+    func pan(from startCenter: CLLocationCoordinate2D, by translation: CGSize) {
+        guard let map = mapView, let start = screenPoint(GeoPoint(longitude: startCenter.longitude,
+                                                                   latitude: startCenter.latitude)),
+              let next = coordinate(CGPoint(x: start.x - translation.width, y: start.y - translation.height))
+        else { return }
+        map.setCenter(next.clCoordinate, animated: false)
+    }
+
+    private var zoomMonitor: Any?
+
+    /// 도면 위의 스크롤·핀치를 지도로 넘긴다. 도면 위에는 손 동작 겹이 있어 이벤트가 지도까지 가지 않았고,
+    /// 도면이 화면을 덮으면 어디서도 확대·축소가 되지 않았다(2026-10-18). 지도가 직접 받는 자리는 건드리지 않는다.
+    func startForwardingZoom() {
+        guard zoomMonitor == nil else { return }
+        zoomMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { [weak self] event in
+            guard let self else { return event }
+            return self.forwardToMap(event) ? nil : event
+        }
+    }
+
+    private func forwardToMap(_ event: NSEvent) -> Bool {
+        guard let map = mapView, let window = map.window, event.window === window else { return false }
+        guard map.bounds.contains(map.convert(event.locationInWindow, from: nil)) else { return false }
+        if let hit = window.contentView?.hitTest(event.locationInWindow),
+           hit === map || hit.isDescendant(of: map) { return false }
+        // 지도가 직접 받는 자리다. 넘기면 두 번 확대된다.
+        if event.type == .magnify { map.magnify(with: event) } else { map.scrollWheel(with: event) }
+        return true
+    }
+
+    func stopForwardingZoom() {
+        if let zoomMonitor { NSEvent.removeMonitor(zoomMonitor) }
+        zoomMonitor = nil
     }
 
     /// 위경도 → SwiftUI 좌표(왼쪽 위 원점).

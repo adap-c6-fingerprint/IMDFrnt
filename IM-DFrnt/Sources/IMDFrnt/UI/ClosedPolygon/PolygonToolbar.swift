@@ -30,10 +30,10 @@ struct PolygonToolbar: View {
             ToolbarDivider().frame(height: 16)
 
             Picker("", selection: Binding(
-                get: { env.faceBoundaryScope },
+                get: { env.effectiveFaceBoundaryScope },
                 set: { env.setFaceBoundaryScope($0) }
             )) {
-                ForEach(FaceBoundaryScope.allCases, id: \.self) { Text($0.title).tag($0) }
+                ForEach(FaceBoundaryScope.options(for: env.layers.activePropertyType), id: \.self) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()

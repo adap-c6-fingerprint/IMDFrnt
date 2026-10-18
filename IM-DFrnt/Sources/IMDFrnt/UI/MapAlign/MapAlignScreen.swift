@@ -43,6 +43,8 @@ struct MapAlignScreen: View {
     @State private var preview: MapAlignment?
     @State private var dragKind: DragKind?
     @State private var dragStart: MapAlignment?
+    @State private var panStartCenter: CLLocationCoordinate2D?
+    // 도면 위에서 지도를 끌 때(⌥ 끌기·Anchor 모드·잠긴 층) 시작한 순간의 지도 중심.
     @State private var selectedAnchor: AnchorID?
     /// 투명도 슬라이더를 끄는 동안의 값. 놓을 때 한 번만 저장한다 — 값마다 저장하면 실행취소 스냅샷과
     /// 지도 오버레이 교체가 1초에 수십 번 일어나 앱이 멈춘다.
@@ -92,7 +94,7 @@ struct MapAlignScreen: View {
                 ForEach(Mode.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
-            .help("도면 정렬: 도면을 끌어 옮기고, 모서리로 크기, 위 손잡이로 회전합니다. Anchor 찍기: 정렬된 도면의 꼭짓점·교점을 눌러 Anchor 쌍을 만듭니다.")
+            .help("도면 정렬: 도면을 끌어 옮기고, 모서리로 크기, 위 손잡이로 회전합니다. ⌥를 누른 채 끌면 도면 위에서도 지도를 옮깁니다. Anchor 찍기: 정렬된 도면의 꼭짓점·교점을 눌러 Anchor 쌍을 만들고, 끌면 지도를 옮깁니다.")
             Picker("", selection: $mapKind) {
                 ForEach(MapKind.allCases, id: \.self) { Text($0.title).tag($0) }
             }
@@ -212,6 +214,7 @@ struct MapAlignScreen: View {
     }
 
     /// 손 동작을 받는 층. **도면 위에서만** 받는다 — 바깥은 지도가 그대로 끌리고 확대된다.
+    /// 도면 위의 스크롤·핀치는 `MapAlignMapController`가 지도로 넘기고, ⌥ 끌기는 지도를 옮긴다.
     @ViewBuilder
     private var interactionLayer: some View {
         let _ = map.tick
@@ -219,11 +222,15 @@ struct MapAlignScreen: View {
            let drawing = env.mapAlignDrawing(for: level), let t = screenTransform(a) {
             let corners = frameCorners(size: drawing.canvasSize, t: t)
             let shape = hitShape(corners: corners, includeHandles: mode == .align && !a.isLocked)
-            Color.white.opacity(0.001)
-                .contentShape(shape)
-                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { value in dragChanged(value, level: level, corners: corners, canvasSize: drawing.canvasSize) }
-                    .onEnded { value in dragEnded(value, level: level, t: t) })
+            GeometryReader { geo in
+                Color.white.opacity(0.001)
+                    .contentShape(shape.intersection(Path(CGRect(origin: .zero, size: geo.size))))
+                    // 받는 자리를 지도 화면 안으로 자른다. 도면이 화면보다 크면 테두리가 지도 밖까지 나가는데,
+                    // SwiftUI는 뷰 밖이라도 모양 안이면 클릭을 받아 상단 바(돌아가기·지도 종류)가 눌리지 않았다(2026-10-18).
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in dragChanged(value, level: level, corners: corners, canvasSize: drawing.canvasSize) }
+                        .onEnded { value in dragEnded(value, level: level, t: t) })
+            }
         }
     }
 
@@ -238,6 +245,16 @@ struct MapAlignScreen: View {
     }
 
     private func dragChanged(_ value: DragGesture.Value, level: ProjectLevel, corners: [CGPoint], canvasSize: CGSize) {
+        if dragKind == nil, NSEvent.modifierFlags.contains(.option) || mode == .anchor
+            || env.mapAlignment(of: level.id)?.isLocked == true {
+            dragKind = .pan
+            panStartCenter = map.region?.center
+        }
+        // 도면이 화면을 덮으면 지도를 끌 자리가 없다. ⌥ 끌기, Anchor 찍기 모드, 잠긴 층에서는 도면 위에서도 지도를 끈다.
+        if dragKind == .pan {
+            if let start = panStartCenter { map.pan(from: start, by: value.translation) }
+            return
+        }
         guard mode == .align, let saved = env.mapAlignment(of: level.id), !saved.isLocked else { return }
         if dragKind == nil {
             let s = value.startLocation
@@ -279,8 +296,10 @@ struct MapAlignScreen: View {
     }
 
     private func dragEnded(_ value: DragGesture.Value, level: ProjectLevel, t: CGAffineTransform) {
-        defer { dragKind = nil; dragStart = nil }
+        defer { dragKind = nil; dragStart = nil; panStartCenter = nil }
         let moved = abs(value.translation.width) + abs(value.translation.height)
+        if dragKind == .pan, moved >= 4 { return }
+        // 지도를 끈 것이면 Anchor를 찍거나 도면을 옮기지 않는다. 끌지 않고 누른 것은 아래 클릭으로 처리한다.
         if mode == .anchor {
             guard moved < 4 else { return }
             pickAnchor(at: value.location, t: t)
@@ -324,20 +343,46 @@ struct MapAlignScreen: View {
                 Text("장소를 검색해 건물 근처로 지도를 옮긴 뒤 올리세요.").font(.caption).foregroundStyle(.secondary)
                 Button("이 층을 지도 가운데에 올리기") { placeEditingLevel() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(map.region == nil || env.document == nil)
+                    .disabled(!canPlaceHere || env.document == nil)
+                if let tooWide = tooWideHint { Text(tooWide).font(.caption).foregroundStyle(.orange) }
             }
             .padding(16)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
+    /// 지금 지도에 보이는 가로 폭(m).
+    private var visibleWidthMeters: Double? {
+        map.region.map { $0.span.longitudeDelta * MapAlignment.metersPerDegreeLatitude * cos($0.center.latitude * .pi / 180) }
+    }
+
+    /// 지금 화면에서 도면을 올리거나 가져올 수 있는가. 전국 보기처럼 너무 넓으면 막는다.
+    private var canPlaceHere: Bool {
+        guard let w = visibleWidthMeters else { return false }
+        return w <= AppEnvironment.maxPlacingWidthMeters
+    }
+
+    private var tooWideHint: String? {
+        guard let w = visibleWidthMeters, w > AppEnvironment.maxPlacingWidthMeters else { return nil }
+        return String(format: "지도가 너무 넓습니다(가로 %.0fkm). 건물이 보이도록 %.0fkm 이하로 확대하세요.",
+                      w / 1000, AppEnvironment.maxPlacingWidthMeters / 1000)
+    }
+
     private func placeEditingLevel() {
-        guard let id = editingID, let doc = env.document, let region = map.region else { return }
-        let widthMeters = region.span.longitudeDelta * MapAlignment.metersPerDegreeLatitude
-            * cos(region.center.latitude * .pi / 180)
+        guard let id = editingID, let doc = env.document, let region = map.region,
+              let widthMeters = visibleWidthMeters, canPlaceHere else { return }
         env.placeOnMapIfNeeded(id, canvasSize: doc.canvasSize,
                                mapCenter: GeoPoint(longitude: region.center.longitude, latitude: region.center.latitude),
                                visibleWidthMeters: widthMeters)
+    }
+
+    /// 이미 올린 층을 지금 지도 가운데로 가져온다. 엉뚱한 곳에 올라가 화면에서 찾을 수 없을 때 쓴다.
+    private func bringLevelToMapCenter(_ level: ProjectLevel) {
+        guard let region = map.region, let widthMeters = visibleWidthMeters, canPlaceHere,
+              let size = env.mapAlignDrawing(for: level)?.canvasSize else { return }
+        env.bringToMapCenter(level.id, canvasSize: size,
+                             mapCenter: GeoPoint(longitude: region.center.longitude, latitude: region.center.latitude),
+                             visibleWidthMeters: widthMeters)
     }
 
     /// 아래층이 이미 정렬돼 있으면 위층은 그 자리에 바로 올린다(11항 2번).
@@ -482,6 +527,11 @@ struct MapAlignScreen: View {
                            })
                     Text(String(format: "%.2f", opacity(of: level.id, saved: a))).font(.caption2.monospacedDigit())
                 }
+                Button("지도 가운데로 가져오기") { bringLevelToMapCenter(level) }
+                    .controlSize(.small)
+                    .disabled(a.isLocked || !canPlaceHere || env.mapAlignDrawing(for: level) == nil)
+                    .help(tooWideHint ?? "지금 보는 지도 가운데로 이 층 도면을 옮기고, 크기를 화면에 맞춥니다. 회전은 그대로입니다. 도면이 화면을 덮어 지도를 찾기 어려우면 ⌥ 끌기로 지도를 옮긴 뒤 누르세요.")
+                // 도면이 엉뚱한 곳에 올라가 화면에서 보이지 않을 때 되찾는 길이다.
             } else {
                 Text("지도에 없음").font(.caption).foregroundStyle(.secondary)
             }

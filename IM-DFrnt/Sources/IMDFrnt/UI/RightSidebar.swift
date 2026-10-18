@@ -9,22 +9,30 @@ struct RightSidebar: View {
             header
             Divider()
             if let type = env.layers.activePropertyType {
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        let live = env.features.features(ofType: type)
-                        featureListHeader(count: live.count)
+                        let all = env.features.features(ofType: type)
+                        let live = all.filter { env.passesCategoryFilter($0) }
+                        featureListHeader(count: live.count, total: all.count)
                         // **카드 전부를 감싸는 접기 트리를 두지 않는다**(2026-08-26 요청).
                         // 상위 토글 하나로 통째로 접히면 카드마다 따로 접고 펴는 뜻이 사라진다.
                         // 여기서는 개수만 알려주고, 접고 펴는 것은 카드 각자의 몫이다.
+                        if !all.isEmpty { CategoryFilterBar(type: type, features: all) }
 
-                        if live.isEmpty {
+                        if all.isEmpty {
                             Text("아직 저장된 feature가 없습니다.\n캔버스에서 개체를 선택하고 'Feature로 저장'을 누르세요.")
                                 .font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 20)
+                        } else if live.isEmpty {
+                            Text("고른 category에 해당하는 feature가 없습니다.")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 20)
                         }
-                        ForEach(live) { f in featureCard(f) }
+                        ForEach(live) { f in featureCard(f).id(f.id) }
 
                         let trashed = env.features.features(ofType: type, includingTrashed: true)
                             .filter(\.isInTrash)
@@ -37,6 +45,13 @@ struct RightSidebar: View {
                         }
                     }
                     .padding(12)
+                }
+                .onChange(of: env.focusedFeature) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id) }
+                }
+                // 캔버스 이름표로 고른 카드가 목록 아래에 있으면 고른 것이 안 보인다. 그 카드로 내린다.
+                // 위치를 정하지 않아 이미 보이는 카드(패널에서 직접 누른 카드)는 움직이지 않는다.
                 }
             } else {
                 Spacer()
@@ -51,10 +66,11 @@ struct RightSidebar: View {
     }
 
     /// 카드 목록의 머리글. 접히지 않는 표시 전용 줄이다.
-    private func featureListHeader(count: Int) -> some View {
+    private func featureListHeader(count: Int, total: Int) -> some View {
         HStack(spacing: 6) {
             Text("FEATURES").font(.caption.weight(.semibold))
-            Text("\(count)").font(.caption2.monospacedDigit())
+            Text(count == total ? "\(count)" : "\(count) / \(total)").font(.caption2.monospacedDigit())
+            // category 필터가 걸려 있으면 보이는 수 / 전체 수다(#52).
             Spacer(minLength: 0)
         }
         .foregroundStyle(.secondary)
@@ -222,6 +238,7 @@ struct RightSidebar: View {
         }
 
         if env.canDesignateMultiPolygon(f) { multiPolygonSection(f) }
+        if f.featureType == .fixture { fixtureTwinSection(f) }
 
         VStack(alignment: .leading, spacing: 6) {
             ForEach(PropertySchema.fields(for: f.featureType)) { field in
@@ -282,6 +299,26 @@ struct RightSidebar: View {
         }
         .padding(7)
         .background((isTarget ? Color.orange : Color.secondary).opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    /// fixture와 똑같이 생긴 자리마다 같은 태깅의 fixture를 둔다(2026-10-18 요청). 자리는 캔버스에 보라 점선으로 보인다.
+    private func fixtureTwinSection(_ f: FeatureGroup) -> some View {
+        let count = env.fixtureTwinPlacements(of: f).count
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(count > 0 ? "똑같이 생긴 개체 \(count)곳" : "똑같이 생긴 개체 없음")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Button("같은 태깅으로 저장") { env.applyTaggingToFixtureTwins(f.id) }
+                    .controlSize(.small)
+                    .disabled(count == 0)
+            }
+            Text("자리마다 이 카드의 속성을 그대로 가진 fixture를 개별 Polygon으로 저장합니다. 이미 저장된 자리는 속성만 이 카드와 같게 맞춥니다. 회전·반전된 모양은 찾지 않습니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(7)
+        .background(env.canvasBackground.twinStroke.opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
     }
 
     /// 명세 7-3-5·6) 좌표 표
@@ -408,11 +445,14 @@ struct PropertySlotRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.key == "category",
                   !PropertySchema.categoryOptions(for: feature.featureType).isEmpty {
+            let type = feature.featureType
             SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
-                             options: PropertySchema.categoryOptions(for: feature.featureType)) {
+                             options: PropertySchema.categoryOptions(for: type),
+                             onSelect: {
                 env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
-            }
+            }, label: { CategoryLabel.display($0, type: type) })
             // 드롭다운 대신 검색해서 고른다. 모든 레이어의 category 칸이 이 한 곳을 지난다.
+            // 보이는 이름은 `한국어(영어)`, 저장되는 값은 영어 원문이다(#52).
         } else if field.type == .boolean {
             Toggle("", isOn: Binding(
                 get: { if case .boolean(let b) = value { return b }; return false },
@@ -451,6 +491,19 @@ struct PropertySlotRow: View {
                 env.updateProperty(field.key, value: parts.isEmpty ? .null : .stringArray(parts),
                                    in: feature.id)
             })
+        } else if field.key == "level_id", let level = env.activeLevel {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(level.info.name) · ordinal \(level.info.ordinal)")
+                    .font(.caption)
+                Text(level.id.uuidString.lowercased())
+                    .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help("건물·층 관리에서 정한 지금 층으로 자동 지정됩니다. 내보내기 때 이 UUID가 level_id로 들어갑니다.")
+            // 직접 고르지 않는다. 예전에는 이 층에 그린 level feature의 일련번호를 골랐는데,
+            // 내보내기는 level feature의 id를 층 UUID로 바꾸므로 고른 값과 실제 level id가 어긋날 수 있었다.
         } else if case .reference(let refType) = field.type {
             SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
                              options: env.features.features(ofType: refType).map(\.serialNumber)) {

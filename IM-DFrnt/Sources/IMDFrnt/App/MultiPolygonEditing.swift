@@ -23,6 +23,9 @@ enum RingNesting {
         return .overlap
     }
 
+    /// 점이 링 안쪽에 있는가. 변 위는 안쪽이 아니다.
+    static func contains(_ ring: [LocalPoint], _ p: LocalPoint) -> Bool { locate(p, in: ring) == .inside }
+
     /// 링마다 자기를 감싸는 다른 링의 수. 짝수면 다각형, 홀수면 구멍이다.
     static func depths(_ rings: [[LocalPoint]]) -> [Int] {
         rings.indices.map { i in

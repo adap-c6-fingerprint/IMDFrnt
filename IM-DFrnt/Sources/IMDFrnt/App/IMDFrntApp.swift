@@ -95,6 +95,8 @@ struct IMDFrntApp: App {
                 Button("IMDF 아카이브 내보내기… (모든 층)") { env.exportIMDFArchive() }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                     .disabled(env.isProjectBusy || env.buildingProject.levels.isEmpty)
+                Button("클라이언트용 묶음 내보내기… (지도+길찾기)") { env.exportClientDataset() }
+                    .disabled(env.isProjectBusy || env.buildingProject.levels.isEmpty)
                 // 층별 geojson은 지금 층·지금 type 하나다. IMDF는 type마다 모든 층을 한 파일에 담아 ZIP으로 전달한다(#38).
             }
         }
