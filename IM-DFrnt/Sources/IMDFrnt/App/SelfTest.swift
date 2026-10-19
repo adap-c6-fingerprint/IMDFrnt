@@ -3554,6 +3554,30 @@ enum SelfTest {
         cutEnv.handlePointClick(at: LocalPoint(150, 120), tolerance: 0.01, freePoint: false)
         cutEnv.closePointDraft()
         check("자르기: unit을 가로지르지 않는 선은 아무것도 바꾸지 않는다", cutEnv.features.features(ofType: .unit).count == 2)
+
+        // section — unit 모양 기준 (2026-10-19 요청)
+        let secEnv = levelEnv(level: rectRing(0, 0, 300, 100), units: [rectRing(0, 0, 100, 100), rectRing(100, 0, 200, 100)])
+        let secHoled = secEnv.features.features(ofType: .unit).first { $0.polygonRings[0].contains(LocalPoint(0, 0)) }
+        if let secHoled { secEnv.features.update(secHoled.id) { $0.polygonRings.append(rectRing(40, 40, 60, 60)) } }
+        secEnv.selectPropertyType(.section)
+        secEnv.setLayerEditMode(.face)
+        secEnv.setFaceBoundaryScope(.unitShapes)
+        check("section unit 모양: section 레이어에만 이 기준이 있다",
+              FaceBoundaryScope.options(for: .section).contains(.unitShapes)
+                  && !FaceBoundaryScope.options(for: .unit).contains(.unitShapes)
+                  && secEnv.effectiveFaceBoundaryScope == .unitShapes)
+        check("section unit 모양: 저장된 unit마다 면이 하나씩", secEnv.faceModeFaces.count == 2, "\(secEnv.faceModeFaces.count)개")
+        secEnv.handleFaceClick(at: LocalPoint(50, 50))
+        check("section unit 모양: unit의 구멍 자리를 눌러도 면이 잡히지 않는다", secEnv.faceSelection.isEmpty)
+        secEnv.handleFaceClick(at: LocalPoint(10, 10))
+        secEnv.saveSelectedFaces()
+        let secSaved = secEnv.features.features(ofType: .section).first
+        func ringSets(_ rings: [[LocalPoint]]) -> Set<Set<LocalPoint>> { Set(rings.map { Set($0) }) }
+        check("section unit 모양: 고른 unit과 같은 모양(구멍 포함)의 section으로 저장된다",
+              secSaved.map { ringSets($0.polygonRings) } == secHoled.map { ringSets($0.polygonRings + [rectRing(40, 40, 60, 60)]) },
+              secSaved.map { "링 \($0.polygonRings.count)개" } ?? "저장 안 됨")
+        check("section unit 모양: 이미 section으로 저장한 unit 자리는 다시 고를 수 없다",
+              secEnv.faceModeFaces.contains { secEnv.faceOwner($0) != nil })
         cutEnv.cancelPointDraft()
 
         let ins = levelEnv(level: rectRing(0, 0, 200, 100), units: [rectRing(0, 0, 100, 100), rectRing(100, 0, 200, 100)])
@@ -3685,6 +3709,34 @@ enum SelfTest {
         } else {
             check("fixture 선 단위: 예제 도면에 rect 2개", false)
         }
+
+        // MARK: 메타데이터 type은 레이어 대신 정보 입력 (2026-10-19 요청)
+
+        let md = AppEnvironment()
+        md.openSample()
+        let layersBefore = md.layers.layers.count
+        md.selectPropertyType(.building)
+        check("메타데이터: building을 고르면 레이어를 만들지 않고 정보 입력 창을 연다",
+              md.layers.layers.count == layersBefore && md.layers.layer(for: .building) == nil
+                  && md.metadataEditorType == .building)
+        check("메타데이터: 도형 없는 type만 해당한다",
+              IMDFFeatureType.allCases.filter(\.isMetadataOnly) == [.address, .building, .manifest, .occupant])
+        let bid = md.addMetadataFeature(.building)
+        let mdSaved = bid.flatMap { md.features.feature($0) }
+        check("메타데이터: 추가하면 속성이 모두 null인 feature가 지금 층에 생긴다",
+              mdSaved?.featureType == .building && mdSaved?.memberIDs.isEmpty == true && mdSaved?.polygonRings.isEmpty == true
+                  && PropertySchema.fields(for: .building).allSatisfy { mdSaved?.properties[$0.key] == .null })
+        if let bid { md.updateProperty("name", value: .localized(en: "Library", ko: "도서관"), in: bid) }
+        check("메타데이터: 우측 패널과 같은 방식으로 속성을 넣는다",
+              bid.flatMap { md.features.feature($0)?.value("name") } == .localized(en: "Library", ko: "도서관"))
+        md.undo(); md.undo()
+        check("메타데이터: 추가·입력은 실행취소로 되돌아간다", md.features.features(ofType: .building).isEmpty)
+        _ = md.addMetadataFeature(.manifest)
+        check("메타데이터: manifest는 하나만 둔다",
+              md.addMetadataFeature(.manifest) == nil && md.features.features(ofType: .manifest).count == 1)
+        md.layers.addPropertyTypeLayer(.occupant)
+        md.openMetadataEditor(.occupant)
+        check("메타데이터: 예전에 만든 이 type의 레이어는 창을 열 때 닫는다", md.layers.layer(for: .occupant) == nil)
 
         // MARK: unit category 최근 순 (2026-10-19 요청)
 

@@ -699,6 +699,8 @@ final class AppEnvironment: ObservableObject {
 
     @Published var hasCreatedProject = false
     @Published var showProjectPicker = false
+    /// 정보 입력 창을 연 메타데이터 type(address·building·occupant·manifest). nil이면 닫힘.
+    @Published var metadataEditorType: IMDFFeatureType?
     /// 오래 걸리는 계산의 진행률 팝업(`LongTaskProgress.swift`). 끝나면 nil이 되어 저절로 닫힌다.
     @Published var longTask: LongTaskProgress?
     /// 프로젝트 선택 창. 앱 시작 때와 파일 → 프로젝트 선택…에서 뜬다.
@@ -2021,6 +2023,11 @@ final class AppEnvironment: ObservableObject {
     // MARK: property type 레이어
 
     func selectPropertyType(_ type: IMDFFeatureType) {
+        if type.isMetadataOnly {
+            openMetadataEditor(type)
+            return
+            // 도형이 없는 type은 캔버스에서 할 일이 없다. 레이어 대신 정보 입력 창을 연다.
+        }
         guard type == .opening || openingGate.allowsOtherTypes else {
             notify("opening을 먼저 태깅해야 합니다. 문을 먼저 확정해야 방 폴리곤을 닫을 수 있습니다.",
                    isError: true)

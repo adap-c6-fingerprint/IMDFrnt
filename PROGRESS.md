@@ -455,3 +455,9 @@
 - 사용자 지시: fixture 레이어에 기존 점 단위·면 단위와 함께 **선 단위**를 옵션으로 둔다. 도면 개체를 클릭·드래그로 골라 fixture 하나로 저장하는 종전 개체 선택 방식이다(`LayerEditMode.object`, `IMDFFeatureType.allowsObjectSelection`은 fixture만). 선 단위에서는 선택 키(fn+shift+z) 없이도 클릭·드래그(왼→오른 감싸기, 오른→왼 걸치기)가 개체를 고르고, 상단바(`UI/ObjectToolbar.swift`)에 모드 전환·안내가 늘 보이며 고르면 종전 선택 상단바('Feature로 저장'·'기존 feature에 추가')가 그 아래 뜬다. 저장은 종전 `createFeature`(구성원 feature, 소유권·보조 제외 판정 그대로). '기존 feature에 추가' 목록에서 점으로 그린 fixture는 뺐다. 다른 모드로 돌아가면 선택을 비운다.
 - 사용자 지시: unit 레이어 category 칸은 최근 고른 값이 맨 위에 최근 순으로 오고(시계 표시), 나머지는 종전 순서다(`App/RecentCategories.swift`). 기록은 이 Mac 설정(`recentUnitCategories`)에 최근 12개, 실행취소 대상이 아니다. 우측 패널과 이름표 편집 창이 같은 칸이라 둘 다 적용된다. 다른 레이어는 그대로다.
 - 자체점검 11항목 추가(fixture 선 단위 6·최근 순 5). selftest 764·building 27·project 24·routing 117·drawing-loading 56 통과. 실제 화면 확인 필요.
+
+## 2026-10-19 — 메타데이터 type은 레이어 대신 정보 입력, section에 unit 모양 기준
+
+- 사용자 지시: 도형 없이 정보만 갖는 type(address·building·occupant·manifest, `requiredGeometry == .none` → `isMetadataOnly`)은 레이어를 만들지 않는다. 그릴 도형이 없어 레이어를 만들어도 캔버스에서 할 일이 없었다. 좌측 목록 버튼이 '정보 입력'이 되고, 누르면 입력 창(`UI/MetadataEditor.swift`)이 뜬다. 창에서 feature를 더하고(속성 모두 null로 시작, 실행취소 한 칸) 우측 패널과 같은 속성 칸(`PropertySlotRow`)으로 값을 넣으며, 휴지통으로 보낼 수 있다. manifest는 하나만 둔다. `selectPropertyType`도 이 type이면 창을 연다(opening 선행 게이트와 무관). 예전에 만든 이 type의 레이어는 창을 열 때 닫는다(feature는 그대로). 저장 위치는 종전과 같은 지금 층의 feature 목록이라 내보내기(모든 층에서 모음)는 바꾸지 않았다(`App/MetadataFeatures.swift`).
+- 사용자 지시: section 레이어 면 단위에 `unit 모양 기준`(`FaceBoundaryScope.unitShapes`, section 전용)을 추가했다. 저장된 unit의 다각형마다(MultiPolygon은 섬마다) 면이 하나씩이고 unit 안쪽 링은 구멍이라, 누르면 그 unit과 똑같은 모양(구멍 포함)의 section으로 저장된다. 경계선으로 면을 다시 찾으면 이웃 unit·보조 선분에 잘려 모양이 달라지기 때문에 unit 링을 그대로 쓴다. 이미 section으로 저장한 unit 자리는 다시 고를 수 없다 — 처음에는 면 캐시가 unit 경계만 비교해 section을 저장해도 갱신되지 않던 것을 자체점검으로 잡아, 비교에 section 링을 넣었다. 기준을 고를 수 없는 레이어에서는 `현재 레이어 기준`으로 돌아간다.
+- 자체점검 12항목 추가(메타데이터 7·section unit 모양 5). selftest 776·building 27·project 24·routing 117·drawing-loading 56 통과. 실제 화면 확인 필요.
