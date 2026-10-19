@@ -353,8 +353,15 @@ final class AppEnvironment: ObservableObject {
     /// 보조 개체 제외 창의 사이드바 폭. 메인과 따로 두는 이유는 담는 내용이 다르기 때문이다 —
     /// 그쪽은 feature 인스펙터, 이쪽은 쌍둥이 그룹 목록이라 편한 폭이 서로 다르다.
 
-    @Published var canvasRotation = 0
-    /// 도면 표시 회전(90° 단위). 표시 전용이며 도면 좌표는 바뀌지 않는다 —
+    /// 층별 도면 표시 회전(90° 단위). 층 도면마다 놓인 방향이 달라 층마다 따로 기억한다(2026-10-19 요청).
+    /// 층이 없는 단일 도면은 `nil` 열쇠를 쓴다. 화면 상태라 프로젝트 파일에는 저장하지 않는다.
+    @Published var canvasRotationByLevel: [UUID?: Int] = [:]
+
+    var canvasRotation: Int {
+        get { canvasRotationByLevel[routingFloorID] ?? 0 }
+        set { canvasRotationByLevel[routingFloorID] = newValue == 0 ? nil : newValue }
+    }
+    /// 지금 층의 도면 표시 회전. 표시 전용이며 도면 좌표는 바뀌지 않는다 —
     /// Anchor 쌍과 추출 좌표가 회전에 영향받으면 안 되기 때문이다.
 
     @Published var canvasBackground: CanvasBackground = .light
@@ -604,7 +611,7 @@ final class AppEnvironment: ObservableObject {
         undoStack.clear()
         moves.reset(nil)
         isMoveEnabled = false
-        canvasRotation = 0
+        canvasRotationByLevel = [:]
         marqueeSubtracts = false
         auxiliarySelection = []
         focusedTwinKey = nil

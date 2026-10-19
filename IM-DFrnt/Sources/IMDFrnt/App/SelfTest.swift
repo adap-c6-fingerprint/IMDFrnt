@@ -998,6 +998,20 @@ enum SelfTest {
         env.rotateCanvas(-1); check("회전 -90 순환", env.canvasRotation == 3)
         env.canvasRotation = 0
 
+        // 회전 — 층마다 따로 기억한다(2026-10-19). 한 층을 돌려도 다른 층은 그대로다.
+        let savedFloor = env.routingFloorID
+        let floorA = UUID(), floorB = UUID()
+        env.routingFloorID = floorA; env.rotateCanvas(1)
+        env.routingFloorID = floorB
+        check("회전: 다른 층은 돌지 않는다", env.canvasRotation == 0, "\(env.canvasRotation)")
+        env.rotateCanvas(-1)
+        env.routingFloorID = floorA
+        check("회전: 층으로 돌아오면 그 층 회전이 남아 있다", env.canvasRotation == 1, "\(env.canvasRotation)")
+        env.routingFloorID = floorB
+        check("회전: 층마다 따로 돈다", env.canvasRotation == 3, "\(env.canvasRotation)")
+        env.canvasRotationByLevel = [:]
+        env.routingFloorID = savedFloor
+
         // 배경 대비 — 밝은/어두운 배경 어느 쪽에서도 캔버스 요소가 묻히지 않아야 한다.
         for bg in CanvasBackground.allCases {
             let name = bg == .light ? "밝은 배경" : "어두운 배경"
@@ -3455,6 +3469,25 @@ enum SelfTest {
             check("fixture 쌍둥이: 다시 누르면 새로 만들지 않고 이미 저장된 자리의 속성만 맞춘다",
                   retagged.count == 3 && retagged.allSatisfy { $0.value("category") == .string("sink") })
         }
+
+        // 개체 하나(점 두 개)만 맞는 자리는 쌍둥이가 아니다(2026-10-19). 책상 모서리에 의자 선이 붙은 묶음을
+        // 그대로 옮긴 자리(아래 80)만 받고, 책상만 같고 의자가 딴 데 붙은 자리(아래 40)는 빼야 한다.
+        func chairLine(_ x: Double, _ y: Double, _ ord: Int) -> VectorObject {
+            VectorObject(id: UUID(),
+                         geometry: PathGeometry(subpaths: [Subpath(start: LocalPoint(x, y),
+                                                                   segments: [.line(to: LocalPoint(x + 2, y - 3))],
+                                                                   isClosed: false)]),
+                         style: .default, sourceElement: "line", ordinal: ord)
+        }
+        let fxPair = AppEnvironment()
+        fxPair.document = DrawingDocument(objects: [fixtureRect(0, 0, 10, 0), chairLine(10, 0, 1),
+                                                fixtureRect(0, 40, 10, 2), chairLine(10, 46, 3),
+                                                fixtureRect(0, 80, 10, 4), chairLine(10, 80, 5)],
+                                      canvasSize: CGSize(width: 100, height: 100), sourceName: "fixture 묶음 비교")
+        let deskEdge = fxPair.fixtureTwinPlacements(for: [LocalPoint(0, 0), LocalPoint(10, 0)])
+        check("fixture 쌍둥이: 점을 만든 개체가 모두 같은 만큼 옮겨진 자리만 쌍둥이다",
+              deskEdge.map { LocalPoint($0.dx, $0.dy) } == [LocalPoint(0, 80)],
+              deskEdge.map { "(\($0.dx), \($0.dy))" }.joined(separator: " ") + " — 의자 선이 다른 데 붙은 (0, 40)은 빠져야 한다")
 
         // MARK: unit — 펼친 unit과 겹치는 unit 빨강, 이름표로 구멍 뚫기 (2026-10-18 요청)
 

@@ -52,11 +52,12 @@ extension AppEnvironment {
         guard let doc = document else { return [] }
         let tol = SnapPointExtractor.mergeTolerance
         var hits: [VectorObjectID: Int] = [:]
-        var snapped: [LocalPoint] = []
+        var snapped: [(point: LocalPoint, owners: Set<VectorObjectID>)] = []
         for p in points {
             guard let sp = snapPointIndex.nearest(to: p, within: tol) else { continue }
-            snapped.append(p)
-            for o in sp.owners where twins(of: [o]).count > 1 { hits[o, default: 0] += 1 }
+            let twinned = sp.owners.filter { twins(of: [$0]).count > 1 }
+            snapped.append((p, twinned))
+            for o in twinned { hits[o, default: 0] += 1 }
         }
         // ⌥로 만든 점은 도면 점이 아니라 기준을 정하는 데도, 쌍둥이 자리를 확인하는 데도 쓰지 않는다.
         guard let source = hits.max(by: { a, b in
@@ -69,12 +70,29 @@ extension AppEnvironment {
         for id in twins(of: [source]) where id != source {
             guard let box = doc.object(id)?.boundingBox else { continue }
             let t = FixtureTwinPlacement(objectID: id, dx: box.minX - sourceBox.minX, dy: box.minY - sourceBox.minY)
-            guard t.moved(snapped).allSatisfy({ snapPointIndex.nearest(to: $0, within: tol * 2) != nil }) else { continue }
-            // 옮긴 자리에도 도면 점이 있어야 한다. 기준 개체 밖의 점(옆 벽 등)이 섞였거나
-            // 보조 개체로 뺀 쌍둥이면 여기서 빠진다.
+            guard snapped.allSatisfy({ isRepeated($0.point, owners: $0.owners, by: t, in: doc, tolerance: tol) })
+            else { continue }
+            // 옮긴 점마다 **그 점을 만든 개체들의 쌍둥이가 같은 만큼 옮긴 자리에** 있어야 한다.
+            // 예전에는 옮긴 자리에 아무 도면 점만 있으면 받아, 개체 하나(점 두 개)만 맞아도 통과했다.
+            // 그래서 책상 사이 빈칸을 그리면 배치가 다른(마주 보는) 책상 묶음 사이 빈칸까지 fixture가 됐다(2026-10-19).
+            // 보조 개체로 뺀 쌍둥이도 자리 점이 없어 여기서 빠진다.
             out.append(t)
         }
         return out.sorted { ($0.dy, $0.dx) < ($1.dy, $1.dx) }
+    }
+
+    /// 점 `p`를 `t`만큼 옮긴 자리에, `p`를 만든 쌍둥이 있는 개체가 모두 같은 만큼 옮겨진 채 있는가.
+    private func isRepeated(_ p: LocalPoint, owners: Set<VectorObjectID>, by t: FixtureTwinPlacement,
+                            in doc: DrawingDocument, tolerance tol: Double) -> Bool {
+        guard let there = snapPointIndex.nearest(to: LocalPoint(p.x + t.dx, p.y + t.dy), within: tol * 2) else { return false }
+        return owners.allSatisfy { o in
+            guard let key = twinKeyByObject[o], let box = doc.object(o)?.boundingBox else { return false }
+            return there.owners.contains { m in
+                guard twinKeyByObject[m] == key, let b = doc.object(m)?.boundingBox else { return false }
+                return abs(b.minX - box.minX - t.dx) <= tol * 2 && abs(b.minY - box.minY - t.dy) <= tol * 2
+            }
+        }
+        // 쌍둥이가 없는 개체(긴 벽선 등)는 되풀이될 수 없으니 따지지 않는다. 그 자리에 도면 점이 있는지만 본다.
     }
 
     private func area(of id: VectorObjectID, in doc: DrawingDocument) -> Double {
