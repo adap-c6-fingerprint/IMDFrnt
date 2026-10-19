@@ -4,11 +4,14 @@ import SwiftUI
 /// 지도 정렬 화면에 띄우는 네이버 지도 웹 페이지(신기능 11항, #31).
 ///
 /// **인증:** 네이버 클라우드 콘솔의 Application에서 Dynamic Map을 켜고, Web 서비스 URL에 `http://localhost`를 등록해야 한다.
-/// 페이지를 `baseURL`(`http://localhost/`)로 띄우므로 지도 스크립트 요청의 출처가 이 주소가 된다. 서비스 URL에는 포트·경로를
+/// 페이지를 `baseURL`(`https://localhost/`)로 띄우므로 지도 스크립트 요청의 출처가 이 호스트가 된다. 서비스 URL에는 포트·경로를
 /// 넣지 않는다(넣으면 인증 오류, 네이버 클라우드 Maps 문제 해결 문서).
+///
+/// **https여야 한다.** 지도는 페이지 주소의 scheme을 따라 타일·스타일을 요청한다. `http://localhost/`로 띄우면 `http://`로
+/// 요청하고 macOS 앱 전송 보안(ATS)이 막아, 확대 버튼·로고만 뜨고 지도가 검게 비었다(2026-10-19, 화면 없는 WKWebView로 재현).
 enum NaverMapPage {
     static let messageName = "imdfrnt"
-    static let baseURL = URL(string: "http://localhost/")!
+    static let baseURL = URL(string: "https://localhost/")!
     /// 콘솔에 등록할 Web 서비스 URL. 안내 문구가 쓴다.
     static let serviceURL = "http://localhost"
 
@@ -60,6 +63,8 @@ enum NaverMapPage {
     const IMDF = { map: null, layers: {}, Layer: null, decorPending: false };
     function post(m) { try { window.webkit.messageHandlers.imdfrnt.postMessage(m); } catch (e) {} }
     window.navermap_authFailure = function () { post({ type: 'authFailure' }); };
+    window.onerror = function (m, u, l) { post({ type: 'jsError', message: String(m), line: l || 0 }); };
+    // 지도 쪽 오류를 앱 로그로 넘긴다. 넘기지 않으면 '불러오는 중'에 멈춘 까닭이 보이지 않는다(2026-10-19).
 
     IMDF.postBounds = function () {
       const map = IMDF.map; if (!map) return;
@@ -120,6 +125,7 @@ enum NaverMapPage {
     }
 
     function IMDF_init() {
+      if (IMDF.map) return;
       const map = new naver.maps.Map('map', {
         center: new naver.maps.LatLng(36.5, 127.8), zoom: 7,
         mapTypeId: naver.maps.MapTypeId['__MAP_TYPE__'],
@@ -240,8 +246,17 @@ enum NaverMapPage {
       IMDF.postBounds();
     }
     </script>
-    <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=__CLIENT_ID__&callback=IMDF_init"
+    <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=__CLIENT_ID__"
             onerror="post({ type: 'loadError' })"></script>
-    </head><body><div id="map"></div></body></html>
+    </head><body><div id="map"></div>
+    <script>
+    // 스크립트를 동기로 불러 두고 페이지가 다 뜨면 직접 초기화한다. callback 파라미터를 붙이면 지도 스크립트가 실행 중 오류를
+    // 내고 초기화 함수를 부르지 않아 '불러오는 중'에 멈췄다(2026-10-19, 화면 없는 WKWebView로 재현).
+    window.addEventListener('load', function () {
+      if (window.naver && naver.maps && naver.maps.Map) IMDF_init();
+      else post({ type: 'loadError' });
+    });
+    </script>
+    </body></html>
     """#
 }

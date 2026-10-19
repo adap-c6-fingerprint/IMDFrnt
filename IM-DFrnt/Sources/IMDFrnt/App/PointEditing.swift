@@ -706,7 +706,8 @@ extension AppEnvironment {
     /// ② **문 자리 안에 통째로 든 개체** — opening 선(두 점)·임시 문을 지름으로 한 문 자리
     ///    (선을 따라 그 길이만큼, 양옆으로 그 길이만큼) 안에 모든 점이 든 개체. 문짝과 문 호가 여기 든다.
     ///    문 선은 양쪽 벽 끝(문설주)만 찍으므로 ①로는 문짝·호가 잡히지 않는다.
-    func pointCoveredObjects(tagged: Set<Int>) -> Set<VectorObjectID> {
+    func pointCoveredObjects(tagged: Set<Int>, usingGrid: Bool = true) -> Set<VectorObjectID> {
+        // `usingGrid`는 자체점검이 격자 없이 전부 훑은 결과와 견주는 데만 끈다.
         var total: [VectorObjectID: Int] = [:], hit: [VectorObjectID: Int] = [:]
         for (i, p) in snapPoints.enumerated() where p.kind != .crossing {
             let isTagged = tagged.contains(i)
@@ -723,6 +724,9 @@ extension AppEnvironment {
             if f.featureType == .opening, let v = f.drawnVertices, v.count == 2 { doors.append((v[0], v[1])) }
         }
         guard !doors.isEmpty, let doc = document else { return covered }
+        let segmentation = segmentation, renderCache = renderCache, index = spatialIndex
+        // 문마다 6만 개를 돌며 `@Published` 저장소를 읽던 것이 feature를 고칠 때마다 300 ms였다(2026-10-19).
+        // 저장소는 한 번만 읽고, 개체는 격자로 문 자리 근처만 본다.
         for (a, b) in doors {
             let length = a.distance(to: b)
             guard length > 1e-9 else { continue }
@@ -730,9 +734,11 @@ extension AppEnvironment {
             let tol = length * 0.05
             let zone = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
                 .insetBy(dx: -length - tol, dy: -length - tol)
-            for o in doc.objects where !covered.contains(o.id) {
+            let nearby = (usingGrid ? index.candidates(in: zone) : nil).map { ids in ids.compactMap { doc.object($0) } } ?? doc.objects
+            // 격자는 칸에 걸친 개체를 모두 담으므로 문 자리 안의 개체를 빠뜨리지 않는다. 격자가 없으면 전체를 본다.
+            for o in nearby where !covered.contains(o.id) {
                 guard zone.contains(renderCache.entry(for: o, segmentation: segmentation).box) else { continue }
-                let inside = geometry(for: o).subpaths.allSatisfy { sp in
+                let inside = segmentation.effectiveGeometry(for: o.id, fallback: o.geometry).subpaths.allSatisfy { sp in
                     sp.points.allSatisfy { p in
                         let dx = p.x - a.x, dy = p.y - a.y
                         let along = dx * ux + dy * uy, across = abs(-dx * uy + dy * ux)

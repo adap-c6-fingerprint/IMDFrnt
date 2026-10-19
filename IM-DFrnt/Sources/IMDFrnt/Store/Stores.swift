@@ -67,6 +67,25 @@ struct FeatureStore: Equatable, Codable {
     // 색인은 배열에서 파생된 값이라 비교 대상이 아니다. 넣으면 실행취소의
     // "바뀐 게 없다" 판정(`AppEnvironment.perform`)이 엉뚱하게 달라질 수 있다.
 
+    /// 두 상태가 feature 속성(`properties`)만 다르면 바뀐 feature를, 그 밖의 것(도형·구성원·휴지통·일련번호·보조 선분·순서)이
+    /// 하나라도 다르면 nil을 돌려준다. 속성 입력칸의 글자 하나에 도형 계산을 다시 하지 않으려는 것이다.
+    static func propertyOnlyChanges(from old: FeatureStore, to new: FeatureStore) -> Set<FeatureGroupID>? {
+        guard old.features.count == new.features.count, old.guides == new.guides else { return nil }
+        var changed = Set<FeatureGroupID>()
+        for (a, b) in zip(old.features, new.features) {
+            guard a.id == b.id else { return nil }
+            if a.properties == b.properties {
+                guard a == b else { return nil }
+                continue
+            }
+            var same = a
+            same.properties = b.properties
+            guard same == b else { return nil }
+            changed.insert(a.id)
+        }
+        return changed
+    }
+
     func feature(_ id: FeatureGroupID) -> FeatureGroup? {
         guard let i = indexByID[id], features.indices.contains(i) else { return nil }
         return features[i]

@@ -197,6 +197,8 @@ struct AlignMapView: NSViewRepresentable {
                 controller.mapFailed(.authFailed)
             case "loadError":
                 controller.mapFailed(.loadFailed)
+            case "jsError":
+                NSLog("IMDFrnt 네이버 지도 JS 오류: \(body["message"] ?? "") (줄 \(body["line"] ?? 0))")
             default:
                 break
             }
@@ -323,7 +325,18 @@ final class MapAlignMapController: ObservableObject {
         // Client ID를 바꿔 다시 불러와도 보던 자리를 잇는다.
         status = hasClientID ? .loading : .noClientID
         viewport = nil
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        guard hasClientID else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadTimeout) { [weak self] in
+            guard let self, self.loadGeneration == generation, self.status == .loading else { return }
+            self.status = .loadFailed
+        }
+        // 준비 신호가 끝내 오지 않으면 '불러오는 중'에 머물지 않고 실패 안내(Client ID 다시 넣기)를 띄운다.
     }
+
+    private var loadGeneration = 0
+    static let loadTimeout: TimeInterval = 15
 
     fileprivate func mapReady() {
         status = .ready

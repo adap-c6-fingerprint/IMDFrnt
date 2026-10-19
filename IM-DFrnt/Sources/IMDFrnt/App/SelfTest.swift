@@ -3703,9 +3703,11 @@ enum SelfTest {
               NaverMapPage.svgPathData(svgProbe) == "M0 0L10.5 0L10.5 3.142Z", NaverMapPage.svgPathData(svgProbe))
         let page = NaverMapPage.html(clientID: "ab c&d", mapKind: .hybrid)
         check("#31 네이버 지도: 페이지가 Client ID(인코딩)·지도 종류·인증 실패 콜백을 담는다",
-              page.contains("maps.js?ncpKeyId=ab%20c%26d&callback=IMDF_init")
+              page.contains("maps.js?ncpKeyId=ab%20c%26d\"") && !page.contains("&callback=")
                   && page.contains("MapTypeId['HYBRID']") && page.contains("navermap_authFailure")
                   && !page.contains("__CLIENT_ID__") && !page.contains("__MAP_TYPE__"))
+        check("#31 네이버 지도: 페이지 기준 주소가 https다(http면 ATS가 타일을 막아 지도가 검게 빈다)",
+              NaverMapPage.baseURL.scheme == "https")
 
         let ma = AppEnvironment()
         ma.openSample()
@@ -3979,6 +3981,8 @@ enum SelfTest {
                       && grid.drawIndices(in: .infinite, moved: [], count: maDoc.objects.count) == nil
                       && grid.drawIndices(in: corner, moved: [], count: maDoc.objects.count + 1) == nil,
                       "화면 안 \(expected.count) / 고름 \(picked?.count ?? -1) / 전체 \(maDoc.objects.count)")
+                CanvasLagSelfTest.run(ma, maDoc, check)
+                // 캔버스 이동 렉·이름표 편집 창 렉(2026-10-19) 점검은 따로 둔다.
 
                 let taggedOwnType = ma.renderState(for: victim)
                 check("태깅 색: 다른 레이어가 가져간 개체는 태깅 색으로 칠하지 않는다",

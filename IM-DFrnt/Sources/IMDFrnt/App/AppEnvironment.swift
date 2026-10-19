@@ -184,6 +184,9 @@ final class AppEnvironment: ObservableObject {
     /// 개체별 파생 데이터(Path · 선분 · 경계 상자). 제안 2.
     let renderCache = RenderCacheStore()
 
+    /// 도면 대부분이 보일 때 캔버스가 묶어 그리는 경로(`CanvasBatches`). 표시 상태·도형이 바뀌면 다음 프레임에 다시 만든다.
+    let canvasBatchStore = CanvasBatchStore()
+
     /// 드래그 중 이동량. **`@Published`가 아니다** — 이 객체가 바뀌어도 `AppEnvironment`는
     /// 알림을 보내지 않으므로, 좌우 사이드바처럼 이동과 무관한 화면이 다시 그려지지 않는다(제안 4).
     let moves = MoveSession()
@@ -214,6 +217,13 @@ final class AppEnvironment: ObservableObject {
     @Published var layers = LayerStore() { didSet { invalidateRenderStates() } }
     @Published var features = FeatureStore() {
         didSet {
+            if let changed = FeatureStore.propertyOnlyChanges(from: oldValue, to: features) {
+                refreshRenderStates(owners: changed)
+                return
+            }
+            // 속성(category·name 등)만 바뀌었으면 도형·점·면·진행률은 그대로다(2026-10-19 이름표 편집 창 렉).
+            // 예전에는 글자 하나마다 아래를 전부 돌아, 진행률 다시 세기 하나로 포스텍 도서관에서 한 글자 300 ms였다.
+            // category는 필터 통과 여부를 바꾸므로 그 feature의 구성원 개체만 다시 판정한다.
             geometryRevision &+= 1
             invalidateRenderStates(); refreshOverlap(); refreshOpenRingGaps()
             scheduleDerivedGeometryRefresh()
@@ -434,6 +444,14 @@ final class AppEnvironment: ObservableObject {
     static func categoryValue(of f: FeatureGroup) -> String {
         if case .string(let s) = f.value("category") { return s }
         return ""
+    }
+
+    /// feature의 name을 이름표 위에 다는 글자. ko·en이 다 있으면 category와 같은 `한국어(영어)`, 하나만 있으면 그것, 없으면 빈 문자열이다.
+    static func nameText(of f: FeatureGroup) -> String {
+        guard case .localized(let en, let ko) = f.value("name") else { return "" }
+        let e = en.trimmingCharacters(in: .whitespaces), k = ko.trimmingCharacters(in: .whitespaces)
+        if !k.isEmpty, !e.isEmpty { return "\(k)(\(e))" }
+        return k.isEmpty ? e : k
     }
 
     /// category 필터를 통과하는가. 걸러진 feature는 카드 목록과 캔버스(도형·이름표)에서 빠진다.
@@ -808,7 +826,10 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 렌더 상태
 
-    private var renderStateCache: [VectorObjectID: ObjectRenderState]?
+    private var renderStateCache: [VectorObjectID: ObjectRenderState]? { didSet { renderStateRevision &+= 1 } }
+
+    /// 표시 상태 사전이 바뀔 때마다 오르는 번호. 캔버스가 묶어 그리는 경로(`CanvasBatches`)가 이 번호로 유효한지 본다.
+    private(set) var renderStateRevision = 0
 
     /// 표시 상태를 다시 판정해야 한다고 표시한다. `@Published` 상태의 `didSet` 한 곳에서만 부른다 —
     /// 지우는 코드를 여기저기 흩으면 새 기능이 들어올 때마다 한 군데씩 빠지고,
@@ -818,15 +839,19 @@ final class AppEnvironment: ObservableObject {
     /// 몇 feature의 표시(강조·펼침·category 필터)만 바뀌었을 때, 그 구성원과 빌린 개체만 다시 판정한다.
     /// 다른 개체의 상태는 이 feature들과 무관하다. 사전이 아직 없으면 할 일이 없다(다음에 통째로 만든다).
     func refreshRenderStates(owners: Set<FeatureGroupID>) {
-        guard !owners.isEmpty, var table = renderStateCache, let doc = document else { return }
+        guard !owners.isEmpty, renderStateCache != nil, let doc = document else { return }
+        var ids = Set<VectorObjectID>()
+        for owner in owners {
+            ids.formUnion(borrow.objects(borrowedBy: owner))
+            if let f = features.feature(owner) { ids.formUnion(f.memberIDs) }
+        }
+        guard !ids.isEmpty, var table = renderStateCache else { return }
+        // 점으로 그린 feature는 구성원 개체가 없다. 다시 판정할 개체가 없으면 사전을 건드리지 않는다 —
+        // 건드리면 번호가 올라 캔버스가 묶음 경로를 통째로 다시 만든다.
         renderStateCache = nil
         // 꺼내 두고 고친다. 원본이 사전을 함께 쥐고 있으면 고치는 순간 6만 칸이 통째로 복사된다.
         let context = renderStateContext()
-        for owner in owners {
-            var ids = borrow.objects(borrowedBy: owner)
-            if let f = features.feature(owner) { ids.formUnion(f.memberIDs) }
-            for id in ids { if let o = doc.object(id) { table[id] = computeRenderState(for: o, context: context) } }
-        }
+        for id in ids { if let o = doc.object(id) { table[id] = computeRenderState(for: o, context: context) } }
         renderStateCache = table
     }
 
