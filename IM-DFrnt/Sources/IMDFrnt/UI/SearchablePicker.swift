@@ -12,6 +12,8 @@ struct SearchablePicker: View {
     let onSelect: (String) -> Void
     var label: (String) -> String = { $0 }
     // 화면에 보일 이름. category는 `한국어(영어)`다(#52). 고른 값·저장 값은 `options`의 원문이다.
+    var recent: Set<String> = []
+    // 최근 고른 값. 시계 표시를 단다(unit category, 2026-10-19).
 
     @State private var isOpen = false
     @State private var query = ""
@@ -42,7 +44,9 @@ struct SearchablePicker: View {
     private var matches: [String] { Self.filter(options, query: query, label: label) }
 
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let matches = matches
+        // 한 번만 거른다. 칸마다 다시 부르면 글자 하나에 목록 전체를 세 번 훑는다.
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
                 TextField("검색", text: $query)
@@ -78,6 +82,9 @@ struct SearchablePicker: View {
     private func row(_ value: String, title: String) -> some View {
         Button { choose(value) } label: {
             HStack {
+                if recent.contains(value) {
+                    Image(systemName: "clock").font(.caption2).foregroundStyle(.secondary)
+                }
                 Text(title).font(.callout)
                     .foregroundStyle(value.isEmpty ? .secondary : .primary)
                 Spacer()

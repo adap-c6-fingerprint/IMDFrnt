@@ -16,7 +16,9 @@ struct SelectionToolbar: View {
 
             Menu {
                 let type = env.layers.activePropertyType
-                let list = type.map { env.features.features(ofType: $0) } ?? []
+                let list = (type.map { env.features.features(ofType: $0) } ?? [])
+                    .filter { !env.isObjectWorkMode || !$0.isPointDrawn }
+                // 선 단위에서는 점으로 그린 feature에 개체를 섞지 않는다. 한 feature의 모양이 두 방식으로 갈린다.
                 if list.isEmpty {
                     Text("추가할 feature가 없습니다")
                 } else {

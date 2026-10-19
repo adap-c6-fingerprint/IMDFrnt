@@ -210,6 +210,34 @@ enum DrawingLoadingSelfTest {
                           && reused.derived.snapPoints.count == full.derived.snapPoints.count
                           && reused.derived.totalPointCount == full.derived.totalPointCount)
                 }
+
+                // 2026-10-19: opening 하나를 저장할 때 점을 다시 세지 않는다. 결과는 처음부터 센 것과 같아야 한다.
+                let before = try DerivedGeometry.make(document: doc, key: bg.currentDerivedKey)
+                var withDoor = bg.currentDerivedKey
+                let corner = doc.objects.first.map { $0.geometry.boundingBox } ?? .zero
+                withDoor.closingSegments.append(LineSegment(start: LocalPoint(corner.minX, corner.minY),
+                                                            end: LocalPoint(corner.maxX, corner.maxY)))
+                let doorStart = ContinuousClock.now
+                let incremental = try DerivedGeometry.make(document: doc, key: withDoor, reusing: before)
+                let doorTime = doorStart.duration(to: .now)
+                let freshStart = ContinuousClock.now
+                let fresh = try DerivedGeometry.make(document: doc, key: withDoor)
+                let freshTime = freshStart.duration(to: .now)
+                print("[MEASURE] derived-after-opening reuse=\(doorTime) full=\(freshTime)")
+                check("opening 저장은 점을 재사용하고 처음부터 센 결과와 같다",
+                      incremental.faces.map(\.id) == fresh.faces.map(\.id)
+                      && incremental.snapPoints.count == fresh.snapPoints.count
+                      && incremental.totalPointCount == fresh.totalPointCount
+                      && doorTime <= freshTime)
+                var withExclude = bg.currentDerivedKey
+                if let extra = doc.objects.first(where: { !withExclude.excluded.contains($0.id) }) {
+                    withExclude.excluded.insert(extra.id)
+                    let a = try DerivedGeometry.make(document: doc, key: withExclude, reusing: before)
+                    let b = try DerivedGeometry.make(document: doc, key: withExclude)
+                    check("보조 제외만 바뀌면 전체 점 수만 재사용하고 점은 새로 센다",
+                          a.snapPoints.count == b.snapPoints.count && a.totalPointCount == b.totalPointCount
+                          && a.faces.map(\.id) == b.faces.map(\.id))
+                }
             }
             try await DrawingLoadingReviewSelfTest.run(environment: environment, check: check)
         } catch { check("도면 로딩 검증", false); print(error) }

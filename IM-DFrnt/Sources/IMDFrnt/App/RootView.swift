@@ -16,6 +16,7 @@ struct RootView: View {
         }
         .sheet(isPresented: $env.showBuildingManager) { BuildingManager().environmentObject(env) }
         .sheet(isPresented: $env.showProjectPicker) { ProjectPicker().environmentObject(env) }
+        .sheet(item: $env.metadataEditorType) { MetadataEditor(type: $0).environmentObject(env) }
         .navigationTitle(env.projectDisplayName)
         .navigationSubtitle(env.projectSaveStatus)
     }

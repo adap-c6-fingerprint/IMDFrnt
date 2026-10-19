@@ -446,11 +446,14 @@ struct PropertySlotRow: View {
         } else if field.key == "category",
                   !PropertySchema.categoryOptions(for: feature.featureType).isEmpty {
             let type = feature.featureType
+            let ordered = env.categoryOptionsOrdered(for: type)
             SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
-                             options: PropertySchema.categoryOptions(for: type),
+                             options: ordered.options,
                              onSelect: {
                 env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
-            }, label: { CategoryLabel.display($0, type: type) })
+                env.recordRecentCategory($0, type: type)
+            }, label: { CategoryLabel.display($0, type: type) }, recent: ordered.recent)
+            // unit은 최근 고른 category가 맨 위에 최근 순으로 온다(2026-10-19 요청).
             // 드롭다운 대신 검색해서 고른다. 모든 레이어의 category 칸이 이 한 곳을 지난다.
             // 보이는 이름은 `한국어(영어)`, 저장되는 값은 영어 원문이다(#52).
         } else if field.type == .boolean {
@@ -518,10 +521,11 @@ struct PropertySlotRow: View {
         }
     }
 
+    /// 글자칸. 입력 중에는 칸만 바뀌고, 잠깐 멈추거나 확정할 때 저장한다(`DraftTextField`).
     private func textField(_ placeholder: String,
                            get: @escaping @MainActor @Sendable () -> String,
                            set: @escaping @MainActor @Sendable (String) -> Void) -> some View {
-        TextField(placeholder, text: Binding(get: get, set: set))
+        DraftTextField(placeholder: placeholder, saved: get(), commit: set)
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)
             .font(.caption)

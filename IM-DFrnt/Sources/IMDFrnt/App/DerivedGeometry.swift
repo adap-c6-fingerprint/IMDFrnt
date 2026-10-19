@@ -21,19 +21,49 @@ struct DerivedGeometry: Sendable {
     let snapPoints: [SnapPointExtractor.SnapPoint]
     /// 진행률 분모. 보조 개체까지 포함한 전체 점 수다.
     let totalPointCount: Int
+    /// 점을 어떤 입력으로 셌는가. 다음 계산의 입력이 같으면 점을 다시 세지 않는다.
+    let pointSource: PointSource?
 
-    static let empty = DerivedGeometry(faces: [], snapPoints: [], totalPointCount: 0)
+    /// **점은 닫는 선분과 무관하다.** 도면·선분화·보조 제외만 같으면 opening이 늘어도 점은 그대로다.
+    struct PointSource: Equatable, Sendable {
+        let fingerprint: String
+        let segmentation: SegmentationStore
+        let excluded: Set<VectorObjectID>
+    }
 
+    static let empty = DerivedGeometry(faces: [], snapPoints: [], totalPointCount: 0, pointSource: nil)
+
+    /// `previous`가 같은 도면·선분화로 센 결과면 점을 재사용한다(2026-10-19 opening 저장 지연).
+    /// 포스텍 도서관 2층에서 opening 하나를 저장할 때 2.1초 중 2.0초가 점 다시 세기였다 —
+    /// 면 찾기는 0.1초다. 보조 개체까지 포함한 전체 점(33만 개)은 분모를 세는 데만 쓰인다.
     static func make(document: DrawingDocument?, key: DerivedGeometryKey,
-                     reporter: LongTaskReporter? = nil) throws -> DerivedGeometry {
+                     reporter: LongTaskReporter? = nil,
+                     reusing previous: DerivedGeometry? = nil) throws -> DerivedGeometry {
         guard let doc = document else { return .empty }
         try Task.checkCancellation()
-        reporter?.report(0.05, "꼭짓점·교점 찾는 중")
-        let all = SnapPointExtractor.points(in: doc.objects, segmentation: key.segmentation)
-        try Task.checkCancellation()
+        let source = PointSource(fingerprint: doc.fingerprint, segmentation: key.segmentation, excluded: key.excluded)
+        let reusable = previous.flatMap { p in
+            p.pointSource.map { $0.fingerprint == source.fingerprint && $0.segmentation == source.segmentation } == true ? p : nil
+        }
+        // 전체 점 수는 보조 제외와 무관하므로 도면·선분화만 같으면 재사용한다.
         let remaining = key.excluded.isEmpty ? doc.objects : doc.objects.filter { !key.excluded.contains($0.id) }
-        reporter?.report(0.3, "보조 개체를 뺀 점 정리 중")
-        let snaps = key.excluded.isEmpty ? all : SnapPointExtractor.points(in: remaining, segmentation: key.segmentation)
+        let snaps: [SnapPointExtractor.SnapPoint]
+        if let reusable, reusable.pointSource?.excluded == key.excluded {
+            snaps = reusable.snapPoints
+        } else {
+            reporter?.report(0.05, "꼭짓점·교점 찾는 중")
+            snaps = SnapPointExtractor.points(in: remaining, segmentation: key.segmentation)
+        }
+        try Task.checkCancellation()
+        let total: Int
+        if let reusable {
+            total = reusable.totalPointCount
+        } else if key.excluded.isEmpty {
+            total = snaps.count
+        } else {
+            reporter?.report(0.3, "보조 개체를 포함한 전체 점 세는 중")
+            total = SnapPointExtractor.points(in: doc.objects, segmentation: key.segmentation).count
+        }
         try Task.checkCancellation()
         reporter?.report(0.5, "닫힌 면 찾는 중")
         // 단계별 진행률이다. 면 찾기는 내부를 나눠 셀 수 없어 마지막 구간을 통째로 쓴다.
@@ -47,7 +77,7 @@ struct DerivedGeometry: Sendable {
         let faces = ClosedPolygonFinder.faces(in: sources)
         try Task.checkCancellation()
         reporter?.report(1, "완료")
-        return DerivedGeometry(faces: faces, snapPoints: snaps, totalPointCount: all.count)
+        return DerivedGeometry(faces: faces, snapPoints: snaps, totalPointCount: total, pointSource: source)
     }
 
     /// 면을 닫는 선분. **임시 문뿐 아니라 저장된 opening의 선도 넣는다** — 점 단위로 그린
@@ -94,8 +124,9 @@ extension AppEnvironment {
         let key = currentDerivedKey
         guard key != derivedKey else { return }
         derivedTask?.cancel()
+        let previous = lastDerivedGeometry
         if derivedGeometryInline {
-            applyDerivedGeometry((try? DerivedGeometry.make(document: doc, key: key)) ?? .empty, key: key)
+            applyDerivedGeometry((try? DerivedGeometry.make(document: doc, key: key, reusing: previous)) ?? .empty, key: key)
             return
         }
         let token = UUID()
@@ -107,7 +138,7 @@ extension AppEnvironment {
         let reporter = longTaskReporter(progress)
         derivedTask = Task { [weak self] in
             let result = try? await Task.detached(priority: .userInitiated) {
-                try DerivedGeometry.make(document: doc, key: key, reporter: reporter)
+                try DerivedGeometry.make(document: doc, key: key, reporter: reporter, reusing: previous)
             }.value
             defer { if self?.derivedToken == token { self?.endLongTask(progress) } }
             // 1초 안에 끝나면 팝업이 아예 뜨지 않는다. opening 하나 저장할 때마다 깜빡이지 않게 한다.
@@ -124,6 +155,7 @@ extension AppEnvironment {
 
     func applyDerivedGeometry(_ g: DerivedGeometry, key: DerivedGeometryKey?) {
         derivedKey = key
+        lastDerivedGeometry = g
         isComputingDerivedGeometry = false
         closedPolygonFaces = g.faces
         let ids = Set(faceModeFaces.map(\.id))

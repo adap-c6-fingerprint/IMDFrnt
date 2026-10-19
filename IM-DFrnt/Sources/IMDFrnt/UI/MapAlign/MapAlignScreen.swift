@@ -1,10 +1,9 @@
-import CoreLocation
 import MapKit
 import SwiftUI
 
 /// 지도 정렬 화면(신기능 11항, #31).
 ///
-/// 위성사진(또는 일반 지도) 위에 층 도면을 올려 **이동·회전·크기(비율 고정)·투명도**로 맞춘다.
+/// 네이버 지도의 위성사진(또는 일반 지도) 위에 층 도면을 올려 **이동·회전·크기(비율 고정)·투명도**로 맞춘다.
 /// 맞춘 뒤에는 같은 화면에서 (가) 정렬된 도면의 꼭짓점·교점을 찍어 지오레퍼런싱 Anchor 쌍을 만들고,
 /// (나) 그중 고른 점을 IMDF anchor feature로 지정한다. 기존 Anchor 화면(1:1 찍기)은 그대로 둔다.
 struct MapAlignScreen: View {
@@ -15,36 +14,19 @@ struct MapAlignScreen: View {
         var title: String { self == .align ? "도면 정렬" : "Anchor 찍기" }
     }
 
-    enum MapKind: String, CaseIterable {
-        case standard, imagery, hybrid
-        var title: String {
-            switch self {
-            case .standard: return "일반 지도"
-            case .imagery: return "위성"
-            case .hybrid: return "위성+이름"
-            }
-        }
-        var mapType: MKMapType {
-            switch self {
-            case .standard: return .standard
-            case .imagery: return .satellite
-            case .hybrid: return .hybrid
-            }
-        }
-    }
-
     /// 끌고 있는 것. 시작할 때 정하고 놓을 때까지 유지한다.
-    enum DragKind { case move, scale, rotate, pan }
+    enum DragKind { case move, scale, rotate }
 
     @State private var mode: Mode = .align
-    @State private var mapKind: MapKind = .imagery
+    @State private var mapKind: NaverMapKind = .imagery
+    @State private var clientID = NaverMapSettings.clientID
+    @State private var clientIDDraft = NaverMapSettings.clientID
+    @State private var showsKeySettings = false
     @StateObject private var map = MapAlignMapController()
     @State private var didPinCamera = false
     @State private var preview: MapAlignment?
     @State private var dragKind: DragKind?
     @State private var dragStart: MapAlignment?
-    @State private var panStartCenter: CLLocationCoordinate2D?
-    // 도면 위에서 지도를 끌 때(⌥ 끌기·Anchor 모드·잠긴 층) 시작한 순간의 지도 중심.
     @State private var selectedAnchor: AnchorID?
     /// 투명도 슬라이더를 끄는 동안의 값. 놓을 때 한 번만 저장한다 — 값마다 저장하면 실행취소 스냅샷과
     /// 지도 오버레이 교체가 1초에 수십 번 일어나 앱이 멈춘다.
@@ -72,7 +54,10 @@ struct MapAlignScreen: View {
             levelPanel
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { DispatchQueue.main.async { pinCameraIfNeeded() } }
+        .onAppear {
+            map.pointerHandler = { handlePointer($0) }
+            DispatchQueue.main.async { pinCameraIfNeeded() }
+        }
         // 지도 뷰가 만들어진 다음 차례에 화면을 잡는다. 같은 차례에는 아직 지도가 없다.
         .onChange(of: env.document?.fingerprint) { _, _ in placeEditingLevelIfStacked() }
     }
@@ -96,9 +81,12 @@ struct MapAlignScreen: View {
             .pickerStyle(.segmented).labelsHidden().fixedSize()
             .help("도면 정렬: 도면을 끌어 옮기고, 모서리로 크기, 위 손잡이로 회전합니다. ⌥를 누른 채 끌면 도면 위에서도 지도를 옮깁니다. Anchor 찍기: 정렬된 도면의 꼭짓점·교점을 눌러 Anchor 쌍을 만들고, 끌면 지도를 옮깁니다.")
             Picker("", selection: $mapKind) {
-                ForEach(MapKind.allCases, id: \.self) { Text($0.title).tag($0) }
+                ForEach(NaverMapKind.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
+            Button { clientIDDraft = clientID; showsKeySettings.toggle() } label: { Image(systemName: "key") }
+                .help("네이버 지도 Client ID")
+                .popover(isPresented: $showsKeySettings, arrowEdge: .bottom) { clientIDForm.padding(14).frame(width: 380) }
             searchBar.frame(maxWidth: 300)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -120,32 +108,87 @@ struct MapAlignScreen: View {
     // MARK: 지도
 
     private var mapPane: some View {
-        AlignMapView(controller: map, mapType: mapKind.mapType, layers: overlayLayers)
-            .overlay { previewCanvas.allowsHitTesting(false) }
-            .overlay { interactionLayer }
+        AlignMapView(controller: map, mapKind: mapKind, layers: overlayLayers, clientID: clientID,
+                     interaction: mapInteraction)
             .overlay(alignment: .top) {
                 if placeSearch.isShowingResults { searchResults }
             }
-            .overlay(alignment: .center) { placeHint }
+            .overlay(alignment: .center) { map.status == .ready ? AnyView(placeHint) : AnyView(mapStatusPanel) }
+    }
+
+    // MARK: 네이버 지도 인증
+
+    /// 지도가 뜨지 않는 까닭과 고칠 길. Client ID가 없거나 인증에 실패하면 지도 대신 보인다.
+    @ViewBuilder
+    private var mapStatusPanel: some View {
+        switch map.status {
+        case .ready:
+            EmptyView()
+        case .loading:
+            ProgressView("네이버 지도를 불러오는 중…")
+                .padding(16)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        case .noClientID, .authFailed, .loadFailed:
+            VStack(alignment: .leading, spacing: 10) {
+                Text(map.status == .noClientID ? "네이버 지도 Client ID가 필요합니다"
+                     : map.status == .authFailed ? "네이버 지도 인증에 실패했습니다"
+                     : "네이버 지도를 불러오지 못했습니다").font(.headline)
+                if map.status == .loadFailed {
+                    Text("인터넷 연결을 확인한 뒤 다시 시도하세요.").font(.caption).foregroundStyle(.secondary)
+                }
+                clientIDForm
+            }
+            .padding(16)
+            .frame(width: 420)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private var clientIDForm: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("네이버 클라우드 콘솔 → Application에서 Dynamic Map을 선택하고, Web 서비스 URL에 \(NaverMapPage.serviceURL)을(를) 등록한 뒤 Client ID를 넣으세요. 포트·경로는 넣지 않습니다.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                TextField("Client ID", text: $clientIDDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(saveClientID)
+                Button(map.status == .ready || clientIDDraft != clientID ? "저장" : "다시 시도", action: saveClientID)
+                    .disabled(clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            Text("이 Mac에만 저장되고 프로젝트 파일·레포에는 들어가지 않습니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func saveClientID() {
+        let id = clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        NaverMapSettings.clientID = id
+        showsKeySettings = false
+        if id == clientID {
+            clientID = ""
+            DispatchQueue.main.async { clientID = id }
+            // 같은 값으로 다시 시도할 때도 지도를 새로 불러오게 한 번 비웠다가 넣는다.
+        } else {
+            clientID = id
+        }
     }
 
     /// 지도에 얹을 겹들(아래 → 위). 편집 중인 층은 도면 선 위에 테두리·손잡이·Anchor 겹을 하나 더 얹는다.
-    /// **끄는 동안에는 편집 중인 층을 지도에서 빼고 미리보기로 그린다** — 지도는 그동안 멈춰 있어 흔들릴 일이 없고,
-    /// 프레임마다 지도 오버레이를 갈아 끼우는 것보다 가볍다.
+    /// 끄는 동안에는 편집 중인 층을 미리보기 값으로 그린다. 도면 경로는 다시 넘기지 않고 변환만 바뀌어 가볍다.
     private var overlayLayers: [AlignOverlay] {
         var out: [AlignOverlay] = []
         for level in env.mapAlignStack {
             guard let a = level.info.mapAlignment, a.isVisible,
                   let drawing = env.mapAlignDrawing(for: level) else { continue }
             let isEditing = level.id == editingID
-            if isEditing && preview != nil { continue }
-            var shape = a
+            var shape = isEditing ? preview ?? a : a
             shape.opacity = 1
             // 투명도는 모양 비교에서 뺀다. 넣으면 투명도만 바뀌어도 오버레이를 통째로 다시 그린다.
             out.append(AlignOverlay(signature: .init(levelID: level.id, kind: .drawing, alignment: shape,
                                                      pathKey: drawing.key, isStandardMap: mapKind == .standard,
                                                      showHandles: false, anchors: [], snapKey: 0),
-                                    path: drawing.path.cgPath, canvasSize: drawing.canvasSize,
+                                    path: drawing.path, canvasSize: drawing.canvasSize,
                                     snaps: nil, opacity: opacity(of: level.id, saved: a)))
             guard isEditing else { continue }
             let pairMarks = mode == .anchor ? env.anchors.pairs.map {
@@ -162,7 +205,7 @@ struct MapAlignScreen: View {
                                                      pathKey: drawing.key, isStandardMap: mapKind == .standard,
                                                      showHandles: mode == .align && !a.isLocked, anchors: marks,
                                                      snapKey: mode == .anchor ? env.snapPoints.count : -1),
-                                    path: CGMutablePath(), canvasSize: drawing.canvasSize,
+                                    path: Path(), canvasSize: drawing.canvasSize,
                                     snaps: mode == .anchor ? env.snapPointIndex : nil, opacity: 1))
         }
         return out
@@ -194,121 +237,73 @@ struct MapAlignScreen: View {
                                  ty: p0.y - bx * c.x - dy * c.y)
     }
 
-    private func frameCorners(size: CGSize, t: CGAffineTransform) -> [CGPoint] {
-        [CGPoint(x: 0, y: 0), CGPoint(x: size.width, y: 0),
-         CGPoint(x: size.width, y: size.height), CGPoint(x: 0, y: size.height)].map { $0.applying(t) }
+    /// 지도 페이지가 손 동작을 가로챌 대상. 편집 중인 층의 테두리 겹이다.
+    ///
+    /// **손 동작은 지도 페이지(JS)가 받는다.** 예전에는 SwiftUI 겹을 지도 위에 얹어 도면 위 입력을 받았는데, 도면이 화면을
+    /// 덮으면(폭 7km로 올라간 층 등) 그 겹이 모든 입력을 먼저 받았다. 웹 지도로 넘기는 스크롤은 WKWebView가 받지 않아
+    /// 지도 이동·확대·축소가 전부 막혔다(2026-10-19 사용자 확인, 넘긴 스크롤이 무시되는 것은 화면 없는 WKWebView로 확인).
+    /// 이제 JS가 도면 테두리 안·모서리·회전 손잡이를 누른 것만 가로채 알리고, 나머지는 네이버 지도가 직접 처리한다.
+    private var mapInteraction: MapInteraction {
+        guard let id = editingID, let a = editingAlignment, a.isVisible,
+              let level = editingLevel, env.mapAlignDrawing(for: level) != nil else { return .none }
+        return MapInteraction(layerID: AlignOverlay.layerID(levelID: id, kind: .decoration),
+                              mode: mode == .anchor ? "anchor" : "align",
+                              editable: mode == .align && !(env.mapAlignment(of: id)?.isLocked ?? true))
     }
 
-    /// 끄는 동안의 미리보기. 지도가 멈춰 있는 동안만 그린다.
-    private var previewCanvas: some View {
-        Canvas { ctx, _ in
-            guard let p = preview, let level = editingLevel,
-                  let drawing = env.mapAlignDrawing(for: level), let t = screenTransform(p) else { return }
-            var layer = ctx
-            layer.opacity = p.opacity
-            layer.stroke(drawing.path.applying(t), with: .color(mapKind == .standard ? .black : .white), lineWidth: 0.8)
-            let corners = frameCorners(size: drawing.canvasSize, t: t)
-            var frame = Path(); frame.addLines(corners); frame.closeSubpath()
-            ctx.stroke(frame, with: .color(.blue), lineWidth: 2)
-        }
-    }
-
-    /// 손 동작을 받는 층. **도면 위에서만** 받는다 — 바깥은 지도가 그대로 끌리고 확대된다.
-    /// 도면 위의 스크롤·핀치는 `MapAlignMapController`가 지도로 넘기고, ⌥ 끌기는 지도를 옮긴다.
-    @ViewBuilder
-    private var interactionLayer: some View {
-        let _ = map.tick
-        if let level = editingLevel, let a = editingAlignment, a.isVisible,
-           let drawing = env.mapAlignDrawing(for: level), let t = screenTransform(a) {
-            let corners = frameCorners(size: drawing.canvasSize, t: t)
-            let shape = hitShape(corners: corners, includeHandles: mode == .align && !a.isLocked)
-            GeometryReader { geo in
-                Color.white.opacity(0.001)
-                    .contentShape(shape.intersection(Path(CGRect(origin: .zero, size: geo.size))))
-                    // 받는 자리를 지도 화면 안으로 자른다. 도면이 화면보다 크면 테두리가 지도 밖까지 나가는데,
-                    // SwiftUI는 뷰 밖이라도 모양 안이면 클릭을 받아 상단 바(돌아가기·지도 종류)가 눌리지 않았다(2026-10-18).
-                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in dragChanged(value, level: level, corners: corners, canvasSize: drawing.canvasSize) }
-                        .onEnded { value in dragEnded(value, level: level, t: t) })
-            }
-        }
-    }
-
-    private func hitShape(corners: [CGPoint], includeHandles: Bool) -> Path {
-        var p = Path(); p.addLines(corners); p.closeSubpath()
-        if includeHandles {
-            for c in corners { p.addEllipse(in: CGRect(x: c.x - 10, y: c.y - 10, width: 20, height: 20)) }
-            let h = AlignHandles.rotate(corners: corners, outward: 28)
-            p.addEllipse(in: CGRect(x: h.knob.x - 12, y: h.knob.y - 12, width: 24, height: 24))
-        }
-        return p
-    }
-
-    private func dragChanged(_ value: DragGesture.Value, level: ProjectLevel, corners: [CGPoint], canvasSize: CGSize) {
-        if dragKind == nil, NSEvent.modifierFlags.contains(.option) || mode == .anchor
-            || env.mapAlignment(of: level.id)?.isLocked == true {
-            dragKind = .pan
-            panStartCenter = map.region?.center
-        }
-        // 도면이 화면을 덮으면 지도를 끌 자리가 없다. ⌥ 끌기, Anchor 찍기 모드, 잠긴 층에서는 도면 위에서도 지도를 끈다.
-        if dragKind == .pan {
-            if let start = panStartCenter { map.pan(from: start, by: value.translation) }
+    /// 지도 페이지가 보낸 손 동작. 정렬 모드의 이동·크기·회전, Anchor 찍기 모드의 클릭이다.
+    private func handlePointer(_ e: MapPointerEvent) {
+        guard let level = editingLevel, let drawing = env.mapAlignDrawing(for: level) else { return }
+        if e.kind == .click {
+            guard mode == .anchor, let a = editingAlignment, let t = screenTransform(a) else { return }
+            pickAnchor(at: e.location, t: t)
             return
         }
         guard mode == .align, let saved = env.mapAlignment(of: level.id), !saved.isLocked else { return }
-        if dragKind == nil {
-            let s = value.startLocation
-            let h = AlignHandles.rotate(corners: corners, outward: 28)
-            if hypot(s.x - h.knob.x, s.y - h.knob.y) <= 14 { dragKind = .rotate }
-            else if corners.contains(where: { hypot(s.x - $0.x, s.y - $0.y) <= 12 }) { dragKind = .scale }
-            else { dragKind = .move }
+        switch e.phase {
+        case .began:
+            dragKind = e.kind == .rotate ? .rotate : e.kind == .scale ? .scale : .move
             dragStart = saved
+        case .changed:
+            guard let start = dragStart, let kind = dragKind,
+                  let next = dragged(start, kind: kind, from: e.start, to: e.location, canvasSize: drawing.canvasSize)
+            else { return }
+            preview = next
+        case .ended:
+            if let start = dragStart, let kind = dragKind,
+               let next = dragged(start, kind: kind, from: e.start, to: e.location, canvasSize: drawing.canvasSize) {
+                env.commitMapAlignment(level.id, next, name: kind == .rotate ? "도면 회전" : kind == .scale ? "도면 크기" : "도면 이동")
+            }
+            preview = nil
+            dragKind = nil
+            dragStart = nil
         }
-        guard let start = dragStart else { return }
+    }
+
+    /// 끌기 시작 값과 화면 위 시작·지금 자리로 새 정렬을 계산한다. 기준은 시작할 때의 화면 중심이다 —
+    /// 끄는 동안 미리보기가 바뀌어도 기준은 움직이지 않는다.
+    private func dragged(_ start: MapAlignment, kind: DragKind, from s: CGPoint, to p: CGPoint,
+                         canvasSize: CGSize) -> MapAlignment? {
+        guard let sc = map.screenPoint(start.center) else { return nil }
         var next = start
-        switch dragKind {
+        switch kind {
         case .move:
-            // 기준은 시작할 때의 화면 중심이다. 끄는 동안 미리보기가 바뀌어도 기준은 움직이지 않는다.
-            guard let startCenter = map.screenPoint(start.center),
-                  let c = map.coordinate(CGPoint(x: startCenter.x + value.translation.width,
-                                                 y: startCenter.y + value.translation.height)) else { return }
+            guard let c = map.coordinate(CGPoint(x: sc.x + p.x - s.x, y: sc.y + p.y - s.y)) else { return nil }
             next.center = c
         case .scale:
-            guard let sc = map.screenPoint(start.center) else { return }
-            let d0 = hypot(value.startLocation.x - sc.x, value.startLocation.y - sc.y)
-            let d1 = hypot(value.location.x - sc.x, value.location.y - sc.y)
-            guard d0 > 1 else { return }
+            let d0 = hypot(s.x - sc.x, s.y - sc.y), d1 = hypot(p.x - sc.x, p.y - sc.y)
+            guard d0 > 1 else { return nil }
             next.metersPerUnit = MapAlignment.clampedMetersPerUnit(start.metersPerUnit * Double(d1 / d0),
                                                                    canvasSize: canvasSize)
             // 모서리를 끌어도 가로·세로 비율은 그대로다(닮음 변환만, 사용자 결정).
         case .rotate:
-            guard let sc = map.screenPoint(start.center) else { return }
-            let a0 = atan2(value.startLocation.y - sc.y, value.startLocation.x - sc.x)
-            let a1 = atan2(value.location.y - sc.y, value.location.x - sc.x)
+            let a0 = atan2(s.y - sc.y, s.x - sc.x), a1 = atan2(p.y - sc.y, p.x - sc.x)
             var deg = start.rotationDegrees + Double(a1 - a0) * 180 / .pi
             if NSEvent.modifierFlags.contains(.shift) { deg = (deg / 15).rounded() * 15 }
             // shift를 누르면 15° 단위로 돌린다.
             next.rotationDegrees = deg.truncatingRemainder(dividingBy: 360)
-        case .pan, .none:
-            return
         }
-        preview = next
-    }
-
-    private func dragEnded(_ value: DragGesture.Value, level: ProjectLevel, t: CGAffineTransform) {
-        defer { dragKind = nil; dragStart = nil; panStartCenter = nil }
-        let moved = abs(value.translation.width) + abs(value.translation.height)
-        if dragKind == .pan, moved >= 4 { return }
-        // 지도를 끈 것이면 Anchor를 찍거나 도면을 옮기지 않는다. 끌지 않고 누른 것은 아래 클릭으로 처리한다.
-        if mode == .anchor {
-            guard moved < 4 else { return }
-            pickAnchor(at: value.location, t: t)
-            return
-        }
-        if let p = preview {
-            env.commitMapAlignment(level.id, p, name: dragKind == .rotate ? "도면 회전" : dragKind == .scale ? "도면 크기" : "도면 이동")
-        }
-        preview = nil
+        return next
     }
 
     /// (가) 누른 자리에서 가장 가까운 꼭짓점·교점을 Anchor로 만든다. 이미 찍은 Anchor를 누르면 목록에서 고른다.

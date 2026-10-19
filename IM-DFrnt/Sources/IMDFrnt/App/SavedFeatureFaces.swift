@@ -13,10 +13,17 @@ enum FaceBoundaryScope: String, CaseIterable {
     /// unit은 level을 빈틈없이 덮어야 해서, 남은 빈틈을 바로 골라 unit으로 채우게 한다.
     /// 경계는 level 외곽선·unit 경계·보조 선분·문 선이고, 안쪽에 떠 있는 unit은 구멍으로 빠진다.
     case level
+    /// section 전용. 저장된 unit 하나하나가 그대로(구멍 포함) 면이 된다(2026-10-19 요청). 누르면 그 unit과 같은
+    /// 모양의 section으로 저장한다 — 경계선으로 면을 다시 찾으면 이웃 unit·보조 선분에 잘려 unit과 모양이 달라진다.
+    case unitShapes
 
     /// 이 레이어에서 고를 수 있는 기준.
     static func options(for type: IMDFFeatureType?) -> [FaceBoundaryScope] {
-        type == .unit ? allCases : [.currentLayer, .allLayers]
+        switch type {
+        case .unit: return [.currentLayer, .allLayers, .level]
+        case .section: return [.currentLayer, .allLayers, .unitShapes]
+        default: return [.currentLayer, .allLayers]
+        }
     }
 
     var title: String {
@@ -24,6 +31,7 @@ enum FaceBoundaryScope: String, CaseIterable {
         case .currentLayer: return "현재 레이어 기준"
         case .allLayers: return "모든 레이어 기준"
         case .level: return "level 기준"
+        case .unitShapes: return "unit 모양 기준"
         }
     }
 
@@ -32,6 +40,7 @@ enum FaceBoundaryScope: String, CaseIterable {
         case .currentLayer: return "지금 레이어에 저장한 개체의 경계로 막힌 면만 고릅니다."
         case .allLayers: return "모든 레이어에 저장한 개체(문 선 포함)의 경계로 막힌 면을 고릅니다."
         case .level: return "level 다각형 안에서 unit이 아직 덮지 않은 곳을 고릅니다. 보조 선분·문 선으로 나뉘고, 안쪽의 unit은 구멍으로 빠집니다."
+        case .unitShapes: return "저장된 unit을 하나씩 고릅니다. 고른 unit과 똑같은 모양(구멍 포함)으로 section을 저장합니다."
         }
     }
 }
@@ -46,6 +55,8 @@ struct SavedFeatureFaceCache {
     var owners: [String: FeatureGroupID]
     /// level 기준 면의 구멍(안쪽에 떠 있는 unit 자리). 저장하면 구멍 있는 MultiPolygon이 된다.
     var holes: [String: [[LocalPoint]]] = [:]
+    /// 만들 때의 `geometryRevision`. 같으면 선분을 다시 모으지 않고 그대로 쓴다.
+    var revision = -1
 }
 
 @MainActor
@@ -65,9 +76,9 @@ extension AppEnvironment {
         face.contains(p) && !faceHoles(face).contains { RingNesting.contains($0, p) }
     }
 
-    /// 지금 레이어에서 실제로 쓰는 기준. level 기준은 unit 레이어에서만 뜻이 있다.
+    /// 지금 레이어에서 실제로 쓰는 기준. level 기준은 unit 레이어에서만, unit 모양 기준은 section 레이어에서만 뜻이 있다.
     var effectiveFaceBoundaryScope: FaceBoundaryScope {
-        faceBoundaryScope == .level && layers.activePropertyType != .unit ? .currentLayer : faceBoundaryScope
+        FaceBoundaryScope.options(for: layers.activePropertyType).contains(faceBoundaryScope) ? faceBoundaryScope : .currentLayer
     }
 
     func setFaceBoundaryScope(_ scope: FaceBoundaryScope) {
@@ -80,20 +91,40 @@ extension AppEnvironment {
     private func savedFeatureFaces() -> SavedFeatureFaceCache {
         let type = layers.activePropertyType
         let scope = effectiveFaceBoundaryScope
-        let segments = scope == .level ? levelBoundarySegments() : faceBoundarySegments(scope: scope, type: type)
-        if let cache = savedFaceCache, cache.scope == scope, cache.type == type, cache.segments == segments {
+        if let cache = savedFaceCache, cache.scope == scope, cache.type == type, cache.revision == geometryRevision {
+            return cache
+        }
+        // 면 하나마다 owners·holes를 물어 프레임마다 수백 번 불린다. 바뀐 것이 없으면 여기서 끝낸다.
+        let segments: [LineSegment]
+        switch scope {
+        case .level: segments = levelBoundarySegments()
+        case .unitShapes: segments = unitShapeSegments()
+        default: segments = faceBoundarySegments(scope: scope, type: type)
+        }
+        if var cache = savedFaceCache, cache.scope == scope, cache.type == type, cache.segments == segments {
+            cache.revision = geometryRevision
+            savedFaceCache = cache
             return cache
         }
         if scope == .level {
             let (faces, holes) = levelGapFaces(segments: segments)
             let cache = SavedFeatureFaceCache(scope: scope, type: type, segments: segments,
-                                              faces: faces, owners: [:], holes: holes)
+                                              faces: faces, owners: [:], holes: holes, revision: geometryRevision)
+            savedFaceCache = cache
+            return cache
+        }
+        if scope == .unitShapes {
+            let (faces, holes) = unitShapeFaces()
+            let cache = SavedFeatureFaceCache(scope: scope, type: type, segments: segments,
+                                              faces: faces, owners: savedFaceOwners(faces, type: type),
+                                              holes: holes, revision: geometryRevision)
             savedFaceCache = cache
             return cache
         }
         let faces = ClosedPolygonFinder.faces(in: segments.map { .init(segment: $0, objectID: nil) })
         let cache = SavedFeatureFaceCache(scope: scope, type: type, segments: segments,
-                                          faces: faces, owners: savedFaceOwners(faces, type: type))
+                                          faces: faces, owners: savedFaceOwners(faces, type: type),
+                                          revision: geometryRevision)
         savedFaceCache = cache
         return cache
         // 저장된 feature는 도면 개체보다 훨씬 적어 바로 계산한다. 경계가 같으면 그대로 돌려준다.
@@ -120,6 +151,40 @@ extension AppEnvironment {
         }
         return out + features.guides
         // 보조 선분은 어느 기준에서나 면을 나눈다. 도면에 벽선이 없는 자리를 막거나 긴 복도를 끊는 선이다.
+    }
+
+    // MARK: unit 모양 기준
+
+    /// unit·section 링의 변. 캐시 비교용이다 — unit 모양이 바뀌면 면을, section이 바뀌면 '이미 저장된 자리'를 다시 판정한다.
+    /// section을 빼면 저장해도 캐시가 그대로 쓰여 같은 unit을 또 고를 수 있었다.
+    private func unitShapeSegments() -> [LineSegment] {
+        var out: [LineSegment] = []
+        for f in features.features where !f.isInTrash && (f.featureType == .unit || f.featureType == .section) {
+            for ring in f.polygonRings where ring.count >= 2 {
+                for i in ring.indices { out.append(LineSegment(start: ring[i], end: ring[(i + 1) % ring.count])) }
+            }
+        }
+        return out
+    }
+
+    /// 저장된 unit의 다각형마다 면 하나. 바깥 링이 면이고 그 안쪽 링은 구멍이다. MultiPolygon unit은 섬마다 면이 된다.
+    private func unitShapeFaces() -> ([ClosedPolygonFinder.Face], [String: [[LocalPoint]]]) {
+        var faces: [ClosedPolygonFinder.Face] = []
+        var holes: [String: [[LocalPoint]]] = [:]
+        for f in features.features(ofType: .unit) where !f.isInTrash && !f.polygonRings.isEmpty {
+            for (n, polygon) in RingNesting.polygons(f.polygonRings).enumerated() {
+                let outer = f.polygonRings[polygon.outer]
+                guard outer.count >= 3 else { continue }
+                let inner = polygon.holes.map { f.polygonRings[$0] }
+                let area = abs(UnitCoverage.area(UnitCoverage.path([outer] + inner)))
+                guard area >= 0.5 else { continue }
+                let id = "unit-shape:\(f.id.uuidString):\(n)"
+                faces.append(ClosedPolygonFinder.Face(id: id, ring: outer, memberIDs: [], usesTemporaryDoor: false,
+                                                      area: area, boundingBox: ClosedPolygonFinder.boundingBox(outer)))
+                if !inner.isEmpty { holes[id] = inner }
+            }
+        }
+        return (faces, holes)
     }
 
     // MARK: level 기준

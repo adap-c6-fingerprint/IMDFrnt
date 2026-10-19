@@ -421,7 +421,14 @@ struct LeftSidebar: View {
 
     @ViewBuilder
     private func layerButton(type: IMDFFeatureType, isActive: Bool, exists: Bool) -> some View {
-        if isActive {
+        if type.isMetadataOnly {
+            Button("정보 입력") { env.openMetadataEditor(type) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(env.document == nil)
+                .help("\(type.displayName)는 도형이 없어 레이어를 만들지 않습니다. 정보 입력 창에서 값을 넣습니다.")
+            // 메타데이터 type은 레이어 대신 입력 창이다(2026-10-19 요청).
+        } else if isActive {
             Text("사용 중")
                 .font(.caption2)
                 .foregroundStyle(.secondary)

@@ -47,6 +47,8 @@ struct CanvasView: View {
     @State private var dragIsVertex = false
     @State private var pointKeys: PointKeyMonitor?
     @State private var labelHitBoxes = FeatureLabelHitBoxes()
+    /// 이름표를 눌러 연 편집 창의 대상과 그 이름표 자리(화면 좌표).
+    @State private var tagEditor: (id: FeatureGroupID, rect: CGRect)?
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -96,6 +98,9 @@ struct CanvasView: View {
                     } else if env.isPointWorkMode {
                         CanvasBarFit { PointToolbar() }
                         // #21: property type 레이어의 기본 작업은 점 단위다.
+                    } else if env.isObjectWorkMode {
+                        CanvasBarFit { ObjectToolbar() }
+                        // fixture 선 단위. 모드 전환이 늘 보여야 하므로 선택이 없어도 뜬다.
                     } else if !env.selection.isEmpty {
                         CanvasBarFit { SelectionToolbar() }
                     }
@@ -221,6 +226,21 @@ struct CanvasView: View {
                 // 나중에 그린 태그가 위에 보이므로 뒤에서부터 찾는다.
                 if env.hoveredFeature != hit { env.hoveredFeature = hit }
             }
+            .overlay(alignment: .topLeading) {
+                if let e = tagEditor {
+                    Color.clear
+                        .frame(width: e.rect.width, height: e.rect.height)
+                        .popover(isPresented: Binding(get: { tagEditor?.id == e.id }, set: { if !$0 { tagEditor = nil } }),
+                                 arrowEdge: .bottom) {
+                            FeatureTagEditor(featureID: e.id).environmentObject(env)
+                        }
+                        .padding(.leading, max(0, e.rect.minX))
+                        .padding(.top, max(0, e.rect.minY))
+                        .allowsHitTesting(false)
+                    // 눌린 이름표 자리에 보이지 않는 닻을 두고 거기서 창을 띄운다.
+                    // offset은 그리는 자리만 옮겨 창이 엉뚱한 곳에 붙으므로 padding으로 자리를 잡는다.
+                }
+            }
     }
 
     private func featureLabelCanvas(doc: DrawingDocument, viewport: CGSize) -> some View {
@@ -252,91 +272,101 @@ struct CanvasView: View {
                 return
             }
 
+            let renderCache = env.renderCache
+            let segmentation = env.segmentation
+            let background = env.canvasBackground
+            let offsets = moves.offsets
+            // 개체마다 읽는 값은 루프 밖에서 한 번만 읽는다(2026-10-19 캔버스 이동 렉).
+            // `@Published` 값은 읽을 때마다 Combine을 거쳐, 6만 개 × 여러 번이면 그것만 한 프레임에 수십 ms였다.
+
             // 하위 기본 레이어 — 원위치를 20% opacity로. 히트테스트 대상이 아니다.
             if primary.isVisible, let ghost = ghostLayer, !ghost.isHidden {
-                for o in doc.objects {
-                    let cache = env.renderCache.entry(for: o, segmentation: env.segmentation)
-                    guard cache.box.insetBy(dx: -o.style.strokeWidth / 2 - 2,
-                                            dy: -o.style.strokeWidth / 2 - 2).intersects(visible)
-                    else { continue }
-                    // 화면 밖은 그리지 않는다(제안 5). 고스트는 원위치를 그리는 레이어라
-                    // 이동량을 얹지 않으므로 원본 상자 그대로 판정한다.
-                    ctx.stroke(cache.path,
-                               with: .color(env.canvasBackground.ghostStroke.opacity(ghost.opacity * primary.opacity)),
-                               lineWidth: CanvasZoom.strokeWidth(o.style.strokeWidth, at: s))
-                    // 수치를 여기 다시 적지 않고 `EditorLayer.opacity`를 쓴다(사용자 조절분 포함).
-                    // 명세 2-3의 수치가 두 곳에 흩어져 있으면 한쪽만 고쳐 어긋난다.
+                let ghostColor = GraphicsContext.Shading.color(background.ghostStroke.opacity(ghost.opacity * primary.opacity))
+                // 수치를 여기 다시 적지 않고 `EditorLayer.opacity`를 쓴다(사용자 조절분 포함).
+                // 명세 2-3의 수치가 두 곳에 흩어져 있으면 한쪽만 고쳐 어긋난다.
+                if let ghostIndices = env.spatialIndex.drawIndices(in: visible, moved: [], count: doc.objects.count) {
+                    for o in ghostIndices.map({ doc.objects[$0] }) {
+                        let cache = renderCache.entry(for: o, segmentation: segmentation)
+                        guard cache.box.insetBy(dx: -o.style.strokeWidth / 2 - 2,
+                                                dy: -o.style.strokeWidth / 2 - 2).intersects(visible)
+                        else { continue }
+                        // 화면 밖은 그리지 않는다(제안 5). 고스트는 원위치를 그리는 레이어라
+                        // 이동량을 얹지 않으므로 원본 상자 그대로 판정한다.
+                        ctx.stroke(cache.path, with: ghostColor,
+                                   lineWidth: CanvasZoom.strokeWidth(o.style.strokeWidth, at: s))
+                    }
+                } else {
+                    for (width, path) in env.canvasGhostBatches(document: doc).paths {
+                        ctx.stroke(path, with: ghostColor, lineWidth: CanvasZoom.strokeWidth(width, at: s))
+                    }
+                    // 도면 대부분이 보이면 굵기별로 묶은 경로 몇 개만 긋는다(`CanvasBatches`).
                 }
             }
 
             // 상위 기본 레이어 / 현재 property type 레이어
-            for o in doc.objects {
-                let st = states[o.id] ?? env.renderState(for: o)
-                guard primary.isVisible, st.isVisible, st.opacity * primary.opacity > 0.01 else { continue }
-
-                let cache = env.renderCache.entry(for: o, segmentation: env.segmentation)
-                let off = moves.offset(for: o.id)
-                let pad = o.style.strokeWidth / 2 + 2
-                let box = (off == .zero ? cache.box
-                                        : cache.box.offsetBy(dx: off.width, dy: off.height))
-                    .insetBy(dx: -pad, dy: -pad)
-                guard box.intersects(visible) else { continue }
-                // 화면 밖 개체는 건너뛴다(제안 5). 200배로 확대해 귀퉁이만 보고 있어도
-                // 이전에는 도면 전체를 그렸다.
-
+            let onScreen = env.spatialIndex.drawIndices(in: visible, moved: Set(offsets.keys),
+                                                        count: doc.objects.count)
+            // 확대해 일부만 보고 있으면 격자로 화면 안의 개체만 돈다. 6만 개를 매 프레임 훑던 것이 이동·확대 버벅임의 큰 몫이었다.
+            if primary.isVisible, onScreen == nil, offsets.isEmpty {
+                let batches = env.canvasObjectBatches(document: doc, primaryOpacity: primary.opacity)
                 var g = ctx
                 g.opacity *= primary.opacity
-                if off != .zero { g.translateBy(x: off.width, y: off.height) }
-                // 옮긴 개체는 좌표를 옮긴 사본을 만드는 대신 **자를 옮긴다**(제안 2).
-                // `GraphicsContext`는 값 타입이라 복사가 싸다.
-                let path = cache.path
-
-                if let fill = o.style.fill {
-                    g.fill(path, with: .color(
-                        env.canvasBackground.resolveFill(fill).opacity(st.opacity * 0.35)))
+                for (color, path) in batches.fills { g.fill(path, with: .color(color)) }
+                for (key, path) in batches.strokes {
+                    let style = StrokeStyle(lineWidth: CanvasZoom.strokeWidth(key.width, at: s, emphasis: key.emphasized ? 2.0 : 1.0),
+                                            dash: key.borrowed
+                                                ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
+                                                : key.dash.map { CGFloat($0) })
+                    g.stroke(path, with: .color(key.color), style: style)
                 }
-                // 명세 10-2-2: 빌려온 개체는 **점선 테두리 + 다른 색**으로 구분한다.
-                // 소유·비활성·선택 어느 것과도 다른 상태라 색을 따로 준다 —
-                // 같은 색을 쓰면 "내가 저장한 것"과 "남에게 빌린 것"이 구분되지 않는다.
-                let strokeColor: Color = st.isBorrowed
-                    ? env.canvasBackground.marker(.displayPoint)
-                    : (st.isSelected
-                        ? env.canvasBackground.selection
-                        : (st.isHighlighted
-                            ? ClosedPolygonAppearance.highlightFill
-                            : (st.isTaggedHere
-                                ? ClosedPolygonAppearance.savedFill
-                                : (st.isTaggedOtherLayer
-                                    ? ClosedPolygonAppearance.otherLayerFill
-                                    : (st.isDisabled
-                                        ? env.canvasBackground.disabledStroke
-                                        : env.canvasBackground.resolve(o.style.stroke))))))
-                // 강조 중인 feature의 구성원은 이미 소유된 개체여도 강조색이 이긴다 —
-                // 지금 보고 있는 것을 찾으려는 표시라서다.
-                // 다른 레이어에서 태깅한 개체는 회색(비활성) 대신 옅은 초록이다. 고를 수 없는 것은 같다.
-                let width = CanvasZoom.strokeWidth(
-                    o.style.strokeWidth, at: s,
-                    emphasis: st.isSelected || st.isBorrowed || st.isHighlighted ? 2.0 : 1.0)
-                let style = StrokeStyle(lineWidth: width,
-                                        dash: st.isBorrowed
-                                            ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
-                                            : o.style.dashPattern.map { CGFloat($0) })
-                // 빌림 표시 점선은 **화면상** 간격이 일정해야 한다. 도면 좌표로 두면
-                // 확대할수록 점선 한 칸이 화면을 가로질러 실선처럼 보인다.
-                // 반면 원본 점선(`dashPattern`)은 도면이 가진 성질이라 확대와 함께 커지는 게 맞다.
-                // 원본이 점선이든 실선이든 빌린 동안에는 같은 점선으로 덮어쓴다.
-                // 상태 표시가 도면 원본 스타일에 따라 달라지면 알아볼 수 없다.
-                g.stroke(path, with: .color(strokeColor.opacity(st.opacity)), style: style)
+                for b in batches.selectedBoxes { drawSelectionBox(b, in: g, scale: s, background: background) }
+                // 도면 대부분이 보이고 옮기는 개체가 없으면 같은 색·굵기끼리 묶은 경로를 그린다(`CanvasBatches`).
+                // 묶음은 표시 상태·도형이 바뀔 때만 다시 만든다. 화면만 옮기는 동안은 만든 것을 그대로 쓴다.
+            } else {
+                for o in onScreen.map({ $0.map { doc.objects[$0] } }) ?? doc.objects {
+                    let st = states[o.id] ?? env.renderState(for: o)
+                    guard primary.isVisible, st.isVisible, st.opacity * primary.opacity > 0.01 else { continue }
 
-                if st.isSelected {
-                    // 선택 테두리는 도면의 일부가 아니라 화면에 얹은 표시다.
-                    // 보정하지 않으면 200배에서 개체에서 한참 떨어진 곳에 그려진다.
-                    let margin = CanvasZoom.screenLength(3, at: s)
-                    let b = cache.box.insetBy(dx: -margin, dy: -margin)
-                    g.stroke(Path(roundedRect: b, cornerRadius: CanvasZoom.screenLength(2, at: s)),
-                               with: .color(env.canvasBackground.selection.opacity(0.6)),
-                               style: StrokeStyle(lineWidth: CanvasZoom.screenLength(1, at: s),
-                                                  dash: [3, 3].map { CanvasZoom.screenLength($0, at: s) }))
+                    let cache = renderCache.entry(for: o, segmentation: segmentation)
+                    let off = offsets[o.id] ?? .zero
+                    let pad = o.style.strokeWidth / 2 + 2
+                    let box = (off == .zero ? cache.box
+                                            : cache.box.offsetBy(dx: off.width, dy: off.height))
+                        .insetBy(dx: -pad, dy: -pad)
+                    guard box.intersects(visible) else { continue }
+                    // 화면 밖 개체는 건너뛴다(제안 5). 200배로 확대해 귀퉁이만 보고 있어도
+                    // 이전에는 도면 전체를 그렸다.
+
+                    var g = ctx
+                    g.opacity *= primary.opacity
+                    if off != .zero { g.translateBy(x: off.width, y: off.height) }
+                    // 옮긴 개체는 좌표를 옮긴 사본을 만드는 대신 **자를 옮긴다**(제안 2).
+                    // `GraphicsContext`는 값 타입이라 복사가 싸다.
+                    let path = cache.path
+
+                    if let fill = o.style.fill {
+                        g.fill(path, with: .color(
+                            background.resolveFill(fill).opacity(st.opacity * 0.35)))
+                    }
+                    // 명세 10-2-2: 빌려온 개체는 **점선 테두리 + 다른 색**으로 구분한다.
+                    // 소유·비활성·선택 어느 것과도 다른 상태라 색을 따로 준다 —
+                    // 같은 색을 쓰면 "내가 저장한 것"과 "남에게 빌린 것"이 구분되지 않는다.
+                    let strokeColor = Self.strokeColor(st, style: o.style, background: background)
+                    let width = CanvasZoom.strokeWidth(
+                        o.style.strokeWidth, at: s,
+                        emphasis: st.isSelected || st.isBorrowed || st.isHighlighted ? 2.0 : 1.0)
+                    let style = StrokeStyle(lineWidth: width,
+                                            dash: st.isBorrowed
+                                                ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
+                                                : o.style.dashPattern.map { CGFloat($0) })
+                    // 빌림 표시 점선은 **화면상** 간격이 일정해야 한다. 도면 좌표로 두면
+                    // 확대할수록 점선 한 칸이 화면을 가로질러 실선처럼 보인다.
+                    // 반면 원본 점선(`dashPattern`)은 도면이 가진 성질이라 확대와 함께 커지는 게 맞다.
+                    // 원본이 점선이든 실선이든 빌린 동안에는 같은 점선으로 덮어쓴다.
+                    // 상태 표시가 도면 원본 스타일에 따라 달라지면 알아볼 수 없다.
+                    g.stroke(path, with: .color(strokeColor.opacity(st.opacity)), style: style)
+
+                    if st.isSelected { drawSelectionBox(cache.box, in: g, scale: s, background: background) }
                 }
             }
 
@@ -486,6 +516,16 @@ struct CanvasView: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    /// 선택 테두리. 도면의 일부가 아니라 화면에 얹은 표시다.
+    /// 보정하지 않으면 200배에서 개체에서 한참 떨어진 곳에 그려진다.
+    private func drawSelectionBox(_ box: CGRect, in g: GraphicsContext, scale s: CGFloat, background: CanvasBackground) {
+        let margin = CanvasZoom.screenLength(3, at: s)
+        g.stroke(Path(roundedRect: box.insetBy(dx: -margin, dy: -margin), cornerRadius: CanvasZoom.screenLength(2, at: s)),
+                 with: .color(background.selection.opacity(0.6)),
+                 style: StrokeStyle(lineWidth: CanvasZoom.screenLength(1, at: s),
+                                    dash: [3, 3].map { CanvasZoom.screenLength($0, at: s) }))
     }
 
     /// 다른 레이어(property type)에서 태깅한 feature의 좌표 도형 — 점으로 그린 링·선·점과 문 닫기 선분.
@@ -892,11 +932,28 @@ struct CanvasView: View {
             let size = text.measure(in: CGSize(width: 300, height: 30))
             let tag = CGRect(x: minX - 2, y: minY - size.height - 5, width: size.width + 8, height: size.height + 3)
             // 도형 바로 위에 붙인다. 안쪽에 두면 작은 방·문 선을 이름표가 덮는다.
+            let category = AppEnvironment.categoryValue(of: f)
             let color = env.isFeatureHighlighted(f.id) ? ClosedPolygonAppearance.highlightFill
-                : (overlapping.contains(f.id) ? Color.red : ClosedPolygonAppearance.savedFill)
+                : overlapping.contains(f.id) ? Color.red
+                : category.isEmpty ? ClosedPolygonAppearance.savedFill : ClosedPolygonAppearance.categorizedLabelFill
             // 펼친 unit과 겹치는 unit의 이름표는 빨강이다. 펼친 unit이 MultiPolygon이면 눌러서 그 모양대로 구멍을 뚫는다.
+            // category를 정한 것은 진한 초록이다.
             ctx.fill(Path(roundedRect: tag, cornerRadius: 3), with: .color(color.opacity(0.9)))
             ctx.draw(text, at: CGPoint(x: tag.minX + 4, y: tag.minY + 1.5), anchor: .topLeading)
+            let captionText = [category.isEmpty ? "" : CategoryLabel.display(category, type: f.featureType),
+                           AppEnvironment.nameText(of: f)].filter { !$0.isEmpty }.joined(separator: " · ")
+            // name을 정한 것은 name도 함께 단다(2026-10-19 요청). 예: `화장실(restroom) · 남자 화장실(Men)`.
+            if !captionText.isEmpty {
+                let caption = ctx.resolve(Text(captionText)
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(ClosedPolygonAppearance.categorizedLabelFill))
+                let captionSize = caption.measure(in: CGSize(width: 300, height: 20))
+                let box = CGRect(x: tag.minX, y: tag.minY - captionSize.height - 2,
+                                 width: captionSize.width + 6, height: captionSize.height + 1)
+                ctx.fill(Path(roundedRect: box, cornerRadius: 2), with: .color(.white.opacity(0.8)))
+                ctx.draw(caption, at: CGPoint(x: box.minX + 3, y: box.minY + 0.5), anchor: .topLeading)
+                // 이름표 바로 위에 작은 글씨로 단다. 흰 바탕을 깔아 도면 선 위에서도 읽힌다. 누르는 자리는 이름표 그대로다.
+            }
             labelHitBoxes.boxes.append((f.id, tag))
             // 태그 자리를 기억해 둔다. 마우스가 그 위에 오면 이 feature를 주황색으로 강조한다.
         }
@@ -1185,8 +1242,14 @@ struct CanvasView: View {
                 } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
                     selectByMarquee(m)
                 } else if moveBase == nil, moved < MarqueeRect.dragThreshold {
-                    if let tag = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) })?.0,
-                       env.handleFeatureTagClick(tag) {
+                    if let hit = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) }),
+                       env.handleFeatureTagClick(hit.0) {
+                        let tag = hit.0
+                        if env.expandedFeatures.contains(tag),
+                           let f = env.features.feature(tag), !FeatureTagEditor.fields(for: f.featureType).isEmpty {
+                            tagEditor = (tag, hit.1)
+                        } else { tagEditor = nil }
+                        // 골라졌으면 category·name 편집 창을 그 이름표에 띄운다. 다시 눌러 접었거나 구멍을 뚫었으면 닫는다.
                         // 이름표를 누르면 그 feature를 고른다. 빨간(겹친) unit의 이름표는 구멍을 뚫는다.
                         // 어느 쪽이든 점을 찍거나 면을 고르지 않는다.
                     } else if env.isPolygonWorkMode {

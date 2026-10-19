@@ -3535,6 +3535,7 @@ enum SelfTest {
         cutEnv.setLayerEditMode(.point)
         if let u = cutEnv.features.features(ofType: .unit).first {
             cutEnv.updateProperty("category", value: .string("room"), in: u.id)
+            cutEnv.updateProperty("name", value: .localized(en: "Reading Room", ko: "열람실"), in: u.id)
         }
         cutEnv.unitPointTool = .cut
         cutEnv.handlePointClick(at: LocalPoint(40, -20), tolerance: 0.01, freePoint: false)
@@ -3542,9 +3543,10 @@ enum SelfTest {
         cutEnv.closePointDraft()
         let pieces = cutEnv.features.features(ofType: .unit)
         let areas = pieces.map { UnitCoverage.area(UnitCoverage.path($0.polygonRings)) }.sorted()
-        check("자르기: 선이 가로지른 unit이 둘로 나뉘고 조각마다 원래 속성을 가진다",
+        check("자르기: 선이 가로지른 unit이 둘로 나뉘고 조각마다 원래 속성(category·name)을 가진다",
               pieces.count == 2 && abs(areas[0] - 4000) < 1e-9 && abs(areas[1] - 6000) < 1e-9
               && pieces.allSatisfy { $0.value("category") == .string("room") }
+              && pieces.allSatisfy { $0.value("name") == .localized(en: "Reading Room", ko: "열람실") }
               && pieces.allSatisfy { $0.polygonRings.flatMap { $0 }.allSatisfy { p in [0, 40, 100].contains(p.x) && [0, 100].contains(p.y) } },
               "넓이 \(areas)")
         cutEnv.unitPointTool = .cut
@@ -3552,6 +3554,30 @@ enum SelfTest {
         cutEnv.handlePointClick(at: LocalPoint(150, 120), tolerance: 0.01, freePoint: false)
         cutEnv.closePointDraft()
         check("자르기: unit을 가로지르지 않는 선은 아무것도 바꾸지 않는다", cutEnv.features.features(ofType: .unit).count == 2)
+
+        // section — unit 모양 기준 (2026-10-19 요청)
+        let secEnv = levelEnv(level: rectRing(0, 0, 300, 100), units: [rectRing(0, 0, 100, 100), rectRing(100, 0, 200, 100)])
+        let secHoled = secEnv.features.features(ofType: .unit).first { $0.polygonRings[0].contains(LocalPoint(0, 0)) }
+        if let secHoled { secEnv.features.update(secHoled.id) { $0.polygonRings.append(rectRing(40, 40, 60, 60)) } }
+        secEnv.selectPropertyType(.section)
+        secEnv.setLayerEditMode(.face)
+        secEnv.setFaceBoundaryScope(.unitShapes)
+        check("section unit 모양: section 레이어에만 이 기준이 있다",
+              FaceBoundaryScope.options(for: .section).contains(.unitShapes)
+                  && !FaceBoundaryScope.options(for: .unit).contains(.unitShapes)
+                  && secEnv.effectiveFaceBoundaryScope == .unitShapes)
+        check("section unit 모양: 저장된 unit마다 면이 하나씩", secEnv.faceModeFaces.count == 2, "\(secEnv.faceModeFaces.count)개")
+        secEnv.handleFaceClick(at: LocalPoint(50, 50))
+        check("section unit 모양: unit의 구멍 자리를 눌러도 면이 잡히지 않는다", secEnv.faceSelection.isEmpty)
+        secEnv.handleFaceClick(at: LocalPoint(10, 10))
+        secEnv.saveSelectedFaces()
+        let secSaved = secEnv.features.features(ofType: .section).first
+        func ringSets(_ rings: [[LocalPoint]]) -> Set<Set<LocalPoint>> { Set(rings.map { Set($0) }) }
+        check("section unit 모양: 고른 unit과 같은 모양(구멍 포함)의 section으로 저장된다",
+              secSaved.map { ringSets($0.polygonRings) } == secHoled.map { ringSets($0.polygonRings + [rectRing(40, 40, 60, 60)]) },
+              secSaved.map { "링 \($0.polygonRings.count)개" } ?? "저장 안 됨")
+        check("section unit 모양: 이미 section으로 저장한 unit 자리는 다시 고를 수 없다",
+              secEnv.faceModeFaces.contains { secEnv.faceOwner($0) != nil })
         cutEnv.cancelPointDraft()
 
         let ins = levelEnv(level: rectRing(0, 0, 200, 100), units: [rectRing(0, 0, 100, 100), rectRing(100, 0, 200, 100)])
@@ -3640,6 +3666,109 @@ enum SelfTest {
         check("실오라기 방지: 저장 직전에도 링을 이웃에 맞춘다(면 단위 저장 등)",
               fixed.moved == 2 && fixed.rings[0][0] == LocalPoint(100, 30))
 
+        // MARK: fixture 선 단위 — 도면 개체를 골라 fixture 하나로 (2026-10-19 요청)
+
+        let ox = AppEnvironment()
+        ox.openSample()
+        ox.selectPropertyType(.opening)
+        ox.declareOpeningComplete()
+        // opening 완료를 선언해야 다른 type 레이어가 열린다(명세 10-1-1).
+        ox.selectPropertyType(.unit)
+        ox.setLayerEditMode(.object)
+        check("fixture 선 단위: fixture가 아닌 레이어는 선 단위로 바뀌지 않는다",
+              ox.layerEditMode == .point && !LayerEditMode.object.isAvailable(for: .unit))
+        ox.selectPropertyType(.fixture)
+        ox.setLayerEditMode(.object)
+        check("fixture 선 단위: 켜면 점 단위가 아니고 키 없이도 개체를 고른다",
+              ox.isObjectWorkMode && !ox.isPointWorkMode && !ox.isPolygonWorkMode && ox.isSelectModeActive
+                  && !ox.forceSelectMode && !ox.selectModifierDown)
+        let fixtureObjs = (ox.document?.objects ?? []).filter { $0.sourceElement == "rect" }.prefix(2)
+        if fixtureObjs.count == 2, let first = fixtureObjs.first, let second = fixtureObjs.last {
+            ox.handleCanvasClick(at: LocalPoint(first.boundingBox.minX, first.boundingBox.midY), tolerance: 6)
+            ox.handleMarqueeSelection(rect: second.boundingBox.insetBy(dx: -1, dy: -1), mode: .enclose)
+            check("fixture 선 단위: 클릭과 드래그로 개체를 고른다",
+                  ox.selection.selected.isSuperset(of: [first.id, second.id]), "선택 \(ox.selection.selected.count)개")
+            let picked = ox.selection.selected
+            ox.createFeature()
+            let saved = ox.features.features(ofType: .fixture)
+            check("fixture 선 단위: 고른 개체가 fixture 하나의 구성원으로 저장된다",
+                  saved.count == 1 && saved.first?.memberIDs == picked && ox.selection.isEmpty,
+                  saved.first.map { "\($0.serialNumber) · 개체 \($0.memberIDs.count)개" } ?? "없음")
+            if let f = saved.first, let doc = ox.document {
+                var ids = IDAssigner()
+                let fc = GeoJSONExporter(document: doc, segmentation: ox.segmentation, georeferencer: geo)
+                    .buildFeatureCollection(type: .fixture, features: [f], ids: &ids, serialToUUID: [:])
+                let json = (try? JSONSerialization.data(withJSONObject: fc)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                check("fixture 선 단위: 구성원 fixture가 도형으로 내보내진다",
+                      json.contains("\"MultiPolygon\"") || json.contains("\"Polygon\""), "\(json.count)바이트")
+            }
+            ox.handleCanvasClick(at: LocalPoint(first.boundingBox.minX, first.boundingBox.midY), tolerance: 6)
+            ox.setLayerEditMode(.point)
+            check("fixture 선 단위: 점 단위로 돌아가면 선택을 비우고 점 단위가 된다",
+                  ox.selection.isEmpty && ox.isPointWorkMode && !ox.isSelectModeActive)
+        } else {
+            check("fixture 선 단위: 예제 도면에 rect 2개", false)
+        }
+
+        // MARK: 메타데이터 type은 레이어 대신 정보 입력 (2026-10-19 요청)
+
+        let md = AppEnvironment()
+        md.openSample()
+        let layersBefore = md.layers.layers.count
+        md.selectPropertyType(.building)
+        check("메타데이터: building을 고르면 레이어를 만들지 않고 정보 입력 창을 연다",
+              md.layers.layers.count == layersBefore && md.layers.layer(for: .building) == nil
+                  && md.metadataEditorType == .building)
+        check("메타데이터: 도형 없는 type만 해당한다",
+              IMDFFeatureType.allCases.filter(\.isMetadataOnly) == [.address, .building, .manifest, .occupant])
+        let bid = md.addMetadataFeature(.building)
+        let mdSaved = bid.flatMap { md.features.feature($0) }
+        check("메타데이터: 추가하면 속성이 모두 null인 feature가 지금 층에 생긴다",
+              mdSaved?.featureType == .building && mdSaved?.memberIDs.isEmpty == true && mdSaved?.polygonRings.isEmpty == true
+                  && PropertySchema.fields(for: .building).allSatisfy { mdSaved?.properties[$0.key] == .null })
+        if let bid { md.updateProperty("name", value: .localized(en: "Library", ko: "도서관"), in: bid) }
+        check("메타데이터: 우측 패널과 같은 방식으로 속성을 넣는다",
+              bid.flatMap { md.features.feature($0)?.value("name") } == .localized(en: "Library", ko: "도서관"))
+        md.undo(); md.undo()
+        check("메타데이터: 추가·입력은 실행취소로 되돌아간다", md.features.features(ofType: .building).isEmpty)
+        _ = md.addMetadataFeature(.manifest)
+        check("메타데이터: manifest는 하나만 둔다",
+              md.addMetadataFeature(.manifest) == nil && md.features.features(ofType: .manifest).count == 1)
+        md.layers.addPropertyTypeLayer(.occupant)
+        md.openMetadataEditor(.occupant)
+        check("메타데이터: 예전에 만든 이 type의 레이어는 창을 열 때 닫는다", md.layers.layer(for: .occupant) == nil)
+
+        // MARK: unit category 최근 순 (2026-10-19 요청)
+
+        let recentSuite = "com.imdfrnt.selftest.recent.\(UUID().uuidString)"
+        let recentDefaults = UserDefaults(suiteName: recentSuite)!
+        let rc = AppEnvironment(projectDefaults: recentDefaults)
+        let unitOptions = PropertySchema.categoryOptions(for: .unit)
+        check("unit category 최근 순: 기록이 없으면 종전 순서",
+              rc.categoryOptionsOrdered(for: .unit).options == unitOptions)
+        if unitOptions.count >= 3 {
+            let a = unitOptions[unitOptions.count - 1], b = unitOptions[unitOptions.count - 2]
+            rc.recordRecentCategory(a, type: .unit)
+            rc.recordRecentCategory(b, type: .unit)
+            rc.recordRecentCategory(a, type: .unit)
+            let ordered = rc.categoryOptionsOrdered(for: .unit)
+            check("unit category 최근 순: 최근 고른 값이 맨 위에 최근 순으로, 나머지는 종전 순서",
+                  Array(ordered.options.prefix(2)) == [a, b] && ordered.options.count == unitOptions.count
+                      && Array(ordered.options.dropFirst(2)) == unitOptions.filter { $0 != a && $0 != b }
+                      && ordered.recent == [a, b])
+            rc.recordRecentCategory("not-a-category", type: .unit)
+            check("unit category 최근 순: 스펙 목록에 없는 기록은 올리지 않는다",
+                  !rc.categoryOptionsOrdered(for: .unit).options.contains("not-a-category"))
+        }
+        rc.recordRecentCategory(PropertySchema.categoryOptions(for: .fixture).last ?? "", type: .fixture)
+        check("unit category 최근 순: unit이 아닌 레이어는 순서를 바꾸지 않는다",
+              rc.categoryOptionsOrdered(for: .fixture).options == PropertySchema.categoryOptions(for: .fixture)
+                  && rc.categoryOptionsOrdered(for: .fixture).recent.isEmpty)
+        for i in 0..<20 { rc.recordRecentCategory(unitOptions[i % unitOptions.count], type: .unit) }
+        check("unit category 최근 순: 기록은 최근 \(AppEnvironment.recentCategoryLimit)개까지",
+              rc.recentUnitCategories.count <= AppEnvironment.recentCategoryLimit)
+        UserDefaults().removePersistentDomain(forName: recentSuite)
+
         // MARK: #31 — 지도 정렬과 (가)·(나) Anchor (신기능 11항, 2026-10-15)
 
         let align = MapAlignment(center: GeoPoint(longitude: 129.3245, latitude: 36.0141),
@@ -3674,6 +3803,48 @@ enum SelfTest {
               abs(worldWide.geoPoint(for: LocalPoint(0, 0)).latitude) < 90
                   && abs(worldWide.metersPerUnit * 2000 - 10_000) < 1e-6,
               String(format: "긴 변 %.0fm", worldWide.metersPerUnit * 2000))
+
+        // 네이버 지도(2026-10-19): 화면 좌표 변환은 지도가 알려 준 범위로 Swift가 계산한다.
+        let viewport = NaverMapViewport(message: ["sw": [129.32, 36.01], "ne": [129.33, 36.02], "w": 800.0, "h": 600.0])
+        check("#31 네이버 지도: 지도가 보낸 범위를 읽는다", viewport != nil)
+        if let v = viewport {
+            let ne = v.screenPoint(v.northEast), sw = v.screenPoint(v.southWest)
+            check("#31 네이버 지도: 북동은 오른쪽 위, 남서는 왼쪽 아래다",
+                  abs(ne.x - 800) < 1e-6 && abs(ne.y) < 1e-6 && abs(sw.x) < 1e-6 && abs(sw.y - 600) < 1e-6)
+            let probe = GeoPoint(longitude: 129.3237, latitude: 36.0131)
+            let back = v.coordinate(v.screenPoint(probe))
+            check("#31 네이버 지도: 위경도 → 화면 → 위경도 왕복이 맞다",
+                  abs(back.longitude - probe.longitude) < 1e-10 && abs(back.latitude - probe.latitude) < 1e-10)
+            let mid = v.screenPoint(GeoPoint(longitude: 129.325, latitude: 36.015))
+            check("#31 네이버 지도: 세로는 메르카토르라 위도 가운데가 화면 가운데보다 조금 아래다",
+                  abs(mid.x - 400) < 1e-6 && mid.y > 300 && mid.y < 300.1, String(format: "y = %.4f", mid.y))
+            let panned = v.coordinate(CGPoint(x: 400 - 80, y: 300))
+            // `pan(from:by:)`의 식: 오른쪽으로 80pt 끌면 새 중심은 시작 범위에서 왼쪽 80pt 자리다.
+            check("#31 네이버 지도: 오른쪽으로 끌면 지도 중심이 서쪽으로 간다", panned.longitude < v.center.longitude)
+        }
+        check("#31 네이버 지도: 잘못된 범위는 읽지 않는다",
+              NaverMapViewport(message: ["sw": [129.33, 36.01], "ne": [129.32, 36.02], "w": 800.0, "h": 600.0]) == nil
+                  && NaverMapViewport(message: ["sw": [129.32, 36.01], "ne": [129.33, 36.02], "w": 0.0, "h": 600.0]) == nil)
+        var svgProbe = Path()
+        svgProbe.move(to: CGPoint(x: 0, y: 0)); svgProbe.addLine(to: CGPoint(x: 10.5, y: 0))
+        svgProbe.addLine(to: CGPoint(x: 10.5, y: 3.14159)); svgProbe.closeSubpath()
+        check("#31 네이버 지도: 도면 경로를 SVG d로 바꾼다(소수 셋째 자리)",
+              NaverMapPage.svgPathData(svgProbe) == "M0 0L10.5 0L10.5 3.142Z", NaverMapPage.svgPathData(svgProbe))
+        let page = NaverMapPage.html(clientID: "ab c&d", mapKind: .hybrid)
+        check("#31 네이버 지도: 페이지가 Client ID(인코딩)·지도 종류·인증 실패 콜백을 담는다",
+              page.contains("maps.js?ncpKeyId=ab%20c%26d\"") && !page.contains("&callback=")
+                  && page.contains("MapTypeId['HYBRID']") && page.contains("navermap_authFailure")
+                  && !page.contains("__CLIENT_ID__") && !page.contains("__MAP_TYPE__"))
+        check("#31 네이버 지도: 페이지 기준 주소가 https다(http면 ATS가 타일을 막아 지도가 검게 빈다)",
+              NaverMapPage.baseURL.scheme == "https")
+        let pointer = MapPointerEvent(message: ["phase": "changed", "kind": "rotate", "x0": 10.0, "y0": 20.0, "x": 30.0, "y": 40.0])
+        check("#31 네이버 지도: 지도 페이지가 보낸 손 동작을 읽는다",
+              pointer == MapPointerEvent(phase: .changed, kind: .rotate, start: CGPoint(x: 10, y: 20), location: CGPoint(x: 30, y: 40))
+                  && MapPointerEvent(message: ["phase": "drag", "kind": "move", "x0": 0.0, "y0": 0.0, "x": 0.0, "y": 0.0]) == nil)
+        check("#31 네이버 지도: 손 동작은 지도 페이지가 테두리 겹 기준으로 가로챈다(지도를 덮는 앱 겹 없음)",
+              page.contains("IMDF.setInteraction") && page.contains("IMDF.hitKind")
+                  && AlignOverlay.layerID(levelID: UUID(), kind: .decoration).hasSuffix("-decoration")
+                  && (MapInteraction.none.payload["id"] is NSNull))
 
         let ma = AppEnvironment()
         ma.openSample()
@@ -3894,7 +4065,61 @@ enum SelfTest {
                     check("이름표 클릭: 이름표를 누르면 그 feature를 고르고, 다시 누르면 접는다",
                           picked && selected && again && !ma.isFeatureExpanded(f.id), f.serialNumber)
                     ma.expandedFeature = savedExpanded
+
+                    let tagFields = IMDFFeatureType.allCases.allSatisfy { t in
+                        let keys = FeatureTagEditor.fields(for: t).map(\.key)
+                        let wantsCategory = !PropertySchema.categoryOptions(for: t).isEmpty
+                        let wantsName = PropertySchema.fields(for: t).contains { $0.key == "name" && $0.type == .localizedName }
+                        return keys.contains("category") == wantsCategory && keys.contains("name") == wantsName
+                    }
+                    check("이름표 편집 창: category가 있는 레이어는 category를, 이름을 쓰는 레이어는 name을 편집한다",
+                          tagFields && FeatureTagEditor.fields(for: .unit).map(\.key).sorted() == ["category", "name"])
+
+                    func statesText() -> [String] {
+                        maDoc.objects.map { String(describing: ma.renderState(for: $0)) }
+                    }
+                    var g = FeatureGroup(featureType: f.featureType, serialNumber: "\(f.featureType.rawValue)-부분갱신", memberIDs: [])
+                    if let free = maDoc.objects.first(where: { ma.ownership.ownerOf($0.id) == nil }) {
+                        g.memberIDs = [free.id]
+                        ma.features.insert(g)
+                        try? ma.ownership.claim([free.id], for: g.id)
+                    }
+                    // 구성원 개체가 있는 feature여야 부분 갱신이 실제로 개체를 다시 판정한다.
+                    _ = ma.renderStates()
+                    ma.hoveredFeature = g.id
+                    ma.expandedFeature = g.id
+                    let litPartial = g.memberIDs.first.flatMap { maDoc.object($0) }.map { ma.renderState(for: $0).isHighlighted } ?? false
+                    ma.categoryFilters[g.featureType] = ["__없는 category__"]
+                    let partial = statesText()
+                    let memberHiddenPartial = g.memberIDs.first.flatMap { maDoc.object($0) }.map { !ma.renderState(for: $0).isVisible } ?? false
+                    ma.invalidateRenderStates()
+                    let full = statesText()
+                    check("표시 상태 부분 갱신: 이름표 hover·펼침·category 필터를 바꾼 뒤 일부만 다시 판정한 결과가 통째로 다시 만든 것과 같다",
+                          partial == full && litPartial && memberHiddenPartial && !g.memberIDs.isEmpty, "구성원 \(g.memberIDs.count)")
+                    ma.categoryFilters = savedFilters
+                    if !g.memberIDs.isEmpty { ma.ownership.release(g.memberIDs); ma.features.remove(g.id) }
+                    ma.hoveredFeature = nil
+                    ma.expandedFeature = savedExpanded
                 }
+
+                let zoomIn = ZoomEventMonitor.wheelFactor(3, precise: false)
+                let zoomOut = ZoomEventMonitor.wheelFactor(-3, precise: false)
+                check("확대 민감도: 휠을 같은 만큼 밀고 당기면 제자리이고, 한 번에 16% 넘게 변하지 않는다",
+                      abs(zoomIn * zoomOut - 1) < 1e-9 && zoomIn < 1.2
+                      && ZoomEventMonitor.wheelFactor(500, precise: false) <= exp(ZoomEventMonitor.maxStep) + 1e-9
+                      && ZoomEventMonitor.pinchFactor(1) <= exp(ZoomEventMonitor.maxStep) + 1e-9,
+                      String(format: "휠 3줄 %.3f배", zoomIn))
+                let grid = SpatialIndex(objects: maDoc.objects, canvasSize: maDoc.canvasSize)
+                let corner = CGRect(x: 0, y: 0, width: maDoc.canvasSize.width * 0.1, height: maDoc.canvasSize.height * 0.1)
+                let picked = grid.drawIndices(in: corner, moved: [], count: maDoc.objects.count)
+                let expected = maDoc.objects.indices.filter { maDoc.objects[$0].boundingBox.intersects(corner) }
+                check("화면 안만 그리기: 격자로 고른 개체가 화면에 걸친 개체를 모두 담고 도면 순서를 지킨다. 범위를 모르면 전체를 그린다",
+                      (picked.map { p in Set(expected).isSubset(of: Set(p)) && p == p.sorted() } ?? true)
+                      && grid.drawIndices(in: .infinite, moved: [], count: maDoc.objects.count) == nil
+                      && grid.drawIndices(in: corner, moved: [], count: maDoc.objects.count + 1) == nil,
+                      "화면 안 \(expected.count) / 고름 \(picked?.count ?? -1) / 전체 \(maDoc.objects.count)")
+                CanvasLagSelfTest.run(ma, maDoc, check)
+                // 캔버스 이동 렉·이름표 편집 창 렉(2026-10-19) 점검은 따로 둔다.
 
                 let taggedOwnType = ma.renderState(for: victim)
                 check("태깅 색: 다른 레이어가 가져간 개체는 태깅 색으로 칠하지 않는다",
