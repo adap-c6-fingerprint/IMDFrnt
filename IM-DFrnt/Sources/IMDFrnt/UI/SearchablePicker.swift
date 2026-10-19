@@ -42,7 +42,9 @@ struct SearchablePicker: View {
     private var matches: [String] { Self.filter(options, query: query, label: label) }
 
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let matches = matches
+        // 한 번만 거른다. 칸마다 다시 부르면 글자 하나에 목록 전체를 세 번 훑는다.
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
                 TextField("검색", text: $query)

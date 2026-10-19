@@ -106,11 +106,17 @@ extension AppEnvironment {
 
     /// 지금 층 unit의 빈틈·겹침. 화면을 그릴 때마다 읽으므로 unit·level 링이 같으면 다시 계산하지 않는다.
     var unitCoverage: UnitCoverage.Result {
+        if let cache = unitCoverageCache, cache.revision == geometryRevision { return cache.result }
+        // feature가 그대로면 링을 다시 모아 비교하지 않는다.
         let units = coverageUnits.map(\.polygonRings)
         let levels = features.features(ofType: .level).filter { !$0.isInTrash && !$0.polygonRings.isEmpty }.map(\.polygonRings)
-        if let cache = unitCoverageCache, cache.units == units, cache.levels == levels { return cache.result }
+        if var cache = unitCoverageCache, cache.units == units, cache.levels == levels {
+            cache.revision = geometryRevision
+            unitCoverageCache = cache
+            return cache.result
+        }
         let result = UnitCoverage.analyze(units: units, levels: levels)
-        unitCoverageCache = UnitCoverageCache(units: units, levels: levels, result: result)
+        unitCoverageCache = UnitCoverageCache(units: units, levels: levels, result: result, revision: geometryRevision)
         return result
     }
 
@@ -147,6 +153,7 @@ struct UnitCoverageCache {
     var units: [[[LocalPoint]]]
     var levels: [[[LocalPoint]]]
     var result: UnitCoverage.Result
+    var revision = -1
 }
 
 /// 상단바 토글. unit 레이어에서만 보인다. 켜면 빈틈·겹침 개수도 함께 보여 준다.

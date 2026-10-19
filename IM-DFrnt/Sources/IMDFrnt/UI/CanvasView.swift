@@ -47,6 +47,8 @@ struct CanvasView: View {
     @State private var dragIsVertex = false
     @State private var pointKeys: PointKeyMonitor?
     @State private var labelHitBoxes = FeatureLabelHitBoxes()
+    /// 이름표를 눌러 연 편집 창의 대상과 그 이름표 자리(화면 좌표).
+    @State private var tagEditor: (id: FeatureGroupID, rect: CGRect)?
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -221,6 +223,21 @@ struct CanvasView: View {
                 // 나중에 그린 태그가 위에 보이므로 뒤에서부터 찾는다.
                 if env.hoveredFeature != hit { env.hoveredFeature = hit }
             }
+            .overlay(alignment: .topLeading) {
+                if let e = tagEditor {
+                    Color.clear
+                        .frame(width: e.rect.width, height: e.rect.height)
+                        .popover(isPresented: Binding(get: { tagEditor?.id == e.id }, set: { if !$0 { tagEditor = nil } }),
+                                 arrowEdge: .bottom) {
+                            FeatureTagEditor(featureID: e.id).environmentObject(env)
+                        }
+                        .padding(.leading, max(0, e.rect.minX))
+                        .padding(.top, max(0, e.rect.minY))
+                        .allowsHitTesting(false)
+                    // 눌린 이름표 자리에 보이지 않는 닻을 두고 거기서 창을 띄운다.
+                    // offset은 그리는 자리만 옮겨 창이 엉뚱한 곳에 붙으므로 padding으로 자리를 잡는다.
+                }
+            }
     }
 
     private func featureLabelCanvas(doc: DrawingDocument, viewport: CGSize) -> some View {
@@ -254,7 +271,8 @@ struct CanvasView: View {
 
             // 하위 기본 레이어 — 원위치를 20% opacity로. 히트테스트 대상이 아니다.
             if primary.isVisible, let ghost = ghostLayer, !ghost.isHidden {
-                for o in doc.objects {
+                let ghostIndices = env.spatialIndex.drawIndices(in: visible, moved: [], count: doc.objects.count)
+                for o in ghostIndices.map({ $0.map { doc.objects[$0] } }) ?? doc.objects {
                     let cache = env.renderCache.entry(for: o, segmentation: env.segmentation)
                     guard cache.box.insetBy(dx: -o.style.strokeWidth / 2 - 2,
                                             dy: -o.style.strokeWidth / 2 - 2).intersects(visible)
@@ -270,7 +288,10 @@ struct CanvasView: View {
             }
 
             // 상위 기본 레이어 / 현재 property type 레이어
-            for o in doc.objects {
+            let onScreen = env.spatialIndex.drawIndices(in: visible, moved: Set(moves.offsets.keys),
+                                                        count: doc.objects.count)
+            // 확대해 일부만 보고 있으면 격자로 화면 안의 개체만 돈다. 6만 개를 매 프레임 훑던 것이 이동·확대 버벅임의 큰 몫이었다.
+            for o in onScreen.map({ $0.map { doc.objects[$0] } }) ?? doc.objects {
                 let st = states[o.id] ?? env.renderState(for: o)
                 guard primary.isVisible, st.isVisible, st.opacity * primary.opacity > 0.01 else { continue }
 
@@ -892,11 +913,25 @@ struct CanvasView: View {
             let size = text.measure(in: CGSize(width: 300, height: 30))
             let tag = CGRect(x: minX - 2, y: minY - size.height - 5, width: size.width + 8, height: size.height + 3)
             // 도형 바로 위에 붙인다. 안쪽에 두면 작은 방·문 선을 이름표가 덮는다.
+            let category = AppEnvironment.categoryValue(of: f)
             let color = env.isFeatureHighlighted(f.id) ? ClosedPolygonAppearance.highlightFill
-                : (overlapping.contains(f.id) ? Color.red : ClosedPolygonAppearance.savedFill)
+                : overlapping.contains(f.id) ? Color.red
+                : category.isEmpty ? ClosedPolygonAppearance.savedFill : ClosedPolygonAppearance.categorizedLabelFill
             // 펼친 unit과 겹치는 unit의 이름표는 빨강이다. 펼친 unit이 MultiPolygon이면 눌러서 그 모양대로 구멍을 뚫는다.
+            // category를 정한 것은 진한 초록이다.
             ctx.fill(Path(roundedRect: tag, cornerRadius: 3), with: .color(color.opacity(0.9)))
             ctx.draw(text, at: CGPoint(x: tag.minX + 4, y: tag.minY + 1.5), anchor: .topLeading)
+            if !category.isEmpty {
+                let caption = ctx.resolve(Text(CategoryLabel.display(category, type: f.featureType))
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(ClosedPolygonAppearance.categorizedLabelFill))
+                let captionSize = caption.measure(in: CGSize(width: 300, height: 20))
+                let box = CGRect(x: tag.minX, y: tag.minY - captionSize.height - 2,
+                                 width: captionSize.width + 6, height: captionSize.height + 1)
+                ctx.fill(Path(roundedRect: box, cornerRadius: 2), with: .color(.white.opacity(0.8)))
+                ctx.draw(caption, at: CGPoint(x: box.minX + 3, y: box.minY + 0.5), anchor: .topLeading)
+                // 이름표 바로 위에 작은 글씨로 단다. 흰 바탕을 깔아 도면 선 위에서도 읽힌다. 누르는 자리는 이름표 그대로다.
+            }
             labelHitBoxes.boxes.append((f.id, tag))
             // 태그 자리를 기억해 둔다. 마우스가 그 위에 오면 이 feature를 주황색으로 강조한다.
         }
@@ -1185,8 +1220,14 @@ struct CanvasView: View {
                 } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
                     selectByMarquee(m)
                 } else if moveBase == nil, moved < MarqueeRect.dragThreshold {
-                    if let tag = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) })?.0,
-                       env.handleFeatureTagClick(tag) {
+                    if let hit = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) }),
+                       env.handleFeatureTagClick(hit.0) {
+                        let tag = hit.0
+                        if env.expandedFeatures.contains(tag),
+                           let f = env.features.feature(tag), !FeatureTagEditor.fields(for: f.featureType).isEmpty {
+                            tagEditor = (tag, hit.1)
+                        } else { tagEditor = nil }
+                        // 골라졌으면 category·name 편집 창을 그 이름표에 띄운다. 다시 눌러 접었거나 구멍을 뚫었으면 닫는다.
                         // 이름표를 누르면 그 feature를 고른다. 빨간(겹친) unit의 이름표는 구멍을 뚫는다.
                         // 어느 쪽이든 점을 찍거나 면을 고르지 않는다.
                     } else if env.isPolygonWorkMode {

@@ -3675,6 +3675,38 @@ enum SelfTest {
                   && abs(worldWide.metersPerUnit * 2000 - 10_000) < 1e-6,
               String(format: "긴 변 %.0fm", worldWide.metersPerUnit * 2000))
 
+        // 네이버 지도(2026-10-19): 화면 좌표 변환은 지도가 알려 준 범위로 Swift가 계산한다.
+        let viewport = NaverMapViewport(message: ["sw": [129.32, 36.01], "ne": [129.33, 36.02], "w": 800.0, "h": 600.0])
+        check("#31 네이버 지도: 지도가 보낸 범위를 읽는다", viewport != nil)
+        if let v = viewport {
+            let ne = v.screenPoint(v.northEast), sw = v.screenPoint(v.southWest)
+            check("#31 네이버 지도: 북동은 오른쪽 위, 남서는 왼쪽 아래다",
+                  abs(ne.x - 800) < 1e-6 && abs(ne.y) < 1e-6 && abs(sw.x) < 1e-6 && abs(sw.y - 600) < 1e-6)
+            let probe = GeoPoint(longitude: 129.3237, latitude: 36.0131)
+            let back = v.coordinate(v.screenPoint(probe))
+            check("#31 네이버 지도: 위경도 → 화면 → 위경도 왕복이 맞다",
+                  abs(back.longitude - probe.longitude) < 1e-10 && abs(back.latitude - probe.latitude) < 1e-10)
+            let mid = v.screenPoint(GeoPoint(longitude: 129.325, latitude: 36.015))
+            check("#31 네이버 지도: 세로는 메르카토르라 위도 가운데가 화면 가운데보다 조금 아래다",
+                  abs(mid.x - 400) < 1e-6 && mid.y > 300 && mid.y < 300.1, String(format: "y = %.4f", mid.y))
+            let panned = v.coordinate(CGPoint(x: 400 - 80, y: 300))
+            // `pan(from:by:)`의 식: 오른쪽으로 80pt 끌면 새 중심은 시작 범위에서 왼쪽 80pt 자리다.
+            check("#31 네이버 지도: 오른쪽으로 끌면 지도 중심이 서쪽으로 간다", panned.longitude < v.center.longitude)
+        }
+        check("#31 네이버 지도: 잘못된 범위는 읽지 않는다",
+              NaverMapViewport(message: ["sw": [129.33, 36.01], "ne": [129.32, 36.02], "w": 800.0, "h": 600.0]) == nil
+                  && NaverMapViewport(message: ["sw": [129.32, 36.01], "ne": [129.33, 36.02], "w": 0.0, "h": 600.0]) == nil)
+        var svgProbe = Path()
+        svgProbe.move(to: CGPoint(x: 0, y: 0)); svgProbe.addLine(to: CGPoint(x: 10.5, y: 0))
+        svgProbe.addLine(to: CGPoint(x: 10.5, y: 3.14159)); svgProbe.closeSubpath()
+        check("#31 네이버 지도: 도면 경로를 SVG d로 바꾼다(소수 셋째 자리)",
+              NaverMapPage.svgPathData(svgProbe) == "M0 0L10.5 0L10.5 3.142Z", NaverMapPage.svgPathData(svgProbe))
+        let page = NaverMapPage.html(clientID: "ab c&d", mapKind: .hybrid)
+        check("#31 네이버 지도: 페이지가 Client ID(인코딩)·지도 종류·인증 실패 콜백을 담는다",
+              page.contains("maps.js?ncpKeyId=ab%20c%26d&callback=IMDF_init")
+                  && page.contains("MapTypeId['HYBRID']") && page.contains("navermap_authFailure")
+                  && !page.contains("__CLIENT_ID__") && !page.contains("__MAP_TYPE__"))
+
         let ma = AppEnvironment()
         ma.openSample()
         if let levelID = ma.routingFloorID, let maDoc = ma.document {
@@ -3894,7 +3926,59 @@ enum SelfTest {
                     check("이름표 클릭: 이름표를 누르면 그 feature를 고르고, 다시 누르면 접는다",
                           picked && selected && again && !ma.isFeatureExpanded(f.id), f.serialNumber)
                     ma.expandedFeature = savedExpanded
+
+                    let tagFields = IMDFFeatureType.allCases.allSatisfy { t in
+                        let keys = FeatureTagEditor.fields(for: t).map(\.key)
+                        let wantsCategory = !PropertySchema.categoryOptions(for: t).isEmpty
+                        let wantsName = PropertySchema.fields(for: t).contains { $0.key == "name" && $0.type == .localizedName }
+                        return keys.contains("category") == wantsCategory && keys.contains("name") == wantsName
+                    }
+                    check("이름표 편집 창: category가 있는 레이어는 category를, 이름을 쓰는 레이어는 name을 편집한다",
+                          tagFields && FeatureTagEditor.fields(for: .unit).map(\.key).sorted() == ["category", "name"])
+
+                    func statesText() -> [String] {
+                        maDoc.objects.map { String(describing: ma.renderState(for: $0)) }
+                    }
+                    var g = FeatureGroup(featureType: f.featureType, serialNumber: "\(f.featureType.rawValue)-부분갱신", memberIDs: [])
+                    if let free = maDoc.objects.first(where: { ma.ownership.ownerOf($0.id) == nil }) {
+                        g.memberIDs = [free.id]
+                        ma.features.insert(g)
+                        try? ma.ownership.claim([free.id], for: g.id)
+                    }
+                    // 구성원 개체가 있는 feature여야 부분 갱신이 실제로 개체를 다시 판정한다.
+                    _ = ma.renderStates()
+                    ma.hoveredFeature = g.id
+                    ma.expandedFeature = g.id
+                    let litPartial = g.memberIDs.first.flatMap { maDoc.object($0) }.map { ma.renderState(for: $0).isHighlighted } ?? false
+                    ma.categoryFilters[g.featureType] = ["__없는 category__"]
+                    let partial = statesText()
+                    let memberHiddenPartial = g.memberIDs.first.flatMap { maDoc.object($0) }.map { !ma.renderState(for: $0).isVisible } ?? false
+                    ma.invalidateRenderStates()
+                    let full = statesText()
+                    check("표시 상태 부분 갱신: 이름표 hover·펼침·category 필터를 바꾼 뒤 일부만 다시 판정한 결과가 통째로 다시 만든 것과 같다",
+                          partial == full && litPartial && memberHiddenPartial && !g.memberIDs.isEmpty, "구성원 \(g.memberIDs.count)")
+                    ma.categoryFilters = savedFilters
+                    if !g.memberIDs.isEmpty { ma.ownership.release(g.memberIDs); ma.features.remove(g.id) }
+                    ma.hoveredFeature = nil
+                    ma.expandedFeature = savedExpanded
                 }
+
+                let zoomIn = ZoomEventMonitor.wheelFactor(3, precise: false)
+                let zoomOut = ZoomEventMonitor.wheelFactor(-3, precise: false)
+                check("확대 민감도: 휠을 같은 만큼 밀고 당기면 제자리이고, 한 번에 16% 넘게 변하지 않는다",
+                      abs(zoomIn * zoomOut - 1) < 1e-9 && zoomIn < 1.2
+                      && ZoomEventMonitor.wheelFactor(500, precise: false) <= exp(ZoomEventMonitor.maxStep) + 1e-9
+                      && ZoomEventMonitor.pinchFactor(1) <= exp(ZoomEventMonitor.maxStep) + 1e-9,
+                      String(format: "휠 3줄 %.3f배", zoomIn))
+                let grid = SpatialIndex(objects: maDoc.objects, canvasSize: maDoc.canvasSize)
+                let corner = CGRect(x: 0, y: 0, width: maDoc.canvasSize.width * 0.1, height: maDoc.canvasSize.height * 0.1)
+                let picked = grid.drawIndices(in: corner, moved: [], count: maDoc.objects.count)
+                let expected = maDoc.objects.indices.filter { maDoc.objects[$0].boundingBox.intersects(corner) }
+                check("화면 안만 그리기: 격자로 고른 개체가 화면에 걸친 개체를 모두 담고 도면 순서를 지킨다. 범위를 모르면 전체를 그린다",
+                      (picked.map { p in Set(expected).isSubset(of: Set(p)) && p == p.sorted() } ?? true)
+                      && grid.drawIndices(in: .infinite, moved: [], count: maDoc.objects.count) == nil
+                      && grid.drawIndices(in: corner, moved: [], count: maDoc.objects.count + 1) == nil,
+                      "화면 안 \(expected.count) / 고름 \(picked?.count ?? -1) / 전체 \(maDoc.objects.count)")
 
                 let taggedOwnType = ma.renderState(for: victim)
                 check("태깅 색: 다른 레이어가 가져간 개체는 태깅 색으로 칠하지 않는다",

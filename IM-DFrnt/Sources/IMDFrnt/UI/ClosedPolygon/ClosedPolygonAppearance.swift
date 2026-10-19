@@ -22,6 +22,10 @@ enum ClosedPolygonAppearance {
     static let savedFill = Color(red: 0.16, green: 0.66, blue: 0.24)
     static let savedFillOpacity: Double = 0.35
 
+    /// category를 정한 feature의 이름표. 태깅 초록보다 **진한 초록**이라 아직 category가 없는 것과 한눈에 갈린다
+    /// (2026-10-19 요청). 강조(주황)·겹침(빨강) 이름표가 이보다 앞선다.
+    static let categorizedLabelFill = Color(red: 0.04, green: 0.38, blue: 0.13)
+
     /// 다른 레이어(property type)에서 태깅한 면·선·점·개체. 지금 레이어의 태깅 초록보다 **옅은 초록**이다
     /// (2026-10-17 요청: 편집 중이 아닌 레이어의 태깅 결과도 지금 화면에서 보이게, 단 더 옅게).
     /// 회색이던 것을 바꿨다 — 회색은 도면 선·비활성 개체와 섞여 다른 레이어가 무엇을 가져갔는지 안 보였다.

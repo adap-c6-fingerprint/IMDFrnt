@@ -46,6 +46,8 @@ struct SavedFeatureFaceCache {
     var owners: [String: FeatureGroupID]
     /// level 기준 면의 구멍(안쪽에 떠 있는 unit 자리). 저장하면 구멍 있는 MultiPolygon이 된다.
     var holes: [String: [[LocalPoint]]] = [:]
+    /// 만들 때의 `geometryRevision`. 같으면 선분을 다시 모으지 않고 그대로 쓴다.
+    var revision = -1
 }
 
 @MainActor
@@ -80,20 +82,27 @@ extension AppEnvironment {
     private func savedFeatureFaces() -> SavedFeatureFaceCache {
         let type = layers.activePropertyType
         let scope = effectiveFaceBoundaryScope
+        if let cache = savedFaceCache, cache.scope == scope, cache.type == type, cache.revision == geometryRevision {
+            return cache
+        }
+        // 면 하나마다 owners·holes를 물어 프레임마다 수백 번 불린다. 바뀐 것이 없으면 여기서 끝낸다.
         let segments = scope == .level ? levelBoundarySegments() : faceBoundarySegments(scope: scope, type: type)
-        if let cache = savedFaceCache, cache.scope == scope, cache.type == type, cache.segments == segments {
+        if var cache = savedFaceCache, cache.scope == scope, cache.type == type, cache.segments == segments {
+            cache.revision = geometryRevision
+            savedFaceCache = cache
             return cache
         }
         if scope == .level {
             let (faces, holes) = levelGapFaces(segments: segments)
             let cache = SavedFeatureFaceCache(scope: scope, type: type, segments: segments,
-                                              faces: faces, owners: [:], holes: holes)
+                                              faces: faces, owners: [:], holes: holes, revision: geometryRevision)
             savedFaceCache = cache
             return cache
         }
         let faces = ClosedPolygonFinder.faces(in: segments.map { .init(segment: $0, objectID: nil) })
         let cache = SavedFeatureFaceCache(scope: scope, type: type, segments: segments,
-                                          faces: faces, owners: savedFaceOwners(faces, type: type))
+                                          faces: faces, owners: savedFaceOwners(faces, type: type),
+                                          revision: geometryRevision)
         savedFaceCache = cache
         return cache
         // 저장된 feature는 도면 개체보다 훨씬 적어 바로 계산한다. 경계가 같으면 그대로 돌려준다.

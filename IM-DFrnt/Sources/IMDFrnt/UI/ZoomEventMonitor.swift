@@ -34,6 +34,22 @@ final class ZoomEventMonitor: ObservableObject {
         if let token { NSEvent.removeMonitor(token) }
     }
 
+    /// 확대 배율 증분. 지수로 바꿔 같은 양을 밀고 당기면 제자리로 돌아오고, 한 번에 크게 튀지 않게 상한을 둔다.
+    /// 예전 값(휠 한 줄 10%, 한 번에 최대 40%, 핀치 그대로)은 너무 민감하다는 피드백이 있었다(2026-10-19).
+    static let pinchGain: CGFloat = 0.6
+    static let wheelGainPerLine: CGFloat = 0.04
+    static let wheelGainPerPoint: CGFloat = 0.003
+    static let maxStep: CGFloat = 0.15
+
+    static func pinchFactor(_ magnification: CGFloat) -> CGFloat {
+        exp(max(-maxStep, min(maxStep, magnification * pinchGain)))
+    }
+
+    static func wheelFactor(_ deltaY: CGFloat, precise: Bool) -> CGFloat {
+        exp(max(-maxStep, min(maxStep, deltaY * (precise ? wheelGainPerPoint : wheelGainPerLine))))
+        // 트랙패드(⌘+스크롤)는 점 단위로 잘게, 마우스 휠은 줄 단위로 온다.
+    }
+
     private func handle(_ event: NSEvent) -> Bool {
         guard let point = canvasPoint(of: event) else { return false }
 
@@ -41,7 +57,7 @@ final class ZoomEventMonitor: ObservableObject {
         case .magnify:
             // 핀치는 항상 확대/축소. magnification은 -1~1 범위의 증분이다.
             guard event.magnification != 0 else { return true }
-            onZoom?(point, 1 + event.magnification)
+            onZoom?(point, Self.pinchFactor(event.magnification))
             return true
 
         case .scrollWheel:
@@ -56,9 +72,8 @@ final class ZoomEventMonitor: ObservableObject {
                 return true
             }
 
-            let delta = precise ? event.scrollingDeltaY / 100 : event.scrollingDeltaY / 10
-            guard delta != 0 else { return true }
-            onZoom?(point, 1 + max(-0.4, min(0.4, delta)))
+            guard event.scrollingDeltaY != 0 else { return true }
+            onZoom?(point, Self.wheelFactor(event.scrollingDeltaY, precise: precise))
             return true
 
         default:

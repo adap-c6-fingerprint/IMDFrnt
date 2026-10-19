@@ -174,8 +174,12 @@ final class AppEnvironment: ObservableObject {
     // MARK: 문서와 상태
 
     @Published var document: DrawingDocument? {
-        didSet { if !isInstallingLevelDrawing { rebuildDocumentIndexes() } }
+        didSet { geometryRevision &+= 1; if !isInstallingLevelDrawing { rebuildDocumentIndexes() } }
     }
+
+    /// 도면·feature·선분화가 바뀔 때마다 오르는 번호. 화면을 그릴 때마다 읽는 캐시가 이 번호로 유효한지 먼저 본다.
+    /// 번호가 같으면 링·선분 전체를 다시 모아 비교하지 않는다 — 면 하나마다 그 비교를 하던 것이 버벅임의 원인이었다.
+    private(set) var geometryRevision = 0
 
     /// 개체별 파생 데이터(Path · 선분 · 경계 상자). 제안 2.
     let renderCache = RenderCacheStore()
@@ -210,6 +214,7 @@ final class AppEnvironment: ObservableObject {
     @Published var layers = LayerStore() { didSet { invalidateRenderStates() } }
     @Published var features = FeatureStore() {
         didSet {
+            geometryRevision &+= 1
             invalidateRenderStates(); refreshOverlap(); refreshOpenRingGaps()
             scheduleDerivedGeometryRefresh()
             // 저장된 opening의 선이 면을 닫는 선분이라 면이 달라질 수 있다(#21). 열쇠가 같으면 바로 돌아온다.
@@ -228,6 +233,7 @@ final class AppEnvironment: ObservableObject {
     }
     @Published var segmentation = SegmentationStore() {
         didSet {
+            geometryRevision &+= 1
             invalidateSegmentationCaches(since: oldValue); refreshOverlap(); refreshOpenRingGaps()
             scheduleDerivedGeometryRefresh()
         }
@@ -380,14 +386,14 @@ final class AppEnvironment: ObservableObject {
     /// 카드 전부를 감싸는 최상위 트리(`FEATURES` 섹션) 하나로 접혔다 — 사용자가 원한 것은
     /// **카드마다 따로 접고 펴되, 버튼 하나로 그 개별 토글을 한꺼번에 움직이는 것**이다.
     @Published private(set) var expandedFeatures: Set<FeatureGroupID> = [] {
-        didSet { invalidateRenderStates(); refreshOpenRingGaps() }
+        didSet { refreshRenderStates(owners: oldValue.symmetricDifference(expandedFeatures)); refreshOpenRingGaps() }
+        // 펼침은 그 feature의 개체 색(강조·빌림)만 바꾼다. 도면 전체를 다시 판정하지 않는다.
     }
 
     /// 지금 '주로 보고 있는' 카드. 상단바의 display point 찍기처럼 **대상이 하나여야 하는**
     /// 동작이 이 값을 쓴다. 여러 개가 펼쳐져 있을 때 무엇을 겨냥하는지 모호해지면 안 된다.
-    @Published private(set) var focusedFeature: FeatureGroupID? {
-        didSet { invalidateRenderStates() }
-    }
+    @Published private(set) var focusedFeature: FeatureGroupID?
+    // 개체 표시 상태는 펼친 카드 전부(`expandedFeatures`)를 보고, 이 값은 보지 않는다.
 
     /// 기존 호출부를 위한 창구. 대입하면 그 하나만 펼친 상태가 된다.
     var expandedFeature: FeatureGroupID? {
@@ -408,13 +414,20 @@ final class AppEnvironment: ObservableObject {
 
     /// 캔버스의 일련번호 태그(unit-014 등) 위에 마우스가 올라가 있는 feature. 떼면 nil이 되어 원래 색으로 돌아간다.
     @Published var hoveredFeature: FeatureGroupID? {
-        didSet { if oldValue != hoveredFeature { invalidateRenderStates() } }
+        didSet {
+            if oldValue != hoveredFeature { refreshRenderStates(owners: Set([oldValue, hoveredFeature].compactMap { $0 })) }
+        }
+        // 이름표 위를 지날 때마다 바뀐다. 도면 개체 6만 개를 매번 다시 판정하면 마우스를 움직일 때마다 멈췄다.
     }
 
     /// 우측 패널의 category 필터(#52). type마다 고른 category 값이고, 비어 있으면 전부 보인다.
     /// category가 null인 feature는 빈 문자열로 고른다. 화면 상태라 실행취소 대상인 `LayerStore`에 두지 않는다.
     @Published var categoryFilters: [IMDFFeatureType: Set<String>] = [:] {
-        didSet { invalidateRenderStates() }
+        didSet {
+            let changed = Set(oldValue.keys).union(categoryFilters.keys).filter { oldValue[$0] != categoryFilters[$0] }
+            refreshRenderStates(owners: Set(features.features.filter { changed.contains($0.featureType) }.map(\.id)))
+        }
+        // 필터가 바뀐 type의 feature 구성원만 숨김 여부가 달라진다.
     }
 
     /// feature의 category 값. null이면 빈 문자열이다.
@@ -802,6 +815,21 @@ final class AppEnvironment: ObservableObject {
     /// 그때 증상은 "화면이 갱신되지 않는다"로 나타나 원인을 찾기 어렵다.
     func invalidateRenderStates() { renderStateCache = nil }
 
+    /// 몇 feature의 표시(강조·펼침·category 필터)만 바뀌었을 때, 그 구성원과 빌린 개체만 다시 판정한다.
+    /// 다른 개체의 상태는 이 feature들과 무관하다. 사전이 아직 없으면 할 일이 없다(다음에 통째로 만든다).
+    func refreshRenderStates(owners: Set<FeatureGroupID>) {
+        guard !owners.isEmpty, var table = renderStateCache, let doc = document else { return }
+        renderStateCache = nil
+        // 꺼내 두고 고친다. 원본이 사전을 함께 쥐고 있으면 고치는 순간 6만 칸이 통째로 복사된다.
+        let context = renderStateContext()
+        for owner in owners {
+            var ids = borrow.objects(borrowedBy: owner)
+            if let f = features.feature(owner) { ids.formUnion(f.memberIDs) }
+            for id in ids { if let o = doc.object(id) { table[id] = computeRenderState(for: o, context: context) } }
+        }
+        renderStateCache = table
+    }
+
     /// 선분화가 바뀐 개체의 파생 데이터만 지운다(제안 2).
     func invalidateSegmentationCaches(since old: SegmentationStore) {
         for id in segmentation.changedObjects(since: old) { renderCache.invalidate(id) }
@@ -817,7 +845,8 @@ final class AppEnvironment: ObservableObject {
         guard let doc = document else { return [:] }
         var table: [VectorObjectID: ObjectRenderState] = [:]
         table.reserveCapacity(doc.objects.count)
-        for o in doc.objects { table[o.id] = computeRenderState(for: o) }
+        let context = renderStateContext()
+        for o in doc.objects { table[o.id] = computeRenderState(for: o, context: context) }
         renderStateCache = table
         return table
     }
@@ -830,29 +859,85 @@ final class AppEnvironment: ObservableObject {
 
     func renderState(for object: VectorObject) -> ObjectRenderState {
         if let table = renderStateCache, let hit = table[object.id] { return hit }
-        return renderStates()[object.id] ?? computeRenderState(for: object)
+        return renderStates()[object.id] ?? computeRenderState(for: object, context: renderStateContext())
     }
 
-    private func computeRenderState(for object: VectorObject) -> ObjectRenderState {
-        if currentRoutingFloor?.imdfCoordinates == nil, !primarySVGPresentation.isVisible {
+    /// 표시 상태를 판정할 때 개체마다 같은 값. 사전을 만들 때 한 번만 구한다.
+    /// 예전에는 개체마다 지금 층(`activeLevel`, 층 구조체 복사)·활성 레이어를 찾고, `@Published` 저장소를
+    /// 여러 번 읽었다(읽을 때마다 Combine을 거친다). 6만 개면 그것만 수백 ms였다.
+    struct RenderStateContext {
+        var hidesAll: Bool
+        var activeLayer: EditorLayer?
+        var activeType: IMDFFeatureType?
+        var isolatedMembers: Set<VectorObjectID>?
+        var excludedMembers: Set<VectorObjectID>
+        var typeOpacity: [IMDFFeatureType: Double]
+        var selected: Set<VectorObjectID>
+        var ownership: OwnershipRegistry
+        /// 소유 feature → (type, category 필터 통과 여부). feature 구조체(링 포함)를 개체마다 꺼내지 않는다.
+        var owners: [FeatureGroupID: (type: IMDFFeatureType, passes: Bool)]
+        var auxiliary: AuxiliaryStore
+        var assigned: Set<VectorObjectID>?
+        var mode: InteractionMode
+        var segmentation: SegmentationStore
+        var excludedOpacity: Double
+        /// 펼친 카드들이 빌린 개체. 선택한 개체는 빌릴 수 있는 opening이면 빌림 표시다(`isBorrowedHere`).
+        var borrowedByExpanded: Set<VectorObjectID>
+        var canBorrowOpenings: Bool
+        var highlighted: Set<FeatureGroupID>
+    }
+
+    private func renderStateContext() -> RenderStateContext {
+        let features = features, layers = layers
+        let activeType = layers.activePropertyType
+        let expanded = expandedFeatures
+        let borrow = borrow
+        var highlighted = expanded
+        if let id = layers.isolatedFeature { highlighted.insert(id) }
+        if let id = hoveredFeature { highlighted.insert(id) }
+        return RenderStateContext(
+            hidesAll: currentRoutingFloor?.imdfCoordinates == nil && !primarySVGPresentation.isVisible,
+            activeLayer: layers.activeLayer,
+            activeType: activeType,
+            isolatedMembers: layers.isolatedFeature.map { features.feature($0)?.memberIDs ?? [] },
+            excludedMembers: layers.excludedFeature.flatMap { features.feature($0)?.memberIDs } ?? [],
+            typeOpacity: Dictionary(uniqueKeysWithValues: IMDFFeatureType.allCases.map { ($0, polygonOpacity(for: $0)) }),
+            selected: selection.selected,
+            ownership: ownership,
+            owners: Dictionary(features.features.map { ($0.id, ($0.featureType, passesCategoryFilter($0))) },
+                              uniquingKeysWith: { first, _ in first }),
+            auxiliary: auxiliary,
+            assigned: assignment?.objectIDs,
+            mode: mode,
+            segmentation: segmentation,
+            excludedOpacity: excludedAuxiliaryOpacity,
+            borrowedByExpanded: expanded.reduce(into: Set<VectorObjectID>()) { $0.formUnion(borrow.objects(borrowedBy: $1)) },
+            canBorrowOpenings: activeType?.canBorrowOpenings ?? false,
+            highlighted: highlighted)
+    }
+
+    private func computeRenderState(for object: VectorObject, context c: RenderStateContext) -> ObjectRenderState {
+        if c.hidesAll {
             return ObjectRenderState(opacity: 0, isVisible: false, isSelected: false, isDisabled: true)
         }
         var opacity = 1.0
         var visible = true
-        let isSelected = selection.selected.contains(object.id)
+        let isSelected = c.selected.contains(object.id)
 
-        let ownerFeature = ownership.ownerOf(object.id)
-        let ownerType = ownerFeature.flatMap { features.feature($0)?.featureType }
-        let activeType = layers.activePropertyType
-        let isDisabled = (ownerType != nil && activeType != nil) || auxiliary.isExcluded(object.id)
-            || !isWithinAssignment(object.id)
+        let ownerFeature = c.ownership.ownerOf(object.id)
+        let owner = ownerFeature.flatMap { c.owners[$0] }
+        let ownerType = owner?.type
+        let activeType = c.activeType
+        let isExcluded = c.auxiliary.isExcluded(object.id)
+        let isDisabled = (ownerType != nil && activeType != nil) || isExcluded
+            || !(c.assigned?.contains(object.id) ?? true)
             // 담당 밖 개체는 '고를 수 없다'는 뜻에서 이미 남이 가져간 개체와 같은 상태다(신기능 1-2-4).
             // 색을 새로 만들지 않고 기존 비활성 색을 쓴다 — 사용자가 배워야 할 상태가 늘지 않는다.
 
         // 활성 레이어가 무엇을 보여주는 레이어인지가 표시 여부의 1차 기준이다(명세 2항).
         // 이전에는 레이어를 만들기만 하고 렌더링이 전혀 참조하지 않아, 속성 필터 레이어가
         // 목록에 이름만 생기고 화면은 그대로였다.
-        if let active = layers.activeLayer {
+        if let active = c.activeLayer {
             if active.isHidden { visible = false }
             if case .propertyType = active.kind {} else { opacity *= active.opacity }
             // 레이어별 투명도(2026-08-27). 상위 기본 레이어·속성 필터 레이어에서 그려지는 개체는
@@ -871,49 +956,51 @@ final class AppEnvironment: ObservableObject {
             }
         }
 
-        if let iso = layers.isolatedFeature {
-            visible = features.feature(iso)?.memberIDs.contains(object.id) ?? false
+        if let iso = c.isolatedMembers {
+            visible = iso.contains(object.id)
         }
-        if let ex = layers.excludedFeature,
-           features.feature(ex)?.memberIDs.contains(object.id) == true {
+        if c.excludedMembers.contains(object.id) {
             visible = false
         }
-        if let owner = ownerFeature, let f = features.feature(owner), !passesCategoryFilter(f) {
+        if owner?.passes == false {
             visible = false
         }
         // category 필터로 걸러진 feature의 구성원 개체도 숨긴다(#52). 점으로 그린 도형은 캔버스가 따로 거른다.
 
-        switch mode {
+        switch c.mode {
         case .ungroupedOnly:
             if ownerFeature != nil { opacity = 0.75 }
         case .curvedOnly(let showSegmentedOnly):
             if !object.isCurved {
                 opacity = 0.75
             } else if showSegmentedOnly {
-                opacity = segmentation.isSegmented(object.id) ? 1.0 : 0.5
+                opacity = c.segmentation.isSegmented(object.id) ? 1.0 : 0.5
             }
         default:
             break
         }
 
-        if auxiliary.isExcluded(object.id) { opacity *= excludedAuxiliaryOpacity }
+        if isExcluded { opacity *= c.excludedOpacity }
         // 제외된 보조 개체는 계속 보이되(명세 2항: 파일에서 사라지지 않는다) 눈에 띄게 옅어진다.
 
-        if selection.dimsOthers && !isSelected {
+        if !c.selected.isEmpty && !isSelected {
             opacity *= 0.7
             // 명세 5항: 선택된 개체 이외에는 70% opacity
         }
         if isDisabled { opacity *= 0.85 }
-        if let ownerType, activeType != nil { opacity *= polygonOpacity(for: ownerType) }
+        if let ownerType, activeType != nil { opacity *= c.typeOpacity[ownerType] ?? 1 }
         // 예전 방식(구성원 개체)으로 태깅한 feature는 그 개체 선이 곧 표시된 도형이다. 주인 type 레이어의 투명도를 따른다.
 
+        let isBorrowed = c.borrowedByExpanded.contains(object.id)
+            || (isSelected && c.canBorrowOpenings && ownerType == .opening)
+        // `isBorrowedHere`·`canBorrow`와 같은 규칙을 미리 모은 값으로 판정한다.
         return ObjectRenderState(opacity: opacity, isVisible: visible,
                                  isSelected: isSelected, isDisabled: isDisabled,
-                                 isBorrowed: isBorrowedHere(object.id),
-                                 isHighlighted: ownerFeature.map(isFeatureHighlighted) ?? false,
+                                 isBorrowed: isBorrowed,
+                                 isHighlighted: ownerFeature.map(c.highlighted.contains) ?? false,
                                  isTaggedHere: ownerType != nil && ownerType == activeType,
                                  isTaggedOtherLayer: ownerType != nil && activeType != nil && ownerType != activeType
-                                     && !auxiliary.isExcluded(object.id))
+                                     && !isExcluded)
     }
 
     func geometry(for object: VectorObject) -> PathGeometry {

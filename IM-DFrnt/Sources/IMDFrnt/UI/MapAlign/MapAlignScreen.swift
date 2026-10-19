@@ -1,10 +1,9 @@
-import CoreLocation
 import MapKit
 import SwiftUI
 
 /// 지도 정렬 화면(신기능 11항, #31).
 ///
-/// 위성사진(또는 일반 지도) 위에 층 도면을 올려 **이동·회전·크기(비율 고정)·투명도**로 맞춘다.
+/// 네이버 지도의 위성사진(또는 일반 지도) 위에 층 도면을 올려 **이동·회전·크기(비율 고정)·투명도**로 맞춘다.
 /// 맞춘 뒤에는 같은 화면에서 (가) 정렬된 도면의 꼭짓점·교점을 찍어 지오레퍼런싱 Anchor 쌍을 만들고,
 /// (나) 그중 고른 점을 IMDF anchor feature로 지정한다. 기존 Anchor 화면(1:1 찍기)은 그대로 둔다.
 struct MapAlignScreen: View {
@@ -15,36 +14,21 @@ struct MapAlignScreen: View {
         var title: String { self == .align ? "도면 정렬" : "Anchor 찍기" }
     }
 
-    enum MapKind: String, CaseIterable {
-        case standard, imagery, hybrid
-        var title: String {
-            switch self {
-            case .standard: return "일반 지도"
-            case .imagery: return "위성"
-            case .hybrid: return "위성+이름"
-            }
-        }
-        var mapType: MKMapType {
-            switch self {
-            case .standard: return .standard
-            case .imagery: return .satellite
-            case .hybrid: return .hybrid
-            }
-        }
-    }
-
     /// 끌고 있는 것. 시작할 때 정하고 놓을 때까지 유지한다.
     enum DragKind { case move, scale, rotate, pan }
 
     @State private var mode: Mode = .align
-    @State private var mapKind: MapKind = .imagery
+    @State private var mapKind: NaverMapKind = .imagery
+    @State private var clientID = NaverMapSettings.clientID
+    @State private var clientIDDraft = NaverMapSettings.clientID
+    @State private var showsKeySettings = false
     @StateObject private var map = MapAlignMapController()
     @State private var didPinCamera = false
     @State private var preview: MapAlignment?
     @State private var dragKind: DragKind?
     @State private var dragStart: MapAlignment?
-    @State private var panStartCenter: CLLocationCoordinate2D?
-    // 도면 위에서 지도를 끌 때(⌥ 끌기·Anchor 모드·잠긴 층) 시작한 순간의 지도 중심.
+    @State private var panStart: NaverMapViewport?
+    // 도면 위에서 지도를 끌 때(⌥ 끌기·Anchor 모드·잠긴 층) 시작한 순간의 지도 화면 범위.
     @State private var selectedAnchor: AnchorID?
     /// 투명도 슬라이더를 끄는 동안의 값. 놓을 때 한 번만 저장한다 — 값마다 저장하면 실행취소 스냅샷과
     /// 지도 오버레이 교체가 1초에 수십 번 일어나 앱이 멈춘다.
@@ -96,9 +80,12 @@ struct MapAlignScreen: View {
             .pickerStyle(.segmented).labelsHidden().fixedSize()
             .help("도면 정렬: 도면을 끌어 옮기고, 모서리로 크기, 위 손잡이로 회전합니다. ⌥를 누른 채 끌면 도면 위에서도 지도를 옮깁니다. Anchor 찍기: 정렬된 도면의 꼭짓점·교점을 눌러 Anchor 쌍을 만들고, 끌면 지도를 옮깁니다.")
             Picker("", selection: $mapKind) {
-                ForEach(MapKind.allCases, id: \.self) { Text($0.title).tag($0) }
+                ForEach(NaverMapKind.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
+            Button { clientIDDraft = clientID; showsKeySettings.toggle() } label: { Image(systemName: "key") }
+                .help("네이버 지도 Client ID")
+                .popover(isPresented: $showsKeySettings, arrowEdge: .bottom) { clientIDForm.padding(14).frame(width: 380) }
             searchBar.frame(maxWidth: 300)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -120,13 +107,71 @@ struct MapAlignScreen: View {
     // MARK: 지도
 
     private var mapPane: some View {
-        AlignMapView(controller: map, mapType: mapKind.mapType, layers: overlayLayers)
+        AlignMapView(controller: map, mapKind: mapKind, layers: overlayLayers, clientID: clientID)
             .overlay { previewCanvas.allowsHitTesting(false) }
             .overlay { interactionLayer }
             .overlay(alignment: .top) {
                 if placeSearch.isShowingResults { searchResults }
             }
-            .overlay(alignment: .center) { placeHint }
+            .overlay(alignment: .center) { map.status == .ready ? AnyView(placeHint) : AnyView(mapStatusPanel) }
+    }
+
+    // MARK: 네이버 지도 인증
+
+    /// 지도가 뜨지 않는 까닭과 고칠 길. Client ID가 없거나 인증에 실패하면 지도 대신 보인다.
+    @ViewBuilder
+    private var mapStatusPanel: some View {
+        switch map.status {
+        case .ready:
+            EmptyView()
+        case .loading:
+            ProgressView("네이버 지도를 불러오는 중…")
+                .padding(16)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        case .noClientID, .authFailed, .loadFailed:
+            VStack(alignment: .leading, spacing: 10) {
+                Text(map.status == .noClientID ? "네이버 지도 Client ID가 필요합니다"
+                     : map.status == .authFailed ? "네이버 지도 인증에 실패했습니다"
+                     : "네이버 지도를 불러오지 못했습니다").font(.headline)
+                if map.status == .loadFailed {
+                    Text("인터넷 연결을 확인한 뒤 다시 시도하세요.").font(.caption).foregroundStyle(.secondary)
+                }
+                clientIDForm
+            }
+            .padding(16)
+            .frame(width: 420)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private var clientIDForm: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("네이버 클라우드 콘솔 → Application에서 Dynamic Map을 선택하고, Web 서비스 URL에 \(NaverMapPage.serviceURL)을(를) 등록한 뒤 Client ID를 넣으세요. 포트·경로는 넣지 않습니다.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                TextField("Client ID", text: $clientIDDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(saveClientID)
+                Button(map.status == .ready || clientIDDraft != clientID ? "저장" : "다시 시도", action: saveClientID)
+                    .disabled(clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            Text("이 Mac에만 저장되고 프로젝트 파일·레포에는 들어가지 않습니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func saveClientID() {
+        let id = clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        NaverMapSettings.clientID = id
+        showsKeySettings = false
+        if id == clientID {
+            clientID = ""
+            DispatchQueue.main.async { clientID = id }
+            // 같은 값으로 다시 시도할 때도 지도를 새로 불러오게 한 번 비웠다가 넣는다.
+        } else {
+            clientID = id
+        }
     }
 
     /// 지도에 얹을 겹들(아래 → 위). 편집 중인 층은 도면 선 위에 테두리·손잡이·Anchor 겹을 하나 더 얹는다.
@@ -145,7 +190,7 @@ struct MapAlignScreen: View {
             out.append(AlignOverlay(signature: .init(levelID: level.id, kind: .drawing, alignment: shape,
                                                      pathKey: drawing.key, isStandardMap: mapKind == .standard,
                                                      showHandles: false, anchors: [], snapKey: 0),
-                                    path: drawing.path.cgPath, canvasSize: drawing.canvasSize,
+                                    path: drawing.path, canvasSize: drawing.canvasSize,
                                     snaps: nil, opacity: opacity(of: level.id, saved: a)))
             guard isEditing else { continue }
             let pairMarks = mode == .anchor ? env.anchors.pairs.map {
@@ -162,7 +207,7 @@ struct MapAlignScreen: View {
                                                      pathKey: drawing.key, isStandardMap: mapKind == .standard,
                                                      showHandles: mode == .align && !a.isLocked, anchors: marks,
                                                      snapKey: mode == .anchor ? env.snapPoints.count : -1),
-                                    path: CGMutablePath(), canvasSize: drawing.canvasSize,
+                                    path: Path(), canvasSize: drawing.canvasSize,
                                     snaps: mode == .anchor ? env.snapPointIndex : nil, opacity: 1))
         }
         return out
@@ -248,11 +293,11 @@ struct MapAlignScreen: View {
         if dragKind == nil, NSEvent.modifierFlags.contains(.option) || mode == .anchor
             || env.mapAlignment(of: level.id)?.isLocked == true {
             dragKind = .pan
-            panStartCenter = map.region?.center
+            panStart = map.viewport
         }
         // 도면이 화면을 덮으면 지도를 끌 자리가 없다. ⌥ 끌기, Anchor 찍기 모드, 잠긴 층에서는 도면 위에서도 지도를 끈다.
         if dragKind == .pan {
-            if let start = panStartCenter { map.pan(from: start, by: value.translation) }
+            if let start = panStart { map.pan(from: start, by: value.translation) }
             return
         }
         guard mode == .align, let saved = env.mapAlignment(of: level.id), !saved.isLocked else { return }
@@ -296,7 +341,7 @@ struct MapAlignScreen: View {
     }
 
     private func dragEnded(_ value: DragGesture.Value, level: ProjectLevel, t: CGAffineTransform) {
-        defer { dragKind = nil; dragStart = nil; panStartCenter = nil }
+        defer { dragKind = nil; dragStart = nil; panStart = nil }
         let moved = abs(value.translation.width) + abs(value.translation.height)
         if dragKind == .pan, moved >= 4 { return }
         // 지도를 끈 것이면 Anchor를 찍거나 도면을 옮기지 않는다. 끌지 않고 누른 것은 아래 클릭으로 처리한다.

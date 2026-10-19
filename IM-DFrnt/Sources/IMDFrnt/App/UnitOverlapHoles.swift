@@ -9,6 +9,9 @@ struct UnitOverlapCache {
     var expanded: Set<FeatureGroupID>
     var units: [[[LocalPoint]]]
     var overlapping: Set<FeatureGroupID>
+    /// 빠른 확인용. 만들 때의 `geometryRevision`과 걸러 내기 전 펼친 카드 전부다.
+    var revision = -1
+    var requested: Set<FeatureGroupID> = []
 }
 
 @MainActor
@@ -17,18 +20,26 @@ extension AppEnvironment {
     /// 펼친 unit과 넓이 있게 겹치는 다른 unit. unit 레이어를 보고 있을 때만 채운다.
     var unitsOverlappingExpanded: Set<FeatureGroupID> {
         guard layers.activePropertyType == .unit else { return [] }
+        guard !expandedFeatures.isEmpty else { return [] }
+        if let c = unitOverlapCache, c.revision == geometryRevision, c.requested == expandedFeatures { return c.overlapping }
+        // 이름표를 그릴 때마다 불린다. 펼친 것도 도형도 그대로면 unit 목록을 다시 훑지 않는다.
         let all = features.features(ofType: .unit).filter { !$0.isInTrash && !$0.polygonRings.isEmpty }
         let expanded = expandedFeatures.filter { id in all.contains { $0.id == id } }
         guard !expanded.isEmpty else { return [] }
         let units = all.map(\.polygonRings)
-        if let c = unitOverlapCache, c.expanded == expanded, c.units == units { return c.overlapping }
+        if var c = unitOverlapCache, c.expanded == expanded, c.units == units {
+            c.revision = geometryRevision; c.requested = expandedFeatures
+            unitOverlapCache = c
+            return c.overlapping
+        }
         var out = Set<FeatureGroupID>()
         for base in all where expanded.contains(base.id) {
             for other in all where other.id != base.id && !expanded.contains(other.id) {
                 if Self.overlapArea(base.polygonRings, other.polygonRings) >= UnitCoverage.minimumArea { out.insert(other.id) }
             }
         }
-        unitOverlapCache = UnitOverlapCache(expanded: expanded, units: units, overlapping: out)
+        unitOverlapCache = UnitOverlapCache(expanded: expanded, units: units, overlapping: out,
+                                            revision: geometryRevision, requested: expandedFeatures)
         return out
     }
 
