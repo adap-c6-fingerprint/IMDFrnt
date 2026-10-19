@@ -1581,6 +1581,8 @@ final class AppEnvironment: ObservableObject {
     @Published var pointCoveredObjectIDs: Set<VectorObjectID> = []
     /// 지금 화면의 면·점이 어떤 열쇠로 계산된 것인가. `nil`이면 아직 계산 전이다.
     var derivedKey: DerivedGeometryKey?
+    /// 마지막으로 반영한 면·점. 다음 계산이 점을 재사용할 수 있는지 판단하는 데 쓴다.
+    var lastDerivedGeometry: DerivedGeometry = .empty
     var derivedTask: Task<Void, Never>?
     var derivedToken = UUID()
     /// 점·면 계산의 진행률 팝업 id.

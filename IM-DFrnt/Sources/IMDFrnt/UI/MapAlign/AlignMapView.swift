@@ -17,6 +17,7 @@ struct AlignMapView: NSViewRepresentable {
     let mapKind: NaverMapKind
     let layers: [AlignOverlay]
     let clientID: String
+    let interaction: MapInteraction
 
     func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
 
@@ -46,6 +47,7 @@ struct AlignMapView: NSViewRepresentable {
         }
         c.setMapKind(mapKind)
         c.sync(layers)
+        c.setInteraction(interaction)
     }
 
     @MainActor
@@ -54,6 +56,8 @@ struct AlignMapView: NSViewRepresentable {
         private(set) var loadedClientID: String?
         private var mapKind: NaverMapKind?
         private var wanted: [AlignOverlay] = []
+        private var wantedInteraction = MapInteraction.none
+        private var sentInteraction: MapInteraction?
         private var shown: [String: AlignOverlay] = [:]
         private var shownOrder: [String] = []
         /// 층마다 JS에 넘긴 도면 경로·꼭짓점 목록의 키. 같으면 다시 넘기지 않는다 — 도면 경로는 수 MB라 정렬을 바꿀 때마다
@@ -80,6 +84,15 @@ struct AlignMapView: NSViewRepresentable {
         private func resetSent() {
             shown = [:]; shownOrder = []
             sentPathKeys = [:]; sentSnapKeys = [:]
+            sentInteraction = nil
+        }
+
+        /// 지도 페이지가 어느 겹의 손 동작을 가로챌지 알린다. 바뀔 때만 보낸다.
+        func setInteraction(_ i: MapInteraction) {
+            wantedInteraction = i
+            guard controller.status == .ready, sentInteraction != i else { return }
+            sentInteraction = i
+            controller.run("IMDF.setInteraction(\(Self.json(i.payload)))")
         }
 
         func setMapKind(_ kind: NaverMapKind) {
@@ -191,6 +204,9 @@ struct AlignMapView: NSViewRepresentable {
                 resetSent()
                 controller.mapReady()
                 sync(wanted)
+                setInteraction(wantedInteraction)
+            case "pointer":
+                if let e = MapPointerEvent(message: body) { controller.pointerHandler?(e) }
             case "bounds":
                 if let v = NaverMapViewport(message: body) { controller.viewportChanged(v) }
             case "authFailure":
@@ -315,6 +331,8 @@ final class MapAlignMapController: ObservableObject {
     @Published private(set) var viewport: NaverMapViewport?
     /// 지도가 움직이면 올라간다. 손 동작 영역(보이지 않는 층)만 이 값을 따라 다시 계산한다.
     @Published private(set) var tick = 0
+    /// 지도 페이지가 가로챈 도면 위 손 동작을 받는 곳. 지도 정렬 화면이 단다.
+    var pointerHandler: ((MapPointerEvent) -> Void)?
     /// 지도가 준비되기 전에 요청한 화면 범위. 준비되면 옮긴다.
     private var pendingRegion: MKCoordinateRegion?
 
@@ -365,22 +383,13 @@ final class MapAlignMapController: ObservableObject {
         run("IMDF.fitBounds(\(s),\(w),\(n),\(e))")
     }
 
-    /// 끌기 시작할 때의 화면 범위에서 화면 이동량만큼 지도를 옮긴다. 확대 배율은 그대로다.
-    /// 시작 범위로 계산한다 — 지도가 알려 주는 새 범위는 한 박자 늦게 오므로 그것으로 계산하면 끌수록 어긋난다.
-    func pan(from start: NaverMapViewport, by translation: CGSize) {
-        let c = start.coordinate(CGPoint(x: start.size.width / 2 - translation.width,
-                                         y: start.size.height / 2 - translation.height))
-        run("IMDF.setCenter(\(c.latitude),\(c.longitude))")
-    }
-
     private var zoomMonitor: Any?
     private var pinchAccumulated: CGFloat = 0
 
-    /// 도면 위의 스크롤을 지도로 넘기고, 핀치는 어디서든 지도 확대로 바꾼다. 도면 위에는 손 동작 겹이 있어 이벤트가
-    /// 지도까지 가지 않았고, 도면이 화면을 덮으면 어디서도 확대·축소가 되지 않았다(2026-10-18).
+    /// 트랙패드 핀치를 지도 확대로 바꾼다. 스크롤은 지도 페이지가 직접 받는다(도면 위 SVG는 입력을 통과시킨다).
     func startForwardingZoom() {
         guard zoomMonitor == nil else { return }
-        zoomMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { [weak self] event in
+        zoomMonitor = NSEvent.addLocalMonitorForEvents(matching: [.magnify]) { [weak self] event in
             guard let self else { return event }
             return self.forwardToMap(event) ? nil : event
         }
@@ -389,15 +398,8 @@ final class MapAlignMapController: ObservableObject {
     private func forwardToMap(_ event: NSEvent) -> Bool {
         guard let web = webView, let window = web.window, event.window === window else { return false }
         let local = web.convert(event.locationInWindow, from: nil)
-        guard web.bounds.contains(local) else { return false }
-        if event.type == .magnify {
-            pinch(event, at: web.isFlipped ? local : CGPoint(x: local.x, y: web.bounds.height - local.y))
-            return true
-        }
-        if let hit = window.contentView?.hitTest(event.locationInWindow),
-           hit === web || hit.isDescendant(of: web) { return false }
-        // 지도가 직접 받는 자리다. 넘기면 두 번 확대된다.
-        web.scrollWheel(with: event)
+        guard web.bounds.contains(local), event.type == .magnify else { return false }
+        pinch(event, at: web.isFlipped ? local : CGPoint(x: local.x, y: web.bounds.height - local.y))
         return true
     }
 
@@ -454,7 +456,46 @@ struct AlignOverlay {
     let snaps: SnapPointGrid?
     var opacity: Double
 
-    var id: String { "\(signature.levelID.uuidString)-\(signature.kind.rawValue)" }
+    var id: String { Self.layerID(levelID: signature.levelID, kind: signature.kind) }
+
+    static func layerID(levelID: UUID, kind: Kind) -> String { "\(levelID.uuidString)-\(kind.rawValue)" }
+}
+
+/// 지도 페이지가 손 동작을 가로챌 대상. `layerID`는 편집 중인 층의 테두리 겹이고, 그 테두리 안·모서리·회전 손잡이를
+/// 누른 것만 가로챈다. `editable`이 거짓이면(잠긴 층·Anchor 찍기 모드) 끌기는 가로채지 않고 지도가 움직인다.
+struct MapInteraction: Equatable {
+    var layerID: String?
+    var mode: String
+    var editable: Bool
+
+    static let none = MapInteraction(layerID: nil, mode: "align", editable: false)
+
+    var payload: [String: Any] {
+        ["id": layerID.map { $0 as Any } ?? NSNull(), "mode": mode, "editable": editable]
+    }
+}
+
+/// 지도 페이지가 가로챈 손 동작. 좌표는 지도 뷰 왼쪽 위 원점(SwiftUI 좌표와 같다).
+struct MapPointerEvent: Equatable {
+    enum Phase: String { case began, changed, ended }
+    enum Kind: String { case move, scale, rotate, click }
+
+    let phase: Phase
+    let kind: Kind
+    let start: CGPoint
+    let location: CGPoint
+
+    init(phase: Phase, kind: Kind, start: CGPoint, location: CGPoint) {
+        self.phase = phase; self.kind = kind; self.start = start; self.location = location
+    }
+
+    init?(message body: [String: Any]) {
+        guard let phase = (body["phase"] as? String).flatMap(Phase.init(rawValue:)),
+              let kind = (body["kind"] as? String).flatMap(Kind.init(rawValue:)),
+              let x0 = body["x0"] as? Double, let y0 = body["y0"] as? Double,
+              let x = body["x"] as? Double, let y = body["y"] as? Double else { return nil }
+        self.init(phase: phase, kind: kind, start: CGPoint(x: x0, y: y0), location: CGPoint(x: x, y: y))
+    }
 }
 
 /// 손잡이 자리. 그리기(JS)와 손 동작(SwiftUI)이 같은 계산을 쓴다 — JS 쪽 `rotateHandle`도 이 식이다.

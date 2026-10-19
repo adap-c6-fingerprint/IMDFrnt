@@ -104,6 +104,20 @@ enum CanvasLagSelfTest {
                   fast == slow && fastAll == slowAll && fast.contains(o.id), "문 자리 안 \(fast.count)개")
         }
 
+        // 6. 글자칸: 입력 중에는 저장하지 않고, 확정할 글자만 한 번 넘긴다. 저장되면 입력 중 상태가 끝난다.
+        var draft = TextDraft()
+        let idle = draft.shown("Office") == "Office" && draft.pending(against: "Office") == nil
+        for prefix in ["L", "Lo", "Lob", "Lobb", "Lobby"] { draft.edit(prefix) }
+        let typing = draft.shown("Office") == "Lobby" && draft.pending(against: "Office") == "Lobby"
+        draft.savedChanged("Office")
+        let kept = draft.text == "Lobby"
+        // 다른 값으로 바뀐 것은 입력 중인 글자를 덮지 않는다.
+        draft.savedChanged("Lobby")
+        draft.edit("Office")
+        let same = draft.pending(against: "Office") == nil
+        check("이름표 편집 렉: 글자칸은 입력 중에는 저장하지 않고 확정할 글자만 한 번 저장하며, 저장되면 입력 중 상태가 끝난다",
+              idle && typing && kept && same && { var d = TextDraft(); d.edit("x"); d.savedChanged("x"); return d.text == nil }(), "")
+
         env.features = savedFeatures
         env.ownership = savedOwnership
         env.expandedFeature = savedExpanded

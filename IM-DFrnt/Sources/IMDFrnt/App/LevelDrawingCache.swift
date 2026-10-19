@@ -59,7 +59,7 @@ struct PreparedLevelDrawing: Sendable {
         let start = ContinuousClock.now
         try Task.checkCancellation()
         if let base, base.input.sharesParse(with: input) {
-            let derived = try DerivedGeometry.make(document: base.document, key: input.derivedKey)
+            let derived = try DerivedGeometry.make(document: base.document, key: input.derivedKey, reusing: base.derived)
             let duration = start.duration(to: .now).components
             return Self(input: input, document: base.document, renderEntries: base.renderEntries,
                         attributeIndex: base.attributeIndex, spatialIndex: base.spatialIndex,

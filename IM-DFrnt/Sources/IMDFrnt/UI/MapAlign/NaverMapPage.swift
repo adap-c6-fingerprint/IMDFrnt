@@ -118,6 +118,81 @@ enum NaverMapPage {
       if (IMDF.map) IMDF.map.setMapTypeId(naver.maps.MapTypeId[t]);
     };
 
+    // 손 동작. 편집 중인 층의 테두리 안·모서리·회전 손잡이를 누른 것만 가로채 앱에 알리고, 나머지는 지도가 그대로 받는다.
+    // 앱 쪽에 지도를 덮는 겹을 두면 도면이 화면을 덮을 때 지도가 아무 입력도 못 받았다(2026-10-19).
+    IMDF.interaction = { id: null, mode: 'align', editable: false };
+    IMDF.drag = null;
+    IMDF.setInteraction = function (it) { IMDF.interaction = it; };
+    IMDF.hitKind = function (cx, cy) {
+      const it = IMDF.interaction, l = it.id && IMDF.layers[it.id];
+      if (!l) return null;
+      const t = l.transform(); if (!t) return null;
+      const r = l.svg.getBoundingClientRect(), x = cx - r.left, y = cy - r.top, s = l.spec;
+      // 겹 SVG는 지도 판의 원점(0,0)에 붙어 있다. 그 화면 위치를 빼면 판 좌표가 된다.
+      const ap = function (px, py) { return [t.a * px + t.c * py + t.e, t.b * px + t.d * py + t.f]; };
+      const c = [ap(0, 0), ap(s.w, 0), ap(s.w, s.h), ap(0, s.h)];
+      if (it.mode === 'align' && it.editable) {
+        const top = [(c[0][0] + c[1][0]) / 2, (c[0][1] + c[1][1]) / 2];
+        const mid = [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2];
+        const dx = top[0] - mid[0], dy = top[1] - mid[1], len = Math.max(1e-12, Math.hypot(dx, dy));
+        const knob = [top[0] + dx / len * 28, top[1] + dy / len * 28];
+        if (Math.hypot(x - knob[0], y - knob[1]) <= 14) return 'rotate';
+        for (const p of c) if (Math.hypot(x - p[0], y - p[1]) <= 12) return 'scale';
+        // Swift `AlignHandles.rotate`와 같은 자리·반경이다.
+      }
+      let inside = false;
+      for (let i = 0, j = 3; i < 4; j = i++) {
+        const xi = c[i][0], yi = c[i][1], xj = c[j][0], yj = c[j][1];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside ? 'move' : null;
+    };
+    IMDF.sendPointer = function (phase, d, e) {
+      post({ type: 'pointer', phase: phase, kind: d.kind, x0: d.x0, y0: d.y0, x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0 || !IMDF.map) return;
+      const it = IMDF.interaction, hit = IMDF.hitKind(e.clientX, e.clientY);
+      if (!hit) return;
+      if (it.mode === 'anchor') {
+        IMDF.drag = { kind: 'click', x0: e.clientX, y0: e.clientY, passive: true, moved: false };
+        return;
+        // Anchor 찍기: 끌면 지도가 움직이고, 끌지 않고 놓으면 그 자리를 앱에 알린다.
+      }
+      if (!it.editable || e.altKey) return;
+      // 잠긴 층·⌥ 끌기는 지도를 옮긴다.
+      e.stopPropagation(); e.preventDefault();
+      IMDF.drag = { kind: hit, x0: e.clientX, y0: e.clientY, passive: false, last: null, pending: false };
+      IMDF.sendPointer('began', IMDF.drag, e);
+    }, true);
+    window.addEventListener('mousedown', function (e) {
+      if (IMDF.drag && !IMDF.drag.passive) { e.stopPropagation(); e.preventDefault(); }
+      // 가로챈 누름은 지도의 끌기 시작(mousedown)까지 막는다.
+    }, true);
+    window.addEventListener('pointermove', function (e) {
+      const d = IMDF.drag; if (!d) return;
+      if (d.passive) { if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) >= 4) d.moved = true; return; }
+      e.stopPropagation(); e.preventDefault();
+      d.last = { clientX: e.clientX, clientY: e.clientY };
+      if (d.pending) return;
+      d.pending = true;
+      requestAnimationFrame(function () {
+        d.pending = false;
+        if (IMDF.drag === d && d.last) IMDF.sendPointer('changed', d, d.last);
+      });
+      // 앱에는 프레임마다 한 번만 보낸다. 움직임마다 보내면 앱이 정렬을 다시 계산하느라 밀린다.
+    }, true);
+    window.addEventListener('pointerup', function (e) {
+      const d = IMDF.drag; if (!d) return;
+      IMDF.drag = null;
+      if (d.passive) {
+        if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 4) IMDF.sendPointer('ended', d, e);
+        return;
+      }
+      e.stopPropagation(); e.preventDefault();
+      IMDF.sendPointer('ended', d, e);
+    }, true);
+
     function el(name, attrs) {
       const e = document.createElementNS(NS, name);
       for (const k in attrs) e.setAttribute(k, attrs[k]);

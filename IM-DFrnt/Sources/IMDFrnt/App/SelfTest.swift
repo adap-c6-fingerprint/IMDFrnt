@@ -3708,6 +3708,14 @@ enum SelfTest {
                   && !page.contains("__CLIENT_ID__") && !page.contains("__MAP_TYPE__"))
         check("#31 네이버 지도: 페이지 기준 주소가 https다(http면 ATS가 타일을 막아 지도가 검게 빈다)",
               NaverMapPage.baseURL.scheme == "https")
+        let pointer = MapPointerEvent(message: ["phase": "changed", "kind": "rotate", "x0": 10.0, "y0": 20.0, "x": 30.0, "y": 40.0])
+        check("#31 네이버 지도: 지도 페이지가 보낸 손 동작을 읽는다",
+              pointer == MapPointerEvent(phase: .changed, kind: .rotate, start: CGPoint(x: 10, y: 20), location: CGPoint(x: 30, y: 40))
+                  && MapPointerEvent(message: ["phase": "drag", "kind": "move", "x0": 0.0, "y0": 0.0, "x": 0.0, "y": 0.0]) == nil)
+        check("#31 네이버 지도: 손 동작은 지도 페이지가 테두리 겹 기준으로 가로챈다(지도를 덮는 앱 겹 없음)",
+              page.contains("IMDF.setInteraction") && page.contains("IMDF.hitKind")
+                  && AlignOverlay.layerID(levelID: UUID(), kind: .decoration).hasSuffix("-decoration")
+                  && (MapInteraction.none.payload["id"] is NSNull))
 
         let ma = AppEnvironment()
         ma.openSample()

@@ -518,10 +518,11 @@ struct PropertySlotRow: View {
         }
     }
 
+    /// 글자칸. 입력 중에는 칸만 바뀌고, 잠깐 멈추거나 확정할 때 저장한다(`DraftTextField`).
     private func textField(_ placeholder: String,
                            get: @escaping @MainActor @Sendable () -> String,
                            set: @escaping @MainActor @Sendable (String) -> Void) -> some View {
-        TextField(placeholder, text: Binding(get: get, set: set))
+        DraftTextField(placeholder: placeholder, saved: get(), commit: set)
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)
             .font(.caption)
