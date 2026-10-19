@@ -116,6 +116,8 @@ extension AppEnvironment {
     /// 우측 패널: 이 fixture와 똑같이 생긴 자리마다 같은 태깅(속성)의 fixture를 둔다.
     func applyTaggingToFixtureTwins(_ id: FeatureGroupID) {
         guard let f = features.feature(id) else { return }
+        if f.polygonRings.isEmpty, !f.memberIDs.isEmpty { return applyTaggingToFixtureMemberTwins(id) }
+        // 선 단위로 저장한 fixture는 도형 대신 도면 개체를 가진다. 자리도 개체로 찾는다.
         let placements = fixtureTwinPlacements(of: f)
         guard !placements.isEmpty else {
             notify("\(f.serialNumber)과 똑같이 생긴 개체가 없습니다.", isError: true)
@@ -129,5 +131,117 @@ extension AppEnvironment {
         let same = placements.count - result.added - result.updated
         notify("똑같이 생긴 \(placements.count)곳: 새로 \(result.added)개 저장, 속성 맞춤 \(result.updated)개"
                + (same > 0 ? ", 이미 같음 \(same)개" : "") + ".")
+    }
+}
+
+/// 선 단위로 고른 개체 묶음과 똑같이 생긴 자리 하나(2026-10-19 요청).
+///
+/// 점 단위는 그린 도형을 평행이동해 저장하지만, 선 단위는 **그 자리의 도면 개체를 구성원으로** 저장한다.
+/// 그래서 자리마다 fixture의 윤곽선이 그 자리 도면을 그대로 따른다.
+struct FixtureMemberTwin: Equatable {
+    let dx: Double
+    let dy: Double
+    let memberIDs: Set<VectorObjectID>
+}
+
+@MainActor
+extension AppEnvironment {
+
+    /// 고른 개체 묶음 전체가 위치만 바꿔 되풀이되는 자리. 묶음의 개체 **하나하나가** 같은 만큼 옮긴 자리에
+    /// 쌍둥이를 가져야 한 자리로 친다. 보조 개체로 뺀 개체와 고른 개체 자신은 자리에 넣지 않는다.
+    /// 다른 feature가 가진 개체도 자리에는 넣는다 — 새로 저장할지, 속성만 맞출지는 부르는 쪽이 정한다.
+    func fixtureMemberTwins(of ids: Set<VectorObjectID>) -> [FixtureMemberTwin] {
+        guard let doc = document, !ids.isEmpty else { return [] }
+        func cell(_ x: Double, _ y: Double) -> SIMD2<Int> { SIMD2(Int((x * 100).rounded()), Int((y * 100).rounded())) }
+        // `twinKey`와 같은 0.01 단위 격자다.
+
+        var origin: [VectorObjectID: CGPoint] = [:]
+        var byCell: [VectorObjectID: [SIMD2<Int>: VectorObjectID]] = [:]
+        for id in ids {
+            guard let box = doc.object(id)?.boundingBox else { return [] }
+            origin[id] = box.origin
+            var cells: [SIMD2<Int>: VectorObjectID] = [:]
+            for t in twins(of: [id]) where !ids.contains(t) && !auxiliary.isExcluded(t) {
+                guard let b = doc.object(t)?.boundingBox else { continue }
+                cells[cell(b.minX, b.minY)] = t
+            }
+            byCell[id] = cells
+        }
+        guard let anchor = ids.min(by: { (byCell[$0]?.count ?? 0) < (byCell[$1]?.count ?? 0) }),
+              let anchorOrigin = origin[anchor], let anchorCells = byCell[anchor], !anchorCells.isEmpty else { return [] }
+        // 쌍둥이가 가장 적은 개체를 기준으로 삼는다. 후보 자리가 가장 적어 확인이 빠르다.
+
+        func find(_ id: VectorObjectID, dx: Double, dy: Double) -> VectorObjectID? {
+            guard let o = origin[id], let cells = byCell[id] else { return nil }
+            let c = cell(Double(o.x) + dx, Double(o.y) + dy)
+            for ix in -1...1 { for iy in -1...1 { if let t = cells[c &+ SIMD2(ix, iy)] { return t } } }
+            return nil
+            // 반올림 경계에 걸린 부동소수 오차를 위해 이웃 칸까지 본다.
+        }
+
+        var used = Set<VectorObjectID>()
+        var out: [FixtureMemberTwin] = []
+        for t in anchorCells.values {
+            guard let b = doc.object(t)?.boundingBox else { continue }
+            let dx = Double(b.minX - anchorOrigin.x), dy = Double(b.minY - anchorOrigin.y)
+            var members = Set<VectorObjectID>()
+            for id in ids {
+                guard let m = find(id, dx: dx, dy: dy), !used.contains(m) else { members = []; break }
+                members.insert(m)
+            }
+            guard members.count == ids.count else { continue }
+            used.formUnion(members)
+            out.append(FixtureMemberTwin(dx: dx, dy: dy, memberIDs: members))
+        }
+        return out.sorted { ($0.dy, $0.dx) < ($1.dy, $1.dx) }
+    }
+
+    /// 아직 아무 feature도 갖지 않은 자리만. 선 단위 저장 때 함께 저장할 자리다.
+    func freeFixtureMemberTwins(of ids: Set<VectorObjectID>) -> [FixtureMemberTwin] {
+        fixtureMemberTwins(of: ids).filter { $0.memberIDs.allSatisfy { ownership.ownerOf($0) == nil } }
+    }
+
+    /// 자리마다 구성원 fixture를 만든다. `perform` 안에서 부른다. 소유가 겹치면 그 자리는 건너뛴다.
+    @discardableResult
+    func insertFixtureMemberTwins(_ twins: [FixtureMemberTwin], properties: [String: PropertyValue]) -> Int {
+        var added = 0
+        for t in twins {
+            var f = FeatureGroup(featureType: .fixture, serialNumber: serials.next(for: .fixture), memberIDs: t.memberIDs)
+            f.properties = properties
+            guard (try? ownership.claim(t.memberIDs, for: f.id)) != nil else { continue }
+            features.insert(f)
+            added += 1
+        }
+        return added
+    }
+
+    /// 우측 패널: 선 단위로 저장한 fixture와 똑같이 생긴 자리마다 같은 태깅을 둔다.
+    /// 빈 자리는 새로 저장하고, 이미 fixture 하나가 그 자리 개체를 그대로 가진 곳은 속성만 맞춘다.
+    func applyTaggingToFixtureMemberTwins(_ id: FeatureGroupID) {
+        guard let f = features.feature(id) else { return }
+        let twins = fixtureMemberTwins(of: f.memberIDs)
+        guard !twins.isEmpty else {
+            notify("\(f.serialNumber)과 똑같이 생긴 개체가 없습니다.", isError: true)
+            return
+        }
+        var added = 0, updated = 0, skipped = 0
+        perform("\(f.serialNumber) 같은 태깅 \(twins.count)곳") {
+            var free: [FixtureMemberTwin] = []
+            for t in twins {
+                let owners = Set(t.memberIDs.compactMap { ownership.ownerOf($0) })
+                if owners.isEmpty { free.append(t); continue }
+                guard owners.count == 1, let oid = owners.first, let old = features.feature(oid),
+                      old.featureType == .fixture, old.memberIDs == t.memberIDs else { skipped += 1; continue }
+                // 다른 type이 가졌거나, 여러 feature에 나뉘었거나, 더 많은 개체를 가진 feature는 건드리지 않는다.
+                if old.properties != f.properties {
+                    features.update(oid) { $0.properties = f.properties }
+                    updated += 1
+                }
+            }
+            added = insertFixtureMemberTwins(free, properties: f.properties)
+        }
+        let same = twins.count - added - updated - skipped
+        notify("똑같이 생긴 \(twins.count)곳: 새로 \(added)개 저장, 속성 맞춤 \(updated)개"
+               + (same > 0 ? ", 이미 같음 \(same)개" : "") + (skipped > 0 ? ", 다른 feature가 가져 건너뜀 \(skipped)개" : "") + ".")
     }
 }

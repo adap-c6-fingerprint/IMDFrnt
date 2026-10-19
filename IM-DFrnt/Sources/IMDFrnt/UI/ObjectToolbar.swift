@@ -9,9 +9,7 @@ struct ObjectToolbar: View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
                 LayerEditModePicker()
-                Text(env.selection.isEmpty
-                     ? "도면 개체를 클릭하거나 드래그해 고르세요. 고른 개체가 fixture 하나가 됩니다."
-                     : "\(env.selection.selected.count)개 골랐습니다. 'Feature로 저장'을 누르면 fixture 하나로 저장합니다.")
+                Text(guide)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -22,5 +20,13 @@ struct ObjectToolbar: View {
                 SelectionToolbar()
             }
         }
+    }
+
+    private var guide: String {
+        if env.selection.isEmpty { return "도면 개체를 클릭하거나 드래그해 고르세요. 고른 개체가 fixture 하나가 됩니다." }
+        let twins = env.freeFixtureMemberTwins(of: env.selection.selected).count
+        return "\(env.selection.selected.count)개 골랐습니다. 'Feature로 저장'을 누르면 fixture 하나로 저장합니다."
+            + (twins > 0 ? " 똑같이 생긴 \(twins)곳도 그 자리 윤곽선대로 함께 저장합니다." : "")
+        // 저장 전에 몇 곳이 함께 저장될지 보여 준다. 짧은 선 하나를 고르면 수백 곳이 될 수 있다.
     }
 }

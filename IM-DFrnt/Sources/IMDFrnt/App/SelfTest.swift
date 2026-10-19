@@ -2026,6 +2026,40 @@ enum SelfTest {
               abs(AuxiliaryOpacity.dimmed - 0.75) < 1e-9,
               "\(AuxiliaryOpacity.dimmed)")
 
+        // 같은 자리에 겹친 개체 — 클릭으로 지정한 것이 작업 화면에서 안 지워지던 건(2026-10-19).
+        // 클릭은 맨 위 하나만 잡아, 밑에 겹친 같은 선이 남았다. 드래그는 겹친 것을 다 담아 결과가 갈렸다.
+        // 실도면처럼 면(fill만)과 테두리(stroke만)가 같은 모양의 별개 path로 겹친 경우도 넣는다.
+        let fillOnly = VectorStyle(stroke: nil, fill: RGBAColor(r: 0.73, g: 0.73, b: 0.73, a: 1),
+                                   strokeWidth: 1, dashPattern: [])
+        func stackRect(_ x: Double, _ i: Int, style: VectorStyle) -> VectorObject {
+            VectorObject(id: UUID(),
+                         geometry: PathGeometry(subpaths: [Subpath(
+                             start: LocalPoint(x, 0),
+                             segments: [.line(to: LocalPoint(x + 8, 0)),
+                                        .line(to: LocalPoint(x + 8, 8)),
+                                        .line(to: LocalPoint(x, 8))],
+                             isClosed: true)]),
+                         style: style, sourceElement: "path", ordinal: i)
+        }
+        let stacked = [stackRect(0, 0, style: doors[0].style), stackRect(0, 1, style: doors[0].style),
+                       stackRect(0, 2, style: fillOnly), stackRect(40, 3, style: doors[0].style)]
+        let stackEnv = AppEnvironment()
+        stackEnv.document = DrawingDocument(objects: stacked, canvasSize: CGSize(width: 100, height: 20),
+                                            sourceName: "겹침시험")
+        stackEnv.showAuxiliaryScreen = true
+        stackEnv.handleAuxiliaryClick(stacked[2].id)
+        check("보조 클릭: 같은 자리에 겹친 똑같은 개체를 함께 고른다",
+              stackEnv.auxiliarySelection == Set(stacked[0...2].map(\.id)),
+              "\(stackEnv.auxiliarySelection.count)개 선택 (기대 3, 다른 자리 쌍둥이는 제외)")
+        stackEnv.markSelectedAsAuxiliary()
+        check("보조 클릭: 지정하면 겹친 것이 모두 제외된다",
+              stackEnv.excludedCount == 3 && !stackEnv.auxiliary.isExcluded(stacked[3].id),
+              "제외 \(stackEnv.excludedCount)개")
+        stackEnv.handleAuxiliaryClick(stacked[0].id)
+        stackEnv.handleAuxiliaryClick(stacked[0].id)
+        check("보조 클릭: 다시 클릭하면 겹친 것이 함께 풀린다",
+              stackEnv.auxiliarySelection.isEmpty, "\(stackEnv.auxiliarySelection.count)개 남음")
+
         // 큰 도면으로 한 프레임을 흉내 내 시간을 잰다.
         // 고치기 전이라면 이 블록 하나가 수십 초 걸린다 — 상한을 넉넉히 둬도 확실히 걸린다.
         var heavy: [VectorObject] = []
@@ -3244,11 +3278,17 @@ enum SelfTest {
         if let unit = pe.features.features(ofType: .unit).first(where: { $0.polygonRings == [mpRoom] }) {
             check("MultiPolygon: 저장한 unit 다각형을 지정할 수 있다", pe.canDesignateMultiPolygon(unit) && !unit.isMultiPolygon)
             pe.designateMultiPolygon(unit.id)
+            let beforeDesignatedDraw = pe.features.features(ofType: .unit).count
+            drawSquare(mpSquare(-300, 0, -200, 100))
+            check("MultiPolygon: 지정만 하고 '다각형 추가'를 안 누르면 새 다각형은 새 feature가 된다",
+                  pe.multiPolygonTargetID == nil && pe.features.feature(unit.id)!.polygonRings.count == 1
+                      && pe.features.features(ofType: .unit).count == beforeDesignatedDraw + 1)
+            pe.startMultiPolygonAdding(unit.id)
             drawSquare(mpSquare(-50, -50, 150, 150))
             var u = pe.features.feature(unit.id)!
             check("MultiPolygon: 기존 다각형을 감싸면 기존 다각형이 구멍이 된다",
                   u.isMultiPolygon && u.polygonRings.count == 2 && pe.multiPolygonSummary(u) == (1, 1) &&
-                  pe.features.features(ofType: .unit).count == unitsBeforeBroken + 2)
+                  pe.features.features(ofType: .unit).count == unitsBeforeBroken + 3)
             drawSquare(mpSquare(300, 0, 400, 100))
             drawSquare(mpSquare(325, 25, 375, 75))
             u = pe.features.feature(unit.id)!
@@ -3708,6 +3748,63 @@ enum SelfTest {
                   ox.selection.isEmpty && ox.isPointWorkMode && !ox.isSelectModeActive)
         } else {
             check("fixture 선 단위: 예제 도면에 rect 2개", false)
+        }
+
+        // MARK: fixture 선 단위 — 똑같이 생긴 개체 묶음은 그 자리 윤곽선대로 함께 저장 (2026-10-19 요청)
+
+        let chairs = (0..<3).map { i -> String in
+            let x = 20 + i * 40
+            return "<rect x=\"\(x)\" y=\"20\" width=\"16\" height=\"12\" fill=\"none\" stroke=\"#000\"/>"
+                + "<line x1=\"\(x)\" y1=\"36\" x2=\"\(x + 16)\" y2=\"36\" stroke=\"#000\"/>"
+        }.joined()
+        let mt = AppEnvironment()
+        mt.load(data: Data("""
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">\(chairs)\
+            <rect x="20" y="60" width="50" height="20" fill="none" stroke="#000"/></svg>
+            """.utf8), name: "의자시험")
+        // 의자(사각형+선) 3자리와 탁자 하나. 같은 의자 묶음은 위치만 다르다.
+        mt.selectPropertyType(.opening)
+        mt.declareOpeningComplete()
+        mt.selectPropertyType(.fixture)
+        mt.setLayerEditMode(.object)
+        mt.handleMarqueeSelection(rect: CGRect(x: 18, y: 18, width: 20, height: 20), mode: .enclose)
+        let firstChair = mt.selection.selected
+        let chairTwins = mt.freeFixtureMemberTwins(of: firstChair)
+        check("fixture 함께 저장: 고른 묶음과 똑같이 생긴 자리를 묶음째 찾는다",
+              firstChair.count == 2 && chairTwins.count == 2 && chairTwins.allSatisfy { $0.memberIDs.count == 2 }
+                  && chairTwins.map(\.dx) == [40, 80],
+              "선택 \(firstChair.count)개 · 자리 \(chairTwins.map { "\($0.dx),\($0.memberIDs.count)개" })")
+        mt.createFeature()
+        let chairFixtures = mt.features.features(ofType: .fixture)
+        let allMembers = chairFixtures.reduce(into: Set<VectorObjectID>()) { $0.formUnion($1.memberIDs) }
+        check("fixture 함께 저장: 저장하면 자리마다 그 자리 도면 개체를 가진 fixture가 생긴다",
+              chairFixtures.count == 3 && chairFixtures.allSatisfy { $0.memberIDs.count == 2 && $0.polygonRings.isEmpty }
+                  && allMembers.count == 6 && allMembers.isSuperset(of: firstChair),
+              "fixture \(chairFixtures.map { "\($0.serialNumber) 개체 \($0.memberIDs.count)" })")
+        check("fixture 함께 저장: 이미 저장된 자리는 다시 찾지 않는다",
+              mt.freeFixtureMemberTwins(of: firstChair).isEmpty)
+        mt.undo()
+        check("fixture 함께 저장: 실행취소 한 번에 함께 저장한 것까지 모두 돌아간다",
+              mt.features.features(ofType: .fixture).isEmpty && mt.ownership.claimedCount == 0,
+              "남은 fixture \(mt.features.features(ofType: .fixture).count)개")
+        mt.handleMarqueeSelection(rect: CGRect(x: 18, y: 58, width: 54, height: 24), mode: .enclose)
+        check("fixture 함께 저장: 똑같이 생긴 것이 없는 개체는 하나만 저장한다",
+              mt.freeFixtureMemberTwins(of: mt.selection.selected).isEmpty, "선택 \(mt.selection.selected.count)개")
+        mt.selection.clear()
+        mt.handleMarqueeSelection(rect: CGRect(x: 18, y: 18, width: 20, height: 20), mode: .enclose)
+        mt.auxiliary.exclude(Set(chairTwins[1].memberIDs))
+        check("fixture 함께 저장: 보조 개체로 뺀 자리는 넣지 않는다",
+              mt.freeFixtureMemberTwins(of: mt.selection.selected).map(\.dx) == [40])
+        mt.auxiliary.include(Set(chairTwins[1].memberIDs))
+        mt.createFeature()
+        if let saved = mt.features.features(ofType: .fixture).first(where: { $0.memberIDs == firstChair }) {
+            mt.updateProperty("category", value: .string("furniture"), in: saved.id)
+            mt.applyTaggingToFixtureTwins(saved.id)
+            check("fixture 함께 저장: 우측 패널 '같은 태깅으로 저장'이 선 단위 fixture의 자리 속성을 맞춘다",
+                  mt.features.features(ofType: .fixture).count == 3
+                      && mt.features.features(ofType: .fixture).allSatisfy { $0.properties["category"] == .string("furniture") })
+        } else {
+            check("fixture 함께 저장: 다시 저장한 첫 의자를 찾는다", false)
         }
 
         // MARK: 메타데이터 type은 레이어 대신 정보 입력 (2026-10-19 요청)
