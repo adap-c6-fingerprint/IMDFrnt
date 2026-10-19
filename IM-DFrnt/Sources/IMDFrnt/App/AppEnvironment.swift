@@ -386,7 +386,8 @@ final class AppEnvironment: ObservableObject {
     }
 
     var isSelectModeActive: Bool {
-        (selectModifierDown || forceSelectMode) && !mode.blocksSelection
+        (selectModifierDown || forceSelectMode || isObjectWorkMode) && !mode.blocksSelection
+        // 선 단위에서는 키를 누르지 않아도 클릭·드래그가 개체를 고른다.
     }
 
     // MARK: UI 상태
@@ -2048,10 +2049,22 @@ final class AppEnvironment: ObservableObject {
         closedPolygonNotice = nil
     }
 
-    /// 점 단위와 면 단위를 오간다. 면 단위는 polygon·multipolygon type(footprint 제외)에서만 된다.
+    /// 점 단위·면 단위·선 단위를 오간다. 면 단위는 polygon·multipolygon type(footprint 제외), 선 단위는 fixture에서만 된다.
     func setLayerEditMode(_ next: LayerEditMode) {
         guard next != layerEditMode else { return }
-        if next == .face {
+        if layerEditMode == .object { selection.clear() }
+        // 선 단위에서 고른 개체는 다른 모드에서 쓸 곳이 없다. 남겨 두면 보이지 않는 선택이 다음 동작에 섞인다.
+        if next == .object {
+            guard let type = layers.activePropertyType, type.allowsObjectSelection else {
+                notify("선 단위 선택은 fixture 레이어에서만 쓸 수 있습니다.", isError: true)
+                return
+            }
+            cancelPointDraft()
+            layerEditMode = .object
+            faceSelection = []
+            closedPolygonNotice = nil
+            notify("선 단위: 도면 개체를 클릭하거나 드래그해 고른 뒤 'Feature로 저장'을 누르면 \(type.displayName) 하나로 저장합니다.")
+        } else if next == .face {
             guard let type = layers.activePropertyType, type.allowsFaceSelection else {
                 notify("면 단위 선택은 polygon·multipolygon type에서만 쓸 수 있습니다. footprint는 점으로 그립니다.",
                        isError: true)

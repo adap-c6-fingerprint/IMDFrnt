@@ -3535,6 +3535,7 @@ enum SelfTest {
         cutEnv.setLayerEditMode(.point)
         if let u = cutEnv.features.features(ofType: .unit).first {
             cutEnv.updateProperty("category", value: .string("room"), in: u.id)
+            cutEnv.updateProperty("name", value: .localized(en: "Reading Room", ko: "열람실"), in: u.id)
         }
         cutEnv.unitPointTool = .cut
         cutEnv.handlePointClick(at: LocalPoint(40, -20), tolerance: 0.01, freePoint: false)
@@ -3542,9 +3543,10 @@ enum SelfTest {
         cutEnv.closePointDraft()
         let pieces = cutEnv.features.features(ofType: .unit)
         let areas = pieces.map { UnitCoverage.area(UnitCoverage.path($0.polygonRings)) }.sorted()
-        check("자르기: 선이 가로지른 unit이 둘로 나뉘고 조각마다 원래 속성을 가진다",
+        check("자르기: 선이 가로지른 unit이 둘로 나뉘고 조각마다 원래 속성(category·name)을 가진다",
               pieces.count == 2 && abs(areas[0] - 4000) < 1e-9 && abs(areas[1] - 6000) < 1e-9
               && pieces.allSatisfy { $0.value("category") == .string("room") }
+              && pieces.allSatisfy { $0.value("name") == .localized(en: "Reading Room", ko: "열람실") }
               && pieces.allSatisfy { $0.polygonRings.flatMap { $0 }.allSatisfy { p in [0, 40, 100].contains(p.x) && [0, 100].contains(p.y) } },
               "넓이 \(areas)")
         cutEnv.unitPointTool = .cut
@@ -3639,6 +3641,81 @@ enum SelfTest {
         let fixed = sl.alignRings(raw, type: .unit, excluding: nil)
         check("실오라기 방지: 저장 직전에도 링을 이웃에 맞춘다(면 단위 저장 등)",
               fixed.moved == 2 && fixed.rings[0][0] == LocalPoint(100, 30))
+
+        // MARK: fixture 선 단위 — 도면 개체를 골라 fixture 하나로 (2026-10-19 요청)
+
+        let ox = AppEnvironment()
+        ox.openSample()
+        ox.selectPropertyType(.opening)
+        ox.declareOpeningComplete()
+        // opening 완료를 선언해야 다른 type 레이어가 열린다(명세 10-1-1).
+        ox.selectPropertyType(.unit)
+        ox.setLayerEditMode(.object)
+        check("fixture 선 단위: fixture가 아닌 레이어는 선 단위로 바뀌지 않는다",
+              ox.layerEditMode == .point && !LayerEditMode.object.isAvailable(for: .unit))
+        ox.selectPropertyType(.fixture)
+        ox.setLayerEditMode(.object)
+        check("fixture 선 단위: 켜면 점 단위가 아니고 키 없이도 개체를 고른다",
+              ox.isObjectWorkMode && !ox.isPointWorkMode && !ox.isPolygonWorkMode && ox.isSelectModeActive
+                  && !ox.forceSelectMode && !ox.selectModifierDown)
+        let fixtureObjs = (ox.document?.objects ?? []).filter { $0.sourceElement == "rect" }.prefix(2)
+        if fixtureObjs.count == 2, let first = fixtureObjs.first, let second = fixtureObjs.last {
+            ox.handleCanvasClick(at: LocalPoint(first.boundingBox.minX, first.boundingBox.midY), tolerance: 6)
+            ox.handleMarqueeSelection(rect: second.boundingBox.insetBy(dx: -1, dy: -1), mode: .enclose)
+            check("fixture 선 단위: 클릭과 드래그로 개체를 고른다",
+                  ox.selection.selected.isSuperset(of: [first.id, second.id]), "선택 \(ox.selection.selected.count)개")
+            let picked = ox.selection.selected
+            ox.createFeature()
+            let saved = ox.features.features(ofType: .fixture)
+            check("fixture 선 단위: 고른 개체가 fixture 하나의 구성원으로 저장된다",
+                  saved.count == 1 && saved.first?.memberIDs == picked && ox.selection.isEmpty,
+                  saved.first.map { "\($0.serialNumber) · 개체 \($0.memberIDs.count)개" } ?? "없음")
+            if let f = saved.first, let doc = ox.document {
+                var ids = IDAssigner()
+                let fc = GeoJSONExporter(document: doc, segmentation: ox.segmentation, georeferencer: geo)
+                    .buildFeatureCollection(type: .fixture, features: [f], ids: &ids, serialToUUID: [:])
+                let json = (try? JSONSerialization.data(withJSONObject: fc)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                check("fixture 선 단위: 구성원 fixture가 도형으로 내보내진다",
+                      json.contains("\"MultiPolygon\"") || json.contains("\"Polygon\""), "\(json.count)바이트")
+            }
+            ox.handleCanvasClick(at: LocalPoint(first.boundingBox.minX, first.boundingBox.midY), tolerance: 6)
+            ox.setLayerEditMode(.point)
+            check("fixture 선 단위: 점 단위로 돌아가면 선택을 비우고 점 단위가 된다",
+                  ox.selection.isEmpty && ox.isPointWorkMode && !ox.isSelectModeActive)
+        } else {
+            check("fixture 선 단위: 예제 도면에 rect 2개", false)
+        }
+
+        // MARK: unit category 최근 순 (2026-10-19 요청)
+
+        let recentSuite = "com.imdfrnt.selftest.recent.\(UUID().uuidString)"
+        let recentDefaults = UserDefaults(suiteName: recentSuite)!
+        let rc = AppEnvironment(projectDefaults: recentDefaults)
+        let unitOptions = PropertySchema.categoryOptions(for: .unit)
+        check("unit category 최근 순: 기록이 없으면 종전 순서",
+              rc.categoryOptionsOrdered(for: .unit).options == unitOptions)
+        if unitOptions.count >= 3 {
+            let a = unitOptions[unitOptions.count - 1], b = unitOptions[unitOptions.count - 2]
+            rc.recordRecentCategory(a, type: .unit)
+            rc.recordRecentCategory(b, type: .unit)
+            rc.recordRecentCategory(a, type: .unit)
+            let ordered = rc.categoryOptionsOrdered(for: .unit)
+            check("unit category 최근 순: 최근 고른 값이 맨 위에 최근 순으로, 나머지는 종전 순서",
+                  Array(ordered.options.prefix(2)) == [a, b] && ordered.options.count == unitOptions.count
+                      && Array(ordered.options.dropFirst(2)) == unitOptions.filter { $0 != a && $0 != b }
+                      && ordered.recent == [a, b])
+            rc.recordRecentCategory("not-a-category", type: .unit)
+            check("unit category 최근 순: 스펙 목록에 없는 기록은 올리지 않는다",
+                  !rc.categoryOptionsOrdered(for: .unit).options.contains("not-a-category"))
+        }
+        rc.recordRecentCategory(PropertySchema.categoryOptions(for: .fixture).last ?? "", type: .fixture)
+        check("unit category 최근 순: unit이 아닌 레이어는 순서를 바꾸지 않는다",
+              rc.categoryOptionsOrdered(for: .fixture).options == PropertySchema.categoryOptions(for: .fixture)
+                  && rc.categoryOptionsOrdered(for: .fixture).recent.isEmpty)
+        for i in 0..<20 { rc.recordRecentCategory(unitOptions[i % unitOptions.count], type: .unit) }
+        check("unit category 최근 순: 기록은 최근 \(AppEnvironment.recentCategoryLimit)개까지",
+              rc.recentUnitCategories.count <= AppEnvironment.recentCategoryLimit)
+        UserDefaults().removePersistentDomain(forName: recentSuite)
 
         // MARK: #31 — 지도 정렬과 (가)·(나) Anchor (신기능 11항, 2026-10-15)
 

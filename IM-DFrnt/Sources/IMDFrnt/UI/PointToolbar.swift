@@ -132,24 +132,27 @@ struct UnitToolPicker: View {
     }
 }
 
-/// 점 단위 / 면 단위 전환. 면 단위는 polygon·multipolygon type(footprint 제외)에서만 보인다.
+/// 점 단위 / 면 단위 / 선 단위 전환. 면 단위는 polygon·multipolygon type(footprint 제외), 선 단위는 fixture에서만 보인다.
 struct LayerEditModePicker: View {
     @EnvironmentObject var env: AppEnvironment
 
     var body: some View {
-        if env.layers.activePropertyType?.allowsFaceSelection ?? false {
+        let type = env.layers.activePropertyType
+        let modes = LayerEditMode.allCases.filter { $0.isAvailable(for: type) }
+        if modes.count > 1 {
             Picker("", selection: Binding(
                 get: { env.layerEditMode },
                 set: { env.setLayerEditMode($0) }
             )) {
-                ForEach(LayerEditMode.allCases, id: \.self) { mode in
+                ForEach(modes, id: \.self) { mode in
                     Text(mode.title).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .help("점 단위: 꼭짓점·교점을 찍어 도형을 그립니다. 면 단위: 도면에서 이미 닫힌 면을 고릅니다.")
+            .help("점 단위: 꼭짓점·교점을 찍어 도형을 그립니다. 면 단위: 도면에서 이미 닫힌 면을 고릅니다."
+                  + (modes.contains(.object) ? " 선 단위: 도면 개체를 클릭·드래그로 골라 하나의 feature로 저장합니다." : ""))
             ToolbarDivider().frame(height: 16)
         }
     }

@@ -440,3 +440,18 @@
 - 우측 패널과의 일치: 이름표 편집 창과 우측 패널은 같은 `PropertySlotRow`를 쓰므로 둘 다 이 방식이다. 저장은 종전과 같은 `updateProperty`(같은 칸 연속 입력을 실행취소 한 칸으로 합침)라, 한 번 입력이 실행취소 한 칸인 것도 같다. 실행취소 등으로 저장값이 바뀌면 입력 중이 아닌 칸은 바로 따라간다. 이름표 위 name 글씨는 저장될 때(멈추거나 확정할 때) 바뀐다.
 - 수치(Release): 글자 하나마다 앱 전체 다시 그리기 38 ms(78bc418 전 430 ms) → 입력 중 0회, 저장할 때 한 번 38 ms. 실제 창의 글자 입력 체감은 화면 없이 잴 수 없어 확인하지 못했다.
 - 자체점검 1항목 추가(글자칸 입력 중 상태: 입력 중에는 저장하지 않고 확정할 글자만 넘기며 저장되면 끝남). selftest 753·building 27·project 24·routing 117·drawing-loading 54 통과. 실제 화면 확인 필요(name·ko 입력 체감, 0.4초 뒤 이름표 글씨 반영, Return·창 닫기 때 저장, 한글 조합).
+
+## 2026-10-19 — opening 하나 저장할 때 '점·면 계산 중' 팝업
+
+- 실제 화면 피드백: opening 하나를 태깅(저장)할 때마다 "점·면 계산 중" 팝업이 뜨고 오래 걸린다.
+- 원인: 저장된 opening의 선은 면을 닫는 선분이라 저장할 때마다 `DerivedGeometryKey`가 바뀌고, `DerivedGeometry.make`가 점·면을 처음부터 다시 계산했다. 레포 밖 계측 사본으로 구간을 쟀다(Release). 포스텍 도서관 2층(개체 64,006·보조 제외 50,564)에서 2,119 ms 중 **보조 개체까지 포함한 전체 점 추출 1,832 ms**(33만 개, 진행률 분모를 세는 데만 쓰임), 보조 제외 뒤 점 197 ms, 선분 자르기 32 ms, 면 추적(자르기 포함) 102 ms였다. C5 5층은 272 ms 중 점 175 ms. 즉 opening과 무관한 점 다시 세기가 대부분이었다. 선분 자르기 캐시(처음 제안한 B안)는 효과가 30 ms뿐이라 하지 않았다.
+- 고친 것(`App/DerivedGeometry.swift`, `App/AppEnvironment.swift`, `App/LevelDrawingCache.swift`): 결과에 점을 센 입력(`PointSource`: 도면 fingerprint·선분화·보조 제외)을 담고, 마지막 결과(`lastDerivedGeometry`)를 다음 계산에 넘긴다. 도면·선분화·보조 제외가 같으면 점을 그대로 쓰고 면만 다시 찾는다. 보조 제외만 바뀌면 전체 점 수(분모)는 재사용하고 고를 수 있는 점만 새로 센다. 층 캐시의 '파싱 재사용' 경로도 같은 재사용을 쓴다.
+- 수치(Release, drawing-loading 자체점검): opening 하나 추가 후 재계산 포스텍 도서관 2층 2.10 s → 0.11 s, C5 0.44 s → 0.10 s. 보조 개체 하나 제외 후 재계산은 포스텍 도서관 0.33 s(종전 경로는 약 2 s). 팝업은 1초 넘을 때만 뜨므로 opening 저장 때는 뜨지 않을 것으로 본다.
+- 자체점검 2항목 추가(`App/DrawingLoadingSelfTest.swift`: opening 추가 시 재사용 결과 = 처음부터 센 결과(면 id·점 수·분모)이고 더 빠름, 보조 제외만 바뀌어도 결과 같음). drawing-loading 56(샘플)·53(포스텍 도서관)·56(C5), selftest·building 27·project 24·routing 117 통과. document-open 20/23은 변경 전과 같은 3건(번들 Info.plist 검사, `.app` 밖 바이너리라 실패)이다. 실제 화면 확인 필요(opening 저장 체감).
+- 코드 변경은 `df228b7` 커밋에 함께 들어갔다(커밋 메시지에는 없음).
+
+## 2026-10-19 — fixture 선 단위(도면 개체 골라 저장), unit category 최근 순
+
+- 사용자 지시: fixture 레이어에 기존 점 단위·면 단위와 함께 **선 단위**를 옵션으로 둔다. 도면 개체를 클릭·드래그로 골라 fixture 하나로 저장하는 종전 개체 선택 방식이다(`LayerEditMode.object`, `IMDFFeatureType.allowsObjectSelection`은 fixture만). 선 단위에서는 선택 키(fn+shift+z) 없이도 클릭·드래그(왼→오른 감싸기, 오른→왼 걸치기)가 개체를 고르고, 상단바(`UI/ObjectToolbar.swift`)에 모드 전환·안내가 늘 보이며 고르면 종전 선택 상단바('Feature로 저장'·'기존 feature에 추가')가 그 아래 뜬다. 저장은 종전 `createFeature`(구성원 feature, 소유권·보조 제외 판정 그대로). '기존 feature에 추가' 목록에서 점으로 그린 fixture는 뺐다. 다른 모드로 돌아가면 선택을 비운다.
+- 사용자 지시: unit 레이어 category 칸은 최근 고른 값이 맨 위에 최근 순으로 오고(시계 표시), 나머지는 종전 순서다(`App/RecentCategories.swift`). 기록은 이 Mac 설정(`recentUnitCategories`)에 최근 12개, 실행취소 대상이 아니다. 우측 패널과 이름표 편집 창이 같은 칸이라 둘 다 적용된다. 다른 레이어는 그대로다.
+- 자체점검 11항목 추가(fixture 선 단위 6·최근 순 5). selftest 764·building 27·project 24·routing 117·drawing-loading 56 통과. 실제 화면 확인 필요.

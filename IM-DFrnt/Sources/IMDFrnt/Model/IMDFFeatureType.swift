@@ -43,6 +43,9 @@ enum IMDFFeatureType: String, CaseIterable, Identifiable, Codable, Hashable {
     /// 건물 외곽은 도면의 면 하나로 떨어지지 않는 경우가 많아 점으로 직접 그린다(10번 지침).
     var allowsFaceSelection: Bool { requiresClosedRing && self != .footprint }
 
+    /// 선 단위(도면 개체를 골라 feature로 묶기)를 쓸 수 있는가. fixture만이다(2026-10-19 요청).
+    var allowsObjectSelection: Bool { self == .fixture }
+
     var canBorrowOpenings: Bool {
         switch requiredGeometry {
         case .polygon, .multiPolygon: return true

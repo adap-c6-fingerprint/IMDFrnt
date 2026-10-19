@@ -98,6 +98,9 @@ struct CanvasView: View {
                     } else if env.isPointWorkMode {
                         CanvasBarFit { PointToolbar() }
                         // #21: property type 레이어의 기본 작업은 점 단위다.
+                    } else if env.isObjectWorkMode {
+                        CanvasBarFit { ObjectToolbar() }
+                        // fixture 선 단위. 모드 전환이 늘 보여야 하므로 선택이 없어도 뜬다.
                     } else if !env.selection.isEmpty {
                         CanvasBarFit { SelectionToolbar() }
                     }
