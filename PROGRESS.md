@@ -1,5 +1,17 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-20 — #31 브랜치 추가 작업: Feature Type 상태·순서·정렬 (신기능 12항)
+
+- [이슈 #31](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/31)에 추가 작업으로 기록하고 `feat/#31-map-align`에 포함했다.
+- 좌측 'PROPERTY TYPE'을 'FEATURE TYPE'으로 바꾸고, 층에 귀속되지 않는 정보 type(address·building·manifest·occupant)은 층 탭이 있는 상단바(`LevelTabBar`) 오른쪽으로 옮겼다.
+- 상태(`LayerWorkStatus`: Complete·In Review·In Progress·Todo)는 사용자가 아이콘 메뉴로 고른다. 층 type은 `ProjectLevel.workStatus`에 층마다, 정보 type은 `BuildingProject.metadataWorkStatus`에 하나씩 둔다. 층의 완료는 계산값이다 — 좌측 type이 모두 Complete이면 상단바의 그 층에 초록 체크가 붙는다.
+- 상단바의 층과 좌측 type은 끌어서 순서를 바꾼다(`levelDisplayOrder`·`featureTypeOrder`). 층 번호(ordinal)는 바꾸지 않는다. 좌측 목록은 사용자 지정·완료 순·미완료 순·최근 작업 순으로 정렬하며, 정렬 기준은 이 Mac에 저장한다.
+- 최근 작업은 `perform` 전후 feature를 비교해 바뀐 type의 시각을 `ProjectLevel.lastEdited`에 남긴다. 레이어를 열거나 상태만 바꾼 것은 남지 않고, 실행취소하면 시각도 되돌아간다.
+- '레이어' 섹션의 표시·투명도·닫기를 각 feature type 줄 아래로 옮겼다. 기본·속성 필터 레이어는 '기본·필터 레이어' 섹션에 남겼다.
+- 새 필드는 모두 선택 항목이라 이전 프로젝트 파일도 그대로 열린다.
+- 자체점검(Debug): `--selftest` ALL PASS, Building 40/40(신규 13항목), Drawing Loading C5·포스텍 각 56/56, Routing 117/117, Project 24/24. Document open 20/23은 기존 scratch 빌드 한계(`.app` Info.plist 없음)다.
+- 실제 화면의 끌어서 옮기기·상태 메뉴·정렬 메뉴는 확인하지 않았다(CLI 검사만). 수동 확인 대상으로 남긴다.
+
 ## 2026-10-20 — #31 브랜치 추가 작업: amenity 창·겹침 이름표·opening 저장 지연
 
 - [이슈 #31](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/31)에 추가 작업 목록과 완료 조건을 기록하고 `feat/#31-map-align`에 포함했다.

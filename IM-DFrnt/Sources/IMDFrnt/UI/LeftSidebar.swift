@@ -3,6 +3,8 @@ import SwiftUI
 /// 명세 3~4항의 좌측 사이드바.
 struct LeftSidebar: View {
     @EnvironmentObject var env: AppEnvironment
+    @AppStorage("featureTypeSort") private var sortRaw = FeatureTypeSort.custom.rawValue
+    // 정렬 기준은 보는 사람의 취향이라 프로젝트 파일이 아니라 이 Mac에 둔다. 드래그로 정한 순서는 프로젝트에 둔다.
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,9 +25,10 @@ struct LeftSidebar: View {
                     SidebarSection(id: .leftGate, title: "Opening 게이트") { openingGateBar }
                     // property type 목록 **바로 위**에 둔다. 잠긴 이유를 목록 옆에서 즉시 읽어야
                     // "왜 안 눌리지"로 헤매지 않는다(명세 10-1-2).
-                    SidebarSection(id: .leftTypes, title: "PROPERTY TYPE") { typeSection }
-                    SidebarSection(id: .leftLayers, title: "레이어",
-                                   badge: "\(env.layers.layers.count)") { layerSection }
+                    SidebarSection(id: .leftTypes, title: "FEATURE TYPE") { typeSection }
+                    SidebarSection(id: .leftLayers, title: "기본·필터 레이어",
+                                   badge: "\(otherLayers.count)") { layerSection }
+                    // feature type 레이어의 표시·투명도는 각 type 줄에서 바꾼다(신기능 12항). 여기에는 그 밖의 레이어만 남는다.
                     // 접힌 항목에도 **개수·진행률을 배지로 남긴다.** 접는 목적은 자리를 줄이는 것이지
                     // 상태를 감추는 것이 아니다 — 접어 두면 아무것도 모르게 되면 결국 다시 펴게 된다.
                 }
@@ -365,16 +368,32 @@ struct LeftSidebar: View {
         }
     }
 
-    // MARK: property type (명세 3항, 4항)
+    // MARK: feature type (명세 3항, 4항, 신기능 12항)
+
+    private var sort: FeatureTypeSort { FeatureTypeSort(rawValue: sortRaw) ?? .custom }
 
     private var typeSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(IMDFFeatureType.allCases) { type in
+        let shown = env.sortedFeatureTypes(sort)
+        return VStack(alignment: .leading, spacing: 4) {
+            Picker("정렬", selection: $sortRaw) {
+                ForEach(FeatureTypeSort.allCases) { Text($0.title).tag($0.rawValue) }
+            }
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .padding(.bottom, 2)
+            ForEach(shown) { type in
                 typeRow(type)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let raw = items.first, let dragged = IMDFFeatureType(rawValue: raw) else { return false }
+                        env.moveFeatureType(dragged, to: type, shown: shown)
+                        sortRaw = FeatureTypeSort.custom.rawValue
+                        return true
+                        // 다른 기준으로 정렬된 채 끌었으면 보이는 순서에서 옮긴 결과를 사용자 지정 순서로 삼는다.
+                    }
             }
             // 사이드바는 260pt까지 좁아진다. `fixedSize`가 없으면 줄바꿈 대신 뒤가 잘려
             // 문장이 끊긴 채로 보인다(뷰 디버깅 16번).
-            Text("type 이름은 표시 전용입니다. 오른쪽 버튼으로 레이어를 만들거나 엽니다.\n배지는 저장된 feature 개수입니다. type별 진행률은 분모를 정의할 수 없어 두지 않습니다.")
+            Text("왼쪽 아이콘으로 이 층의 상태를 정하고, ≡를 끌어 순서를 바꿉니다. 모든 type이 Complete이면 층이 Complete가 됩니다.\n배지는 저장된 feature 개수입니다. 정보만 입력하는 type은 상단바에 있습니다.")
                 .font(.caption2).foregroundStyle(.tertiary).padding(.top, 4)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -386,32 +405,64 @@ struct LeftSidebar: View {
     @ViewBuilder
     private func typeRow(_ type: IMDFFeatureType) -> some View {
         let isActive = env.layers.activePropertyType == type
-        let exists = env.layers.layer(for: type) != nil
+        let layer = env.layers.layer(for: type)
+        let exists = layer != nil
         let count = env.features.count(ofType: type)
 
-        HStack(spacing: 8) {
-            Image(systemName: icon(for: type)).frame(width: 15)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .frame(width: 10)
+                    .draggable(type.rawValue) {
+                        Label(type.displayName, systemImage: icon(for: type)).padding(6)
+                    }
+                    .help("끌어서 순서 바꾸기")
+                // 손잡이만 끌린다. 줄 전체를 끌리게 하면 투명도 슬라이더를 움직일 때 줄이 딸려 온다.
+                WorkStatusMenu(status: env.workStatus(type)) { env.setWorkStatus($0, for: type) }
+                    .disabled(env.activeLevel == nil)
+                Image(systemName: icon(for: type)).frame(width: 15)
+                    .foregroundStyle(.secondary)
 
-            Text(type.displayName)
-                .font(.callout)
-                .fontWeight(isActive ? .semibold : .regular)
-                .textSelection(.enabled)
-                .lineLimit(1).truncationMode(.tail)
-            // 좁힐 때 줄어드는 쪽은 type 이름이다. 오른쪽 버튼 글자가 잘리면
-            // "레이어 생…"이 되어 무엇을 하는 버튼인지 알 수 없다(뷰 디버깅 16번).
+                Text(type.displayName)
+                    .font(.callout)
+                    .fontWeight(isActive ? .semibold : .regular)
+                    .textSelection(.enabled)
+                    .lineLimit(1).truncationMode(.tail)
+                // 좁힐 때 줄어드는 쪽은 type 이름이다. 오른쪽 버튼 글자가 잘리면
+                // "레이어 생…"이 되어 무엇을 하는 버튼인지 알 수 없다(뷰 디버깅 16번).
 
-            if count > 0 {
-                Text("\(count)")
-                    .font(.caption2.monospacedDigit())
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Color.accentColor.opacity(0.2), in: Capsule())
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption2.monospacedDigit())
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Color.accentColor.opacity(0.2), in: Capsule())
+                }
+
+                Spacer(minLength: 6)
+
+                layerButton(type: type, isActive: isActive, exists: exists)
+                    .fixedSize()
             }
-
-            Spacer(minLength: 6)
-
-            layerButton(type: type, isActive: isActive, exists: exists)
-                .fixedSize()
+            if let layer {
+                HStack(spacing: 6) {
+                    Button {
+                        env.layers.setHidden(!layer.isHidden, for: layer.id)
+                    } label: {
+                        Image(systemName: layer.isHidden ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(layer.isHidden ? "레이어 보이기" : "레이어 숨기기")
+                    opacityRow(layer)
+                    if layer.isClosable {
+                        Button { env.layers.close(layer.id) } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.borderless).controlSize(.mini)
+                            .help("레이어 닫기")
+                    }
+                }
+                .padding(.leading, 33)
+                // 예전 '레이어' 섹션의 표시·투명도·닫기를 type 줄 바로 아래로 옮겼다(신기능 12항).
+            }
         }
         .padding(.vertical, 5).padding(.horizontal, 8)
         .background(isActive ? Color.accentColor.opacity(0.18) : Color.clear,
@@ -421,14 +472,7 @@ struct LeftSidebar: View {
 
     @ViewBuilder
     private func layerButton(type: IMDFFeatureType, isActive: Bool, exists: Bool) -> some View {
-        if type.isMetadataOnly {
-            Button("정보 입력") { env.openMetadataEditor(type) }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(env.document == nil)
-                .help("\(type.displayName)는 도형이 없어 레이어를 만들지 않습니다. 정보 입력 창에서 값을 넣습니다.")
-            // 메타데이터 type은 레이어 대신 입력 창이다(2026-10-19 요청).
-        } else if isActive {
+        if isActive {
             Text("사용 중")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -544,9 +588,14 @@ struct LeftSidebar: View {
         .opacity(layer.isHidden ? 0.4 : 1)
     }
 
+    /// feature type 레이어를 뺀 나머지(상위·하위 기본 레이어, 속성 필터 레이어).
+    private var otherLayers: [EditorLayer] {
+        env.layers.layers.filter { if case .propertyType = $0.kind { return false }; return true }
+    }
+
     private var layerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(env.layers.layers) { layer in
+            ForEach(otherLayers) { layer in
                 HStack(spacing: 6) {
                     Button {
                         env.layers.setHidden(!layer.isHidden, for: layer.id)

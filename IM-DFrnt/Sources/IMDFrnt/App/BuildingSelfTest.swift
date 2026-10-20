@@ -140,6 +140,58 @@ enum BuildingSelfTest {
                 check("사용자 실제 v4 → v5 왕복 후 동일", reopened.projectContents == actual.projectContents)
             }
         } catch { check("공통 층 통합 검증", false); print(error) }
+
+        // 신기능 12항: feature type 상태·층 완료·순서·최근 작업.
+        do {
+            let ws = environment()
+            try ws.createNewProject()
+            let l1 = ws.addProjectLevel()
+            let l2 = ws.addProjectLevel()
+            ws.selectProjectLevel(l1)
+            await ws.waitForLevelDrawing()
+            func level(_ id: UUID) -> ProjectLevel { ws.buildingProject.levels.first { $0.id == id }! }
+            check("상태: 처음은 Todo", ws.workStatus(.unit) == .todo)
+            ws.setWorkStatus(.complete, for: .unit)
+            check("상태: 층마다 따로 둔다", ws.workStatus(.unit) == .complete && ws.workStatus(.unit, level: level(l2)) == .todo)
+            ws.setWorkStatus(.inReview, for: .occupant)
+            check("상태: 정보 type은 프로젝트에 하나다",
+                  ws.buildingProject.metadataWorkStatus?["occupant"] == .inReview
+                  && ws.workStatus(.occupant, level: level(l2)) == .inReview)
+            check("층 완료: 일부만 Complete면 층은 미완료", !ws.isLevelComplete(level(l1)))
+            for type in AppEnvironment.levelFeatureTypes { ws.setWorkStatus(.complete, for: type) }
+            check("층 완료: 좌측 type이 모두 Complete면 층도 Complete(정보 type은 보지 않는다)",
+                  ws.isLevelComplete(level(l1)) && !ws.isLevelComplete(level(l2))
+                  && ws.workStatus(.address) == .todo)
+
+            let ordinals = ws.buildingProject.levels.map { $0.info.ordinal }
+            ws.moveLevel(l2, to: l1)
+            check("층 순서: 끌면 화면 순서만 바뀌고 층 번호는 그대로",
+                  ws.displayedLevels.map(\.id) == [l2, l1] && ws.buildingProject.levels.map { $0.info.ordinal } == ordinals)
+
+            ws.setWorkStatus(.todo, for: .fixture)
+            ws.setWorkStatus(.inProgress, for: .opening)
+            check("정렬: 미완료 순은 Todo가 먼저", ws.sortedFeatureTypes(.incompleteFirst).prefix(2) == [.fixture, .opening])
+            check("정렬: 완료 순은 Todo가 마지막", ws.sortedFeatureTypes(.completeFirst).suffix(2) == [.opening, .fixture])
+            let shown = ws.sortedFeatureTypes(.custom)
+            ws.moveFeatureType(.unit, to: shown[0], shown: shown)
+            check("정렬: 끌어 옮긴 순서가 사용자 지정 순서로 저장된다",
+                  ws.customFeatureTypeOrder.first == .unit && ws.buildingProject.featureTypeOrder?.first == "unit")
+
+            check("최근 작업: 상태만 바꾼 것은 작업이 아니다", ws.activeLevel?.lastEdited?["fixture"] == nil)
+            ws.perform("amenity 추가") {
+                ws.features.insert(FeatureGroup(featureType: .amenity, serialNumber: "amenity-901", memberIDs: []))
+            }
+            check("최근 작업: feature를 고친 type의 시각이 남는다",
+                  ws.activeLevel?.lastEdited?["amenity"] != nil && ws.sortedFeatureTypes(.recent).first == .amenity)
+            ws.undo()
+            check("최근 작업: 실행취소하면 시각도 되돌아간다", ws.activeLevel?.lastEdited?["amenity"] == nil)
+
+            let decoded = try JSONDecoder().decode(BuildingProject.self, from: JSONEncoder().encode(ws.projectContents))
+            check("상태·순서는 프로젝트 파일에 저장된다",
+                  decoded.levels.first { $0.id == l1 }?.workStatus?["unit"] == .complete
+                  && decoded.metadataWorkStatus?["occupant"] == .inReview
+                  && decoded.levelDisplayOrder == [l2, l1] && decoded.featureTypeOrder?.first == "unit")
+        } catch { check("신기능 12항 검증", false); print(error) }
         print("== Building: \(total - failures)/\(total) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

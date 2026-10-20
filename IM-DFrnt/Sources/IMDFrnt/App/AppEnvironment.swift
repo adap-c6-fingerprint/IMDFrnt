@@ -1518,6 +1518,8 @@ final class AppEnvironment: ObservableObject {
         let before = snapshot
         undoStack.record(name, coalescingKey: coalescingKey, before: before)
         body()
+        stampEditedTypes(before: before.features)
+        // 고친 type의 시각을 같은 실행취소 칸에 넣는다. 되돌리면 시각도 함께 되돌아간다.
         refreshCanvasReferences()
         if snapshot == before, undoStack.undoName == name { undoStack.discardLast() }
     }
