@@ -66,6 +66,11 @@ struct CanvasView: View {
                         .onAppear { fit(doc: doc, viewport: geo.size) }
                         .onChange(of: doc.fingerprint) { _, _ in fit(doc: doc, viewport: geo.size) }
                         .onChange(of: env.routingFloorID) { _, _ in fit(doc: doc, viewport: geo.size) }
+                        .onChange(of: env.tagEditorRequest) { _, id in
+                            guard let id else { return }
+                            DispatchQueue.main.async { openRequestedTagEditor(id, scale: effectiveScale) }
+                            // 방금 저장한 feature의 이름표는 다음 그리기에서 생긴다. 한 박자 늦춰 그 자리를 찾는다.
+                        }
                         .onChange(of: geo.size) { _, size in
                             // Switching from the drawing editor changes sidebar widths and layout.
                             if env.showRoutingScreen { fit(doc: doc, viewport: size) }
@@ -450,10 +455,12 @@ struct CanvasView: View {
             if env.isShowingUnitCoverage { drawUnitCoverage(in: ctx, scale: s, visible: visible) }
             drawExpandedUnitOverlaps(in: ctx, scale: s, visible: visible)
             drawSelectedVertexDots(in: ctx, scale: s, visible: visible)
+            if env.isShowingUnitCoverage { drawUnitCoverageLabels(in: screenCtx, scale: s, visible: visible) }
             drawFeatureLabels(in: screenCtx, document: doc, scale: s, viewport: size)
+            // 겹침 이름표를 feature 이름표보다 먼저 깐다. 위에 얹으면 빨간 이름표(눌러서 구멍 뚫기)를 덮어
+            // 토글을 켠 동안 MultiPolygon unit에 다각형을 더할 수 없었다(엔진 디버깅 6번).
             if env.isPointWorkMode { drawDraftOrderLabels(in: screenCtx, scale: s) }
             drawSelectedOrderLabels(in: screenCtx, scale: s, visible: visible)
-            if env.isShowingUnitCoverage { drawUnitCoverageLabels(in: screenCtx, scale: s, visible: visible) }
 
             // 겹침 윤곽 — 개체를 옮겨보는 대신 겹치는 곳을 제자리에 표시한다(명세 2-3 대체).
             let overlap = moves.isMoving ? OverlapDetector.Result() : env.overlapHighlight
@@ -825,7 +832,9 @@ struct CanvasView: View {
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(label.isGap ? Color.black : Color.white))
             let size = text.measure(in: CGSize(width: 400, height: 30))
-            let tag = CGRect(x: minX - 2, y: minY - size.height - 5, width: size.width + 8, height: size.height + 3)
+            let tag = CGRect(x: minX - 2, y: minY + 3, width: size.width + 8, height: size.height + 3)
+            // 조각 상자 위쪽 안에 단다. feature 이름표는 상자 바로 위에 붙으므로 위에 달면 같은 자리에 겹친다 —
+            // 안쪽 unit을 통째로 품은 겹침이면 조각 상자가 그 unit 상자와 같아 빨간 이름표를 완전히 덮었다.
             let color = label.isGap ? UnitCoverage.gapColor : UnitCoverage.overlapColor
             ctx.fill(Path(roundedRect: tag, cornerRadius: 3), with: .color(color.opacity(0.92)))
             ctx.draw(text, at: CGPoint(x: tag.minX + 4, y: tag.minY + 1.5), anchor: .topLeading)
@@ -968,6 +977,19 @@ struct CanvasView: View {
             q = CGPoint(x: c.x + dx * cos(r) - dy * sin(r), y: c.y + dx * sin(r) + dy * cos(r))
         }
         return CGPoint(x: q.x * s + offset.width, y: q.y * s + offset.height)
+    }
+
+    /// `tagEditorRequest`를 받아 이름표를 누른 것과 같은 편집 창을 연다.
+    /// 이름표가 아직 안 그려졌으면 그 feature의 점 바로 위에 띄운다.
+    private func openRequestedTagEditor(_ id: FeatureGroupID, scale s: CGFloat) {
+        defer { if env.tagEditorRequest == id { env.tagEditorRequest = nil } }
+        guard let f = env.features.feature(id), !FeatureTagEditor.fields(for: f.featureType).isEmpty else { return }
+        if let hit = labelHitBoxes.boxes.last(where: { $0.0 == id }) {
+            tagEditor = (id, hit.1)
+        } else if let p = f.drawnVertices?.first {
+            let q = docToScreen(p.cg, scale: s)
+            tagEditor = (id, CGRect(x: q.x - 2, y: q.y - 20, width: 60, height: 15))
+        }
     }
 
     private func drawCross(_ ctx: GraphicsContext, at p: LocalPoint, scale s: CGFloat, color: Color) {

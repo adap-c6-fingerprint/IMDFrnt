@@ -176,7 +176,7 @@ enum DrawingLoadingSelfTest {
                 let layerStart = ContinuousClock.now
                 bg.selectPropertyType(.unit)
                 let layerTime = layerStart.duration(to: .now)
-                print("[MEASURE] unit-layer-open=\(layerTime) faces=\(bg.closedPolygonFaces.count) points=\(bg.snapPoints.count)")
+                print("[MEASURE] unit-layer-open=\(layerTime) points=\(bg.snapPoints.count)")
                 check("#21 unit 레이어 생성은 면을 다시 계산하지 않는다", !bg.isComputingDerivedGeometry && layerTime < .milliseconds(200))
                 let free = doc.objects.filter { !bg.auxiliary.isExcluded($0.id) }.map(\.id)
                 // 실제 프로젝트는 이미 제외한 개체가 많다. 이미 제외된 개체를 다시 빼면 상태가 안 바뀌어
@@ -206,37 +206,30 @@ enum DrawingLoadingSelfTest {
                     print("[MEASURE] reuse-parse=\(reuseTime) full=\(full.preparationSeconds)s")
                     check("#21 제외만 바뀌면 파싱을 다시 하지 않고 같은 결과를 낸다",
                           reused.document?.fingerprint == base.document?.fingerprint
-                          && reused.derived.faces.count == full.derived.faces.count
                           && reused.derived.snapPoints.count == full.derived.snapPoints.count
                           && reused.derived.totalPointCount == full.derived.totalPointCount)
                 }
 
-                // 2026-10-19: opening 하나를 저장할 때 점을 다시 세지 않는다. 결과는 처음부터 센 것과 같아야 한다.
                 let before = try DerivedGeometry.make(document: doc, key: bg.currentDerivedKey)
-                var withDoor = bg.currentDerivedKey
-                let corner = doc.objects.first.map { $0.geometry.boundingBox } ?? .zero
-                withDoor.closingSegments.append(LineSegment(start: LocalPoint(corner.minX, corner.minY),
-                                                            end: LocalPoint(corner.maxX, corner.maxY)))
-                let doorStart = ContinuousClock.now
-                let incremental = try DerivedGeometry.make(document: doc, key: withDoor, reusing: before)
-                let doorTime = doorStart.duration(to: .now)
-                let freshStart = ContinuousClock.now
-                let fresh = try DerivedGeometry.make(document: doc, key: withDoor)
-                let freshTime = freshStart.duration(to: .now)
-                print("[MEASURE] derived-after-opening reuse=\(doorTime) full=\(freshTime)")
-                check("opening 저장은 점을 재사용하고 처음부터 센 결과와 같다",
-                      incremental.faces.map(\.id) == fresh.faces.map(\.id)
-                      && incremental.snapPoints.count == fresh.snapPoints.count
-                      && incremental.totalPointCount == fresh.totalPointCount
-                      && doorTime <= freshTime)
+                // 2026-10-20: opening 선은 열쇠에 없다. opening을 저장해도 점·면을 다시 계산하지 않는다(엔진 디버깅 7번).
+                bg.selectPropertyType(.opening)
+                if let p0 = bg.snapPoints.first?.point,
+                   let p1 = bg.snapPoints.dropFirst().first(where: { $0.point.distance(to: p0) > 1 })?.point {
+                    let keyBefore = bg.currentDerivedKey
+                    let saveStart = ContinuousClock.now
+                    bg.handlePointClick(at: p0, tolerance: 0.5, freePoint: false)
+                    bg.handlePointClick(at: p1, tolerance: 0.5, freePoint: false)
+                    print("[MEASURE] opening-save=\(saveStart.duration(to: .now))")
+                    check("opening 저장은 점·면을 다시 계산하지 않는다",
+                          bg.currentDerivedKey == keyBefore && !bg.isComputingDerivedGeometry)
+                }
                 var withExclude = bg.currentDerivedKey
                 if let extra = doc.objects.first(where: { !withExclude.excluded.contains($0.id) }) {
                     withExclude.excluded.insert(extra.id)
                     let a = try DerivedGeometry.make(document: doc, key: withExclude, reusing: before)
                     let b = try DerivedGeometry.make(document: doc, key: withExclude)
                     check("보조 제외만 바뀌면 전체 점 수만 재사용하고 점은 새로 센다",
-                          a.snapPoints.count == b.snapPoints.count && a.totalPointCount == b.totalPointCount
-                          && a.faces.map(\.id) == b.faces.map(\.id))
+                          a.snapPoints.count == b.snapPoints.count && a.totalPointCount == b.totalPointCount)
                 }
             }
             try await DrawingLoadingReviewSelfTest.run(environment: environment, check: check)

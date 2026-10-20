@@ -1,5 +1,15 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-20 — #31 브랜치 추가 작업: amenity 창·겹침 이름표·opening 저장 지연
+
+- [이슈 #31](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/31)에 추가 작업 목록과 완료 조건을 기록하고 `feat/#31-map-align`에 포함했다.
+- amenity: 점을 찍어 저장하면 그 feature를 고르고 `tagEditorRequest`로 캔버스에 category·name 창을 요청한다. 캔버스는 다음 그리기에서 생긴 이름표 자리에, 없으면 찍은 점 위에 창을 띄운다.
+- 엔진 디버깅 6번: '빈틈/겹침' 토글이 켜지면 겹침 이름표가 같은 자리·같은 글꼴로 빨간 unit 이름표 위에 그려져 구멍 뚫기 입구를 덮었다. 겹침 이름표를 조각 상자 위쪽 안에 달고 feature 이름표보다 먼저 그린다. 토글은 클릭 경로에 관여하지 않는다.
+- 엔진 디버깅 7번: 파생 기하 열쇠에 opening 선(닫는 선분)이 있어 opening 하나를 저장할 때마다 도면 전체 면 찾기가 다시 돌았다. 그 결과 `closedPolygonFaces`는 10-18 면 단위가 저장된 feature 경계 방식(`faceModeFaces`)으로 바뀐 뒤 자체점검만 읽었다. 면 찾기·`closedPolygonFaces`·열쇠의 `closingSegments`를 없앴다. 층 불러오기에서도 면 찾기 시간이 빠진다.
+- 측정(Debug, CLI, 실프로젝트 사본): opening 하나 저장 포스텍 도서관 2층 약 1.3~1.8초 → 0.17초, C5 0.035초. 열쇠가 그대로라 백그라운드 재계산과 "점·면 계산 중" 팝업이 일어나지 않는다.
+- 자체점검(Debug): `--selftest` ALL PASS(신규 2항목), Drawing Loading C5·포스텍 각 56/56, Routing 117/117, Project 24/24, Building 27/27. Document open 20/23의 실패 3건은 scratch 빌드에 `.app` Info.plist가 없어서 나며 수정 전 HEAD에서도 같다.
+- 실제 화면의 amenity 창·겹침 이름표 클릭·opening 연속 저장은 확인하지 않았다(CLI 검사만). 수동 확인 대상으로 남긴다.
+
 ## 2026-10-15 — #37 Opening 두 점 태깅
 
 - [이슈 #37](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/37)에 목표·작업 목록·완료 조건을 기록하고, #21 커밋 위에 `feat/#37-opening-two-point`를 만들었다(#21 PR 병합 후 병합).

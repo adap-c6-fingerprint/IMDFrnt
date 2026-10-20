@@ -438,6 +438,10 @@ final class AppEnvironment: ObservableObject {
         // 이름표 위를 지날 때마다 바뀐다. 도면 개체 6만 개를 매번 다시 판정하면 마우스를 움직일 때마다 멈췄다.
     }
 
+    /// 캔버스에 category·name 편집 창을 열어 달라는 요청. 창의 자리(이름표 위치)는 캔버스만 알므로
+    /// 여기서는 대상만 남기고, 캔버스가 받아 창을 연 뒤 비운다.
+    @Published var tagEditorRequest: FeatureGroupID?
+
     /// 우측 패널의 category 필터(#52). type마다 고른 category 값이고, 비어 있으면 전부 보인다.
     /// category가 null인 feature는 빈 문자열로 고른다. 화면 상태라 실행취소 대상인 `LayerStore`에 두지 않는다.
     @Published var categoryFilters: [IMDFFeatureType: Set<String>] = [:] {
@@ -1583,9 +1587,6 @@ final class AppEnvironment: ObservableObject {
     /// 전용 창. Anchor 화면과 같은 이유로 시트가 아니라 전체 화면 전환이다 —
     /// 도면 전체를 훑으며 수십 개를 골라내는 작업이라 화면이 넓어야 한다.
     // MARK: 다각형 선택 (신기능 5항 + 5-4 전환)
-
-    /// 지금 레이어에서 고를 수 있는 면 전부. 폴리곤 type 레이어를 열 때 만들어진다.
-    @Published var closedPolygonFaces: [ClosedPolygonFinder.Face] = []
 
     @Published var faceSelection: Set<String> = [] {
         didSet { invalidateRenderStates() }

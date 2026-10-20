@@ -2887,8 +2887,6 @@ enum SelfTest {
         cp.selectPropertyType(.unit)
         check("다각형 작업: unit 레이어도 기본은 점 단위다", cp.isPointWorkMode && !cp.isPolygonWorkMode,
               "#21: 모든 레이어의 기본은 점 단위 편집이다")
-        check("다각형 작업: 면은 층을 불러올 때 이미 찾아 둔다", !cp.closedPolygonFaces.isEmpty,
-              "면 \(cp.closedPolygonFaces.count)개 — 레이어를 열 때 메인 스레드에서 다시 찾지 않는다(#21)")
         // 면 단위는 도면 개체가 아니라 **저장된 개체의 경계로 막힌 면**만 고른다(2026-10-18).
         // 멀리 떨어진 자리에 unit 두 개(벽을 나눠 씀)와 opening 선 네 개(사각형)를 점으로 그려 둔다.
         let fo = 3_000_000.0
@@ -3359,6 +3357,7 @@ enum SelfTest {
         ow.document = doc
         ow.selectPropertyType(.opening)
         if ow.snapPoints.count >= 2 {
+            let keyBefore = ow.currentDerivedKey
             let p0 = ow.snapPoints[0].point
             let p1 = ow.snapPoints.max(by: { $0.point.distance(to: p0) < $1.point.distance(to: p0) })!.point
             ow.handlePointClick(at: p0, tolerance: tol, freePoint: false)
@@ -3372,8 +3371,9 @@ enum SelfTest {
                 check("#21 opening: 좌표는 찍은 두 점이다",
                       VertexExtractor.vertices(for: opening, document: doc, segmentation: ow.segmentation,
                                                kind: .lineString) == [p0, p1])
-                check("#21 opening: 저장한 선이 면을 닫는 선분이 된다",
-                      ow.currentDerivedKey.closingSegments.contains(LineSegment(start: p0, end: p1)))
+                check("opening 저장은 점·면을 다시 계산하지 않는다",
+                      ow.currentDerivedKey == keyBefore && !ow.isComputingDerivedGeometry,
+                      "엔진 디버깅 7번: 열쇠에 opening 선이 있으면 저장마다 도면 전체를 다시 계산한다")
             }
         }
 
@@ -3388,6 +3388,8 @@ enum SelfTest {
                 check("#21 amenity: Point 좌표는 찍은 점이다",
                       VertexExtractor.vertices(for: amenity, document: doc, segmentation: ow.segmentation,
                                                kind: .point) == [p])
+                check("amenity: 찍자마자 그 feature를 고르고 category·name 창을 요청한다",
+                      ow.focusedFeature == amenity.id && ow.tagEditorRequest == amenity.id)
             }
         }
 
