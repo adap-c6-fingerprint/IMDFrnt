@@ -374,7 +374,7 @@ struct LeftSidebar: View {
 
     private var typeSection: some View {
         let shown = env.sortedFeatureTypes(sort)
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 6) {
             Picker("정렬", selection: $sortRaw) {
                 ForEach(FeatureTypeSort.allCases) { Text($0.title).tag($0.rawValue) }
             }
@@ -409,7 +409,7 @@ struct LeftSidebar: View {
         let exists = layer != nil
         let count = env.features.count(ofType: type)
 
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal")
                     .font(.caption2).foregroundStyle(.tertiary)
@@ -464,10 +464,12 @@ struct LeftSidebar: View {
                 // 예전 '레이어' 섹션의 표시·투명도·닫기를 type 줄 바로 아래로 옮겼다(신기능 12항).
             }
         }
-        .padding(.vertical, 5).padding(.horizontal, 8)
-        .background(isActive ? Color.accentColor.opacity(0.18) : Color.clear,
+        .padding(.vertical, 10).padding(.horizontal, 8)
+        .background(isActive ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.06),
                     in: RoundedRectangle(cornerRadius: 6))
         .help(type.note)
+        // 줄마다 옅은 바탕을 깔고 위아래 여백을 넓혔다(2026-10-20 요청). 표시·투명도 줄이 붙은 type은
+        // 두 줄짜리가 되어, 여백이 좁으면 어느 줄이 어느 type 것인지 경계가 흐려졌다.
     }
 
     @ViewBuilder
