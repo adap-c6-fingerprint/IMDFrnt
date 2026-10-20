@@ -192,6 +192,51 @@ enum BuildingSelfTest {
                   && decoded.metadataWorkStatus?["occupant"] == .inReview
                   && decoded.levelDisplayOrder == [l2, l1] && decoded.featureTypeOrder?.first == "unit")
         } catch { check("신기능 12항 검증", false); print(error) }
+
+        // #31: 빈 층에서 .imdfrnt 불러오기는 프로젝트를 바꾸지 않고 그 층에 넣는다.
+        do {
+            let env = environment()
+            try env.createNewProject()
+            let drawn = env.addProjectLevel()
+            try env.setRoutingDrawing(drawn, data: Data(SampleFloorplan.svg.utf8), name: "first.svg")
+            let blank = env.addProjectLevel()
+            await env.waitForLevelDrawing()
+            check("빈 층 + 다른 층에 작업 있음 → 층에 넣기", env.routingFloorID == blank && env.importsProjectIntoActiveLevel)
+            env.selectProjectLevel(drawn)
+            await env.waitForLevelDrawing()
+            check("작업된 층에서는 예전처럼 프로젝트 전환", !env.importsProjectIntoActiveLevel)
+            env.selectProjectLevel(blank)
+            await env.waitForLevelDrawing()
+
+            let sourceID = UUID(), stamp = Date(timeIntervalSince1970: 1_000_000)
+            var source = ProjectLevel(info: ProjectLevelInfo(id: sourceID, name: "5층", ordinal: 4, sourceName: "fifth.svg", svg: SampleFloorplan.svg))
+            source.editing.features.insert(FeatureGroup(featureType: .amenity, serialNumber: "amenity-501", memberIDs: []))
+            let a = RoutingNode(floorID: sourceID, point: LocalPoint(1, 2)), b = RoutingNode(floorID: sourceID, point: LocalPoint(3, 4))
+            source.nodes = [a, b]
+            source.edges = [RoutingEdge(from: a.id, to: b.id)]
+            source.workStatus = ["amenity": .complete]
+            source.lastEdited = ["amenity": stamp]
+            let before = env.buildingProject.levels.first { $0.id == blank }!.info
+            let projectID = env.projectID
+            env.importLevel(source, into: blank)
+            await env.waitForLevelDrawing()
+            let level = env.buildingProject.levels.first { $0.id == blank }!
+            check("층 불러오기: 프로젝트는 그대로, 층 ID·이름·번호 유지",
+                  env.projectID == projectID && env.buildingProject.levels.count == 2
+                  && level.info.name == before.name && level.info.ordinal == before.ordinal)
+            check("층 불러오기: 도면·태깅·노드·연결·상태가 들어온다",
+                  level.info.svg == SampleFloorplan.svg && env.document?.sourceName == "fifth.svg"
+                  && env.features.features.count == 1 && level.nodes.allSatisfy { $0.floorID == blank }
+                  && level.nodes.count == 2 && level.edges.count == 1 && level.workStatus?["amenity"] == .complete)
+            check("층 불러오기: 불러온 것은 '최근 작업'으로 찍지 않는다", level.lastEdited?["amenity"] == stamp)
+            let third = env.addProjectLevel()
+            env.importLevel(source, into: third)
+            check("층 불러오기: 같은 층을 두 번 넣어도 노드 ID가 겹치지 않는다", (try? env.projectContents.validate()) != nil)
+            env.undo(); env.undo(); env.undo()
+            await env.waitForLevelDrawing()
+            check("층 불러오기: 실행취소하면 빈 층으로 돌아간다",
+                  AppEnvironment.isBlankLevel(env.projectContents.levels.first { $0.id == blank }!))
+        } catch { check("#31 빈 층 .imdfrnt 불러오기 검증", false); print(error) }
         print("== Building: \(total - failures)/\(total) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

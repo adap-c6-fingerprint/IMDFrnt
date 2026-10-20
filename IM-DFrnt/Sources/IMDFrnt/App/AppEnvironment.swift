@@ -743,13 +743,18 @@ final class AppEnvironment: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.directoryURL = autosaveFolder
         // 자동 저장 폴더에서 시작한다. 프로젝트마다 `새 도면_YYMMDD_HHmm.imdfrnt`가 여기 쌓인다.
-        panel.title = ".imdfrnt 불러오기"
-        panel.message = "자동 저장된 .imdfrnt 프로젝트를 선택하세요."
+        let intoLevel = importsProjectIntoActiveLevel ? activeLevel : nil
+        // 빈 층에서 누르면 프로젝트를 바꾸지 않고 고른 파일의 층을 이 층에 넣는다(`LevelProjectImport.swift`).
+        panel.title = intoLevel.map { "\($0.info.name)에 넣을 .imdfrnt 불러오기" } ?? ".imdfrnt 불러오기"
+        panel.message = intoLevel.map { "고른 프로젝트의 층 하나를 \($0.info.name)에 넣습니다. 지금 프로젝트는 그대로입니다." }
+            ?? "자동 저장된 .imdfrnt 프로젝트를 선택하세요."
         panel.prompt = "불러오기"
         let response = panel.runModal()
         isProjectActionInProgress = false
         guard response == .OK, let url = panel.url else { return }
-        Task { await openDocumentAsync(at: url) }
+        Task {
+            if intoLevel != nil { await importProjectLevel(from: url) } else { await openDocumentAsync(at: url) }
+        }
     }
 
     // MARK: 진행률 (명세 3-1) — 전역 하나만 둔다

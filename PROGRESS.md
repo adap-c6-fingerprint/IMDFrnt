@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-20 — #31 브랜치 추가 작업: 빈 층에서 .imdfrnt 불러오기
+
+- 새 층을 만들고 빈 캔버스나 사이드바의 `.imdfrnt 불러오기`를 누르면 지금 프로젝트가 저장되고 고른 프로젝트로 전환됐다. `openProject()`가 언제나 프로젝트 전환 경로(`openDocumentAsync`)만 탔기 때문이다.
+- 이제 지금 층이 비어 있고 다른 층에 작업이 있으면(`importsProjectIntoActiveLevel`), 고른 파일의 층 하나를 지금 층에 넣는다(`LevelProjectImport.swift`). 도면·태깅·anchor·지도 정렬·노드·층 안 연결·상태가 들어오고, 층 ID·이름·층 번호는 지금 층 것을 유지한다. 층간 연결은 가져오지 않는다.
+- 파일에 작업된 층이 여럿이면 어느 층을 넣을지 묻는다(이름이 같은 층이 기본). 노드 ID가 겹치면 새 ID로 바꾼다. IMDF에서 온 층의 GeoJSON 층 ID도 지금 층 ID로 바꾼다. 불러온 것은 '최근 작업' 시각으로 찍지 않는다.
+- 모든 층이 비어 있거나 작업된 층에서 누르면 예전처럼 프로젝트를 전환한다. 실행취소 한 번이면 빈 층으로 돌아간다.
+- 같은 날 상태 아이콘을 `Menu`에서 버튼·팝오버로 바꿔 상태 색이 보이게 하고, Feature Type 줄의 위아래 여백을 넓혔다(36b355e).
+- 자체점검(Debug): Building 47/47(신규 7항목), `--selftest` ALL PASS, Project 24/24, Document open 20/23(기존 scratch 빌드 한계). 실제 창에서 누르는 흐름은 확인하지 않았다.
+
 ## 2026-10-20 — #31 브랜치 추가 작업: Feature Type 상태·순서·정렬 (신기능 12항)
 
 - [이슈 #31](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/31)에 추가 작업으로 기록하고 `feat/#31-map-align`에 포함했다.

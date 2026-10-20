@@ -1353,7 +1353,9 @@ struct CanvasView: View {
             Button(".imdfrnt 불러오기…") { env.openProject() }
                 .buttonStyle(.bordered)
                 .disabled(env.isProjectBusy)
-                .help("자동 저장된 프로젝트의 도면·층·노드·연결을 불러옵니다. (⌘⇧O)")
+                .help(env.importsProjectIntoActiveLevel
+                      ? "다른 .imdfrnt의 층 하나를 이 빈 층에 넣습니다. 지금 프로젝트는 그대로입니다."
+                      : "자동 저장된 프로젝트의 도면·층·노드·연결을 불러옵니다. (⌘⇧O)")
             Button(env.showRoutingScreen && env.currentRoutingFloor == nil ? "층 추가" : "도면 불러오기…") {
                 if env.showRoutingScreen {
                     if env.currentRoutingFloor == nil { env.addRoutingFloor() } else { env.importRoutingDrawing() }
