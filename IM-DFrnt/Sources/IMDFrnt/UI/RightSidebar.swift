@@ -429,7 +429,21 @@ struct PropertySlotRow: View {
             // 폭을 못 박으면 좁은 사이드바에서 라벨이 값 칸을 밀어낸다(뷰 디버깅 16번).
             // 범위로 두면 넓을 때는 종전과 같고, 좁을 때는 라벨이 먼저 양보한다.
 
-            control
+            VStack(alignment: .leading, spacing: 2) {
+                control
+                if let guide = PropertyRules.guide(feature.featureType, field.key) {
+                    Text(guide).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let problem = PropertyRules.problem(feature.featureType, field.key, in: feature) {
+                    Label(problem.message, systemImage: problem.severity == .violation ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(problem.severity == .violation ? Color.red : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            // 정보 type은 칸 아래에 입력 가이드를, 스펙을 어기면 고치는 방법을 빨간 글씨로 붙인다(2026-10-20).
+            // Apple 검증의 경고(Warning)만 해당하면 주황이다. 가이드가 없는 type은 종전과 같다.
         }
     }
 
@@ -441,6 +455,17 @@ struct PropertySlotRow: View {
             Text(env.ids.peek(feature.id)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
                 .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        } else if !field.isEditable, field.type == .string {
+            Text(feature.featureType == .manifest && field.key == "version" ? "1.0.0"
+                 : feature.featureType == .manifest && field.key == "created" ? "내보낼 때 자동 기록" : value.displayText)
+                .font(.caption2).foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let choices = PropertyRules.choices(feature.featureType, field.key, in: feature) {
+            let labels = Dictionary(choices.map { ($0.value, $0.label) }, uniquingKeysWith: { a, _ in a })
+            SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
+                             options: choices.map(\.value),
+                             onSelect: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id) },
+                             label: { labels[$0] ?? $0 })
         } else if field.type == .alwaysNull {
             Text("null").font(.caption2).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -473,16 +498,12 @@ struct PropertySlotRow: View {
                 textField("en", get: { if case .localized(let en, _) = value { return en }; return "" },
                           set: { en in
                     let ko = { if case .localized(_, let k) = value { return k }; return "" }()
-                    env.updateProperty(field.key,
-                                       value: en.isEmpty && ko.isEmpty ? .null : .localized(en: en, ko: ko),
-                                       in: feature.id)
+                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
                 })
                 textField("ko", get: { if case .localized(_, let ko) = value { return ko }; return "" },
                           set: { ko in
                     let en = { if case .localized(let e, _) = value { return e }; return "" }()
-                    env.updateProperty(field.key,
-                                       value: en.isEmpty && ko.isEmpty ? .null : .localized(en: en, ko: ko),
-                                       in: feature.id)
+                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
                 })
             }
         } else if field.type == .integer {
@@ -521,9 +542,21 @@ struct PropertySlotRow: View {
             // 참조 칸(unit_id·anchor_id 등)도 드롭다운이었다. 일련번호가 수백 개면 찾을 수 없어 같은 검색 칸을 쓴다.
         } else {
             textField("null", get: { if case .string(let s) = value { return s }; return "" },
-                      set: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0),
-                                                in: feature.id) })
+                      set: { env.updateProperty(field.key, value: Self.text($0, key: field.key), in: feature.id) })
         }
+    }
+
+    /// 글자칸 값. 앞뒤 공백을 떼고, 남는 것이 없으면 null이다 — 공백만 든 값은 Apple 검증의 '빈 값' 위반이다.
+    /// phone은 사람이 흔히 넣는 공백·하이픈·괄호를 떼어 E.164 모양에 가깝게 둔다.
+    static func text(_ raw: String, key: String) -> PropertyValue {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key == "phone" { s.removeAll { " -()".contains($0) } }
+        return s.isEmpty ? .null : .string(s)
+    }
+
+    static func label(en: String, ko: String) -> PropertyValue {
+        let en = en.trimmingCharacters(in: .whitespacesAndNewlines), ko = ko.trimmingCharacters(in: .whitespacesAndNewlines)
+        return en.isEmpty && ko.isEmpty ? .null : .localized(en: en, ko: ko)
     }
 
     /// 글자칸. 입력 중에는 칸만 바뀌고, 잠깐 멈추거나 확정할 때 저장한다(`DraftTextField`).

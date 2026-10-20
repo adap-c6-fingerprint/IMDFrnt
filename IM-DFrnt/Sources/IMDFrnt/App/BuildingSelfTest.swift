@@ -237,6 +237,76 @@ enum BuildingSelfTest {
             check("층 불러오기: 실행취소하면 빈 층으로 돌아간다",
                   AppEnvironment.isBlankLevel(env.projectContents.levels.first { $0.id == blank }!))
         } catch { check("#31 빈 층 .imdfrnt 불러오기 검증", false); print(error) }
+
+        // 정보 type 스펙 점검(2026-10-20): 칸별 문제와 내보내기 차단.
+        do {
+            func feature(_ type: IMDFFeatureType, _ props: [String: PropertyValue]) -> FeatureGroup {
+                var f = FeatureGroup(featureType: type, serialNumber: "\(type.rawValue)-001", memberIDs: [])
+                for field in PropertySchema.fields(for: type) { f.properties[field.key] = props[field.key] ?? .null }
+                return f
+            }
+            func severity(_ f: FeatureGroup, _ key: String) -> FieldProblem.Severity? { PropertyRules.problem(f.featureType, key, in: f)?.severity }
+            let empty = feature(.address, [:])
+            check("address: 필수 address·locality·country가 비면 위반, postal_code는 경고",
+                  severity(empty, "address") == .violation && severity(empty, "locality") == .violation
+                  && severity(empty, "country") == .violation && severity(empty, "postal_code") == .warning
+                  && severity(empty, "unit") == nil)
+            let good = feature(.address, ["address": .string("청암로 77"), "locality": .string("포항시"),
+                                          "country": .string("KR"), "province": .string("KR-47"), "postal_code": .string("37673")])
+            check("address: 올바른 값은 문제 없음", PropertyRules.problems(in: good).isEmpty)
+            let wrong = feature(.address, ["address": .string("  "), "locality": .string("포항시"),
+                                           "country": .string("대한민국"), "province": .string("경상북도")])
+            check("address: 공백만·글자 국가명·글자 시도명은 위반",
+                  severity(wrong, "address") == .violation && severity(wrong, "country") == .violation
+                  && severity(feature(.address, ["country": .string("KR"), "province": .string("경상북도")]), "province") == .violation
+                  && severity(feature(.address, ["country": .string("KR")]), "province") == .violation)
+            check("address: 국가·시도는 목록에서 고른다(한국 17개)",
+                  PropertyRules.choices(.address, "country", in: good)?.contains { $0.value == "KR" } == true
+                  && PropertyRules.choices(.address, "province", in: good)?.count == 17
+                  && PropertySchema.fields(for: .address).first { $0.key == "unit" }?.type == .string)
+            let occupant = feature(.occupant, ["name": .localized(en: "Cafe", ko: "카페"), "category": .string("cafe"),
+                                               "anchor_id": .string("anchor-001"), "hours": .string("Mo-Fr 09:00-18:00; Sa off"),
+                                               "phone": .string("+82542792114"), "website": .string("https://example.com")])
+            check("occupant: 올바른 값은 문제 없음", PropertyRules.problems(in: occupant).isEmpty)
+            let badOccupant = feature(.occupant, ["name": .localized(en: "Cafe", ko: ""), "category": .string("커피"),
+                                                  "hours": .string("평일 9시"), "phone": .string("054-279-2114"), "website": .string("example.com")])
+            check("occupant: ko 없는 이름·목록 밖 category·anchor 없음·형식 틀린 hours·phone·website는 위반",
+                  ["name", "category", "anchor_id", "hours", "phone", "website"].allSatisfy { severity(badOccupant, $0) == .violation })
+            check("occupant: category 목록은 Apple 범주 파일 전량", PropertySchema.categoryOptions(for: .occupant).count == 1116)
+            check("phone 칸은 공백·하이픈을 떼고, 공백만 넣으면 null",
+                  PropertySlotRow.text(" +82 54-279-2114 ", key: "phone") == .string("+82542792114")
+                  && PropertySlotRow.text("   ", key: "address") == .null)
+            let building = feature(.building, ["category": .string("unspecified"), "restriction": .string("private")])
+            check("building: restriction은 employeesonly·restricted만, 이름 없음은 경고",
+                  severity(building, "restriction") == .violation && severity(building, "name") == .warning
+                  && severity(building, "category") == nil)
+            check("manifest: 언어 태그 점검",
+                  severity(feature(.manifest, ["language": .string("korean")]), "language") == .violation
+                  && severity(feature(.manifest, ["language": .string("ko-KR")]), "language") == nil)
+
+            let env = environment()
+            try env.createNewProject()
+            let l = env.addProjectLevel()
+            await env.waitForLevelDrawing()
+            env.addMetadataFeature(.address)
+            var project = env.projectContents
+            var blocked: [String] = []
+            do { guard var file = env.makeProjectFile() else { throw CocoaError(.fileWriteUnknown) }; file.buildingProject = project; _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:]) }
+            catch let b as IMDFArchive.Blocked { blocked = b.messages }
+            check("내보내기: 빈 address는 막고 고칠 칸을 알려준다", blocked.contains { $0.contains("address-001 country") })
+            let i = project.levels.firstIndex { $0.id == l }!
+            let id = project.levels[i].editing.features.features(ofType: .address)[0].id
+            project.levels[i].editing.features.update(id) { f in
+                f.properties["address"] = .string("청암로 77"); f.properties["locality"] = .string("포항시")
+                f.properties["country"] = .string("KR"); f.properties["province"] = .string("KR-47")
+            }
+            blocked = []
+            do { guard var file = env.makeProjectFile() else { throw CocoaError(.fileWriteUnknown) }; file.buildingProject = project; _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:]) }
+            catch let b as IMDFArchive.Blocked { blocked = b.messages }
+            check("내보내기: address를 채우면 그 칸 때문에 막히지 않는다", !blocked.contains { $0.contains("address-001") })
+            check("manifest created는 소수 초 없는 DATE-TIME",
+                  (IMDFArchive.manifest(imported: nil, feature: nil, now: Date(timeIntervalSince1970: 0))["created"] as? String) == "1970-01-01T00:00:00Z")
+        } catch { check("정보 type 스펙 점검", false); print(error) }
         print("== Building: \(total - failures)/\(total) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

@@ -1661,9 +1661,10 @@ enum SelfTest {
               !PropertySchema.categoryOptions(for: .venue).contains("hospital")
               && PropertySchema.categoryOptions(for: .venue).contains("healthcarefacility"),
               "의료시설은 healthcarefacility다")
-        check("category: OCCUPANT은 자유 입력",
-              PropertySchema.categoryOptions(for: .occupant).isEmpty,
-              "스펙 열거값 전량 미확보 — 드롭다운으로 막으면 나머지 업종을 입력할 수 없다")
+        check("category: OCCUPANT은 Apple 범주 파일 전량에서 고른다",
+              PropertySchema.categoryOptions(for: .occupant).count == 1116
+              && PropertySchema.categoryOptions(for: .occupant).contains("cafe"),
+              "2026-10-20 이전에는 전량 미확보로 자유 입력이었다")
 
         // 16. 사이드바 리사이즈 계산 (명세 디버깅 1·13번)
         // 드래그 조작 자체는 헤드리스로 재현할 수 없으므로 방향과 한계값만 못박는다.
@@ -4158,10 +4159,11 @@ enum SelfTest {
                       SearchablePicker.filter(pickOptions, query: "  ") == pickOptions)
                 // 이 Mac에 기억되는 값이라 점검이 사용자 설정을 바꿔 놓지 않게 되돌린다.
 
-                let unlabeled = IMDFFeatureType.allCases.flatMap { t in
+                let unlabeled = IMDFFeatureType.allCases.filter { $0 != .occupant }.flatMap { t in
                     PropertySchema.categoryOptions(for: t).filter { CategoryLabel.korean($0, type: t) == nil }
                         .map { "\(t.rawValue).\($0)" }
                 }
+                // occupant 업종 1116종은 한국어 표기가 아직 없어 영어 원문으로 보인다(2026-10-20 목록 추가).
                 check("category 한국어: 모든 레이어의 category 값에 한국어 표기가 있다",
                       unlabeled.isEmpty, unlabeled.prefix(5).joined(separator: ", "))
                 check("category 한국어: `한국어(영어)`로 보이고 type마다 다른 뜻을 구분한다",

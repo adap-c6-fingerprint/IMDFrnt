@@ -1,5 +1,15 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-20 — #31 브랜치 추가 작업: 정보 type 공식 스펙 대조·입력 가이드
+
+- address·building·occupant·manifest의 입력 칸을 OGC IMDF 1.0(Apple 제출 원문)과 Apple `IMDF.zip`의 검증 규칙(`imdf-validations-1.0.3.csv`)·범주 파일(`categories_20210728.csv`)에 맞췄다.
+- address: `unit` 입력 가능. `country`는 ISO 3166 목록, `province`는 한국이면 ISO 3166-2 17개 목록에서 고르고 그 밖의 나라는 형식만 점검한다.
+- building: `alt_name`·`restriction`(employeesonly·restricted) 입력 가능. occupant: `hours`·`phone`·`website` 입력 가능, category를 Apple 범주 파일 1116종 목록으로 채웠다. 스펙에 없는 `level_id`에도 비표준 표시를 붙였다.
+- manifest: `version`은 1.0.0 고정 표시, `extensions` 칸 추가, `created`는 소수 초 없는 DATE-TIME으로 쓴다.
+- 칸 아래에 입력 가이드를 보이고, Apple Violation이면 빨간 글씨, Warning이면 주황 글씨로 고치는 방법을 보인다(`PropertyRules`). Violation이 남으면 IMDF 내보내기를 막고 층·일련번호·칸을 알려준다. 글자칸은 앞뒤 공백을 떼고 phone은 공백·하이픈·괄호를 뗀다.
+- occupant 업종 한국어 표기는 아직 없어 영어로 보인다. occupant `validity`·`correlation_id`는 null로 둔다.
+- 자체점검(Debug): `--selftest` ALL PASS, Building 60/60(신규 13항목), Project 24/24, Routing 117/117, Drawing Loading C5·포스텍 각 56/56, Document open 20/23(기존 scratch 빌드 한계). 실제 창에서는 확인하지 않았다.
+
 ## 2026-10-20 — #31 브랜치 추가 작업: 빈 층에서 .imdfrnt 불러오기
 
 - 새 층을 만들고 빈 캔버스나 사이드바의 `.imdfrnt 불러오기`를 누르면 지금 프로젝트가 저장되고 고른 프로젝트로 전환됐다. `openProject()`가 언제나 프로젝트 전환 경로(`openDocumentAsync`)만 탔기 때문이다.
