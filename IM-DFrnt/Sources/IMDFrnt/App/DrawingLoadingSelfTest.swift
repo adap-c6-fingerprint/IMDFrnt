@@ -17,7 +17,7 @@ enum DrawingLoadingSelfTest {
         let suite = "IMDFrntDrawingTest.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? FileManager.default.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
-        func environment() -> AppEnvironment { AppEnvironment(recoveryURL: directory.appendingPathComponent("recovery.imdfrnt"), projectDefaults: defaults) }
+        func environment() -> AppEnvironment { AppEnvironment(autosaveFolder: directory, projectDefaults: defaults) }
         do {
             var file = ProjectFile.empty()
             if let path = argument("--drawing-test-project") {
@@ -65,7 +65,7 @@ enum DrawingLoadingSelfTest {
                     if round == 1 { check("재전환 파싱·파생 계산 반복 없음 \(level.info.name)", readyImmediately && env.levelDrawingCache.preparationCount == beforeCount) }
                 }
             }
-            env.lastExplicitSavedProject = env.makeProjectFile()
+            env.lastRecoveryProject = env.makeProjectFile()
             check("층 선택·캐시는 저장 데이터 변경 없음", !env.hasUnsavedChanges && env.projectContents.semanticContents == file.commonProject().semanticContents)
             env.cancelLevelDrawingLoads()
 
@@ -158,7 +158,9 @@ enum DrawingLoadingSelfTest {
             await opened.waitForLevelDrawing()
             opened.updateProjectLevel(a) { $0.name = "미저장 이름" }
             let unsaved = opened.makeProjectFile()!
-            let cancelled = await opened.openDocumentAsync(at: directory.appendingPathComponent("recovery.imdfrnt"), confirmingChanges: { false })
+            let otherURL = directory.appendingPathComponent("other.imdfrnt")
+            try ProjectFile.empty().encoded().write(to: otherURL)
+            let cancelled = await opened.openDocumentAsync(at: otherURL, confirmingChanges: { false })
             check("비동기 열기 취소는 미저장 작업 유지", cancelled == .cancelled && opened.makeProjectFile()!.hasSameContents(as: unsaved))
             var asked = false
             let failed = await opened.openDocumentAsync(at: badURL, confirmingChanges: { asked = true; return true })
@@ -174,7 +176,7 @@ enum DrawingLoadingSelfTest {
                 let layerStart = ContinuousClock.now
                 bg.selectPropertyType(.unit)
                 let layerTime = layerStart.duration(to: .now)
-                print("[MEASURE] unit-layer-open=\(layerTime) faces=\(bg.closedPolygonFaces.count) points=\(bg.snapPoints.count)")
+                print("[MEASURE] unit-layer-open=\(layerTime) points=\(bg.snapPoints.count)")
                 check("#21 unit 레이어 생성은 면을 다시 계산하지 않는다", !bg.isComputingDerivedGeometry && layerTime < .milliseconds(200))
                 let free = doc.objects.filter { !bg.auxiliary.isExcluded($0.id) }.map(\.id)
                 // 실제 프로젝트는 이미 제외한 개체가 많다. 이미 제외된 개체를 다시 빼면 상태가 안 바뀌어
@@ -204,9 +206,30 @@ enum DrawingLoadingSelfTest {
                     print("[MEASURE] reuse-parse=\(reuseTime) full=\(full.preparationSeconds)s")
                     check("#21 제외만 바뀌면 파싱을 다시 하지 않고 같은 결과를 낸다",
                           reused.document?.fingerprint == base.document?.fingerprint
-                          && reused.derived.faces.count == full.derived.faces.count
                           && reused.derived.snapPoints.count == full.derived.snapPoints.count
                           && reused.derived.totalPointCount == full.derived.totalPointCount)
+                }
+
+                let before = try DerivedGeometry.make(document: doc, key: bg.currentDerivedKey)
+                // 2026-10-20: opening 선은 열쇠에 없다. opening을 저장해도 점·면을 다시 계산하지 않는다(엔진 디버깅 7번).
+                bg.selectPropertyType(.opening)
+                if let p0 = bg.snapPoints.first?.point,
+                   let p1 = bg.snapPoints.dropFirst().first(where: { $0.point.distance(to: p0) > 1 })?.point {
+                    let keyBefore = bg.currentDerivedKey
+                    let saveStart = ContinuousClock.now
+                    bg.handlePointClick(at: p0, tolerance: 0.5, freePoint: false)
+                    bg.handlePointClick(at: p1, tolerance: 0.5, freePoint: false)
+                    print("[MEASURE] opening-save=\(saveStart.duration(to: .now))")
+                    check("opening 저장은 점·면을 다시 계산하지 않는다",
+                          bg.currentDerivedKey == keyBefore && !bg.isComputingDerivedGeometry)
+                }
+                var withExclude = bg.currentDerivedKey
+                if let extra = doc.objects.first(where: { !withExclude.excluded.contains($0.id) }) {
+                    withExclude.excluded.insert(extra.id)
+                    let a = try DerivedGeometry.make(document: doc, key: withExclude, reusing: before)
+                    let b = try DerivedGeometry.make(document: doc, key: withExclude)
+                    check("보조 제외만 바뀌면 전체 점 수만 재사용하고 점은 새로 센다",
+                          a.snapPoints.count == b.snapPoints.count && a.totalPointCount == b.totalPointCount)
                 }
             }
             try await DrawingLoadingReviewSelfTest.run(environment: environment, check: check)

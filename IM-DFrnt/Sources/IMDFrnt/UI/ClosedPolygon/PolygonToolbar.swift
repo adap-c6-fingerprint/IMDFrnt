@@ -29,9 +29,23 @@ struct PolygonToolbar: View {
 
             ToolbarDivider().frame(height: 16)
 
-            Text("\(env.faceSelection.count) / \(env.selectableFaceCount)개 선택")
+            Picker("", selection: Binding(
+                get: { env.effectiveFaceBoundaryScope },
+                set: { env.setFaceBoundaryScope($0) }
+            )) {
+                ForEach(FaceBoundaryScope.options(for: env.layers.activePropertyType), id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help(env.faceBoundaryScope.help)
+            // 면은 도면 개체가 아니라 저장한 개체의 경계로 막힌 곳만 잡힌다. 어느 레이어의 경계를 쓸지 고른다.
+
+            ToolbarDivider().frame(height: 16)
+
+            Text("\(env.selectedFaces.count) / \(env.selectableFaceCount)개 선택")
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(env.faceSelection.isEmpty ? .secondary : .primary)
+                .foregroundStyle(env.selectedFaces.isEmpty ? .secondary : .primary)
                 .fixedSize()
             // 신기능 5-4 1·2번: 상단바에 선택된 다각형 수 카운트.
             // 분모를 함께 보여주는 것은 제외 모드 때문이다 — 전부 고른 상태에서 빼 나가는데
@@ -42,15 +56,16 @@ struct PolygonToolbar: View {
             } label: {
                 Label("선택한 다각형 모두 저장", systemImage: "square.and.arrow.down.on.square")
             }
-            .disabled(env.faceSelection.isEmpty)
+            .disabled(env.selectedFaces.isEmpty)
             .help("고른 면을 \(env.layers.activePropertyType?.displayName ?? "현재 type")의 Feature로 저장합니다")
 
             ToolbarDivider().frame(height: 16)
 
             Button("전체 선택") { env.selectAllFaces() }
-                .disabled(env.closedPolygonFaces.isEmpty)
+                .disabled(env.faceModeFaces.isEmpty)
             Button("선택 해제") { env.clearFaceSelection() }
                 .disabled(env.faceSelection.isEmpty)
+            UnitCoverageToggle()
         }
         .buttonStyle(.toolbarIcon)
         .padding(.horizontal, 12).padding(.vertical, 8)

@@ -13,6 +13,7 @@ struct RoutingScreen: View {
                 }
                 Text("길찾기 노드").font(.headline)
                 Button("IMDF 불러오기…") { env.importIMDF() }
+                Button(".imdfrnt 불러오기…") { env.openProject() }
                 Spacer()
                 Picker("편집 도구", selection: Binding(get: { env.routingTool }, set: { env.setRoutingTool($0) })) {
                     ForEach(RoutingTool.allCases.filter { $0 != .calibrate || env.currentRoutingFloor?.imdfCoordinates == nil }, id: \.self) {
@@ -20,7 +21,6 @@ struct RoutingScreen: View {
                     }
                 }
                 .pickerStyle(.segmented).frame(maxWidth: 460)
-                Button("작업 저장") { env.saveProject() }
                 Button("길찾기 내보내기…") { env.exportRoutingGraph() }
                     .buttonStyle(.borderedProminent)
             }

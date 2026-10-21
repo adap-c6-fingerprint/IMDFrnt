@@ -13,6 +13,9 @@ struct AnchorPair: Identifiable, Hashable, Codable, Sendable {
     var label: String
     var residual: Double?
     // 변환식 계산 후 채워지는 잔차(m)
+    var fromAlignment: Bool?
+    // 지도 정렬 화면(신기능 11항)에서 정렬된 도면을 찍어 만든 쌍인가. 참이면 정렬을 고칠 때 위경도를 다시 계산한다.
+    // 손으로 짝지은 쌍은 건드리지 않는다. 선택적이라 이전 파일도 그대로 읽힌다.
 
     init(id: AnchorID = UUID(), local: LocalPoint, geo: GeoPoint, label: String) {
         self.id = id

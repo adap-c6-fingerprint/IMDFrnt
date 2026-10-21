@@ -29,23 +29,25 @@ extension AppEnvironment {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isImportingIMDF = true
+        let task = beginLongTask("IMDF 불러오는 중", detail: "IMDF 파일 읽는 중", fraction: nil)
+        let reporter = longTaskReporter(task)
         Task {
-            defer { isImportingIMDF = false }
+            defer { isImportingIMDF = false; endLongTask(task) }
             do {
                 let imported = try await Task.detached(priority: .userInitiated) {
                     let scoped = url.startAccessingSecurityScopedResource()
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                     return try IMDFImporter.load(url)
                 }.value
-                guard confirmUnsavedChanges(action: "다른 IMDF 불러오기") else { return }
+                updateLongTask(task, fraction: 0, detail: "\(imported.floors.count)개 층 구성 중")
+                guard autosaveBeforeLeaving(action: "다른 IMDF 불러오기") else { return }
                 let retainingEmptyProject = canFillEmptyProject
-                let previousURL = projectURL, previousSaved = lastExplicitSavedProject
+                let previousURL = projectURL
                 var file = ProjectFile.empty()
                 file.buildingProject = try BuildingProject.importing(imported)
                 if retainingEmptyProject { file.projectID = projectID }
-                try await adoptProjectAsync(file, from: retainingEmptyProject ? previousURL : nil)
+                try await adoptProjectAsync(file, from: retainingEmptyProject ? previousURL : nil, reporter: reporter)
                 routingTool = .place; canvasRotation = 0; showRoutingScreen = true
-                lastExplicitSavedProject = retainingEmptyProject ? previousSaved : nil
                 lastRecoveryProject = nil
                 persist(showingBanner: false)
                 notify("\(imported.sourceName) — \(imported.floors.count)개 층을 불러왔습니다. 바로 노드를 찍을 수 있습니다.")
@@ -58,13 +60,11 @@ extension AppEnvironment {
         file.buildingProject = try BuildingProject.importing(imported)
         let retainingEmptyProject = canFillEmptyProject
         let previousURL = projectURL
-        let previousSaved = lastExplicitSavedProject
         if retainingEmptyProject { file.projectID = projectID }
         try adopt(file, from: retainingEmptyProject ? previousURL : nil)
         routingTool = .place
         canvasRotation = 0
         showRoutingScreen = true
-        lastExplicitSavedProject = retainingEmptyProject ? previousSaved : nil
         lastRecoveryProject = nil
     }
 

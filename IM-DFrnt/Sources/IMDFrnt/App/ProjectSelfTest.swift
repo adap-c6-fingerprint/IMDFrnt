@@ -18,9 +18,14 @@ enum ProjectSelfTest {
             try? FileManager.default.removeItem(at: folder)
             defaults.removePersistentDomain(forName: suite)
         }
-        let backup = folder.appendingPathComponent("recovery.imdfrnt")
-        let destination = folder.appendingPathComponent("building.imdfrnt")
-        func environment() -> AppEnvironment { AppEnvironment(recoveryURL: backup, projectDefaults: defaults) }
+        let autosave = folder.appendingPathComponent("autosave", isDirectory: true)
+        func environment(_ directory: URL? = nil) -> AppEnvironment {
+            AppEnvironment(autosaveFolder: directory ?? autosave, projectDefaults: defaults)
+        }
+        func savedFiles(_ directory: URL = autosave) -> [URL] {
+            ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension == ProjectFile.fileExtension }
+        }
 
         do {
             let env = environment()
@@ -45,16 +50,25 @@ enum ProjectSelfTest {
                   env.selection.isEmpty && env.assignment == nil && !env.canUndo && !env.canRedo &&
                   env.doorDraftPoints.isEmpty && !env.showRoutingScreen && !env.showAnchorScreen &&
                   !env.showAuxiliaryScreen && !env.showDoorClosureScreen && env.projectURL == nil)
-            check("새 빈 프로젝트는 저장 가능하고 아직 수정사항 없음", env.hasSomethingToPersist && !env.hasUnsavedChanges && env.projectSaveStatus == "저장되지 않음")
+            var nameParts = DateComponents()
+            (nameParts.year, nameParts.month, nameParts.day, nameParts.hour, nameParts.minute) = (2026, 10, 17, 15, 30)
+            let nameDate = Calendar(identifier: .gregorian).date(from: nameParts)!
+            check("자동 저장 이름은 새 도면_YYMMDD_HHmm", AppEnvironment.defaultProjectFileName(at: nameDate) == "새 도면_261017_1530")
+            check("새 빈 프로젝트는 수정사항 없음", env.hasSomethingToPersist && !env.hasUnsavedChanges && env.projectSaveStatus == "빈 프로젝트")
+            check("빈 프로젝트는 자동 저장 폴더에 파일을 만들지 않음", env.persist(showingBanner: false) && env.projectURL == nil && savedFiles().isEmpty)
             let blankID = env.projectID
-            check("도면 없는 프로젝트 저장", env.saveProject(to: destination))
-            let blank = try ProjectFile.decoded(from: Data(contentsOf: destination))
-            let reopened = environment()
-            try reopened.adopt(blank, from: destination)
-            check("빈 프로젝트 재열기와 ID·이름·저장 상태 유지", reopened.document == nil && reopened.projectID == blankID &&
-                  reopened.projectDisplayName == "building" && reopened.projectSaveStatus == "저장됨" && !reopened.hasUnsavedChanges)
             env.openSample()
-            check("새 빈 프로젝트에 도면 추가 시 ID·저장 위치 유지", env.projectID == blankID && env.projectURL == destination && env.hasUnsavedChanges)
+            check("새 빈 프로젝트에 도면 추가 시 ID 유지·자동 저장 대기", env.projectID == blankID && env.projectURL == nil &&
+                  env.hasUnsavedChanges && env.projectSaveStatus == "자동 저장 대기")
+            env.autosaveTick()
+            guard let projectURL = env.projectURL else { throw CocoaError(.fileNoSuchFile) }
+            check("첫 자동 저장은 자동 저장 폴더에 새 도면_ 이름 파일 하나를 만듦",
+                  projectURL.deletingLastPathComponent().standardizedFileURL == autosave.standardizedFileURL &&
+                  projectURL.lastPathComponent.hasPrefix("새 도면_") && projectURL.pathExtension == ProjectFile.fileExtension &&
+                  savedFiles().count == 1 && !env.hasUnsavedChanges && env.projectSaveStatus == "자동 저장됨" &&
+                  env.projectDisplayName == projectURL.deletingPathExtension().lastPathComponent)
+            check("마지막 작업 파일 위치 기록", defaults.string(forKey: AppEnvironment.lastProjectPathKey) == projectURL.path)
+
             env.anchors.add(local: LocalPoint(1, 2), geo: GeoPoint(longitude: 129, latitude: 36), label: "기준")
             env.selectPropertyType(.opening)
             env.selection.selected = [env.document!.objects.first!.id]
@@ -65,66 +79,71 @@ enum ProjectSelfTest {
             env.handleRoutingClick(at: LocalPoint(300, 100), tolerance: 8, modifiers: .command)
             _ = env.routing.connect(first, env.routingSelectedNodeID!)
             env.updateRoutingNode(first, field: "metadata") { $0.metadataJSON = "{\"kind\":\"entry\"}" }
-            check("전체 작업 파일 저장", env.saveProject(to: destination))
-            let originalBytes = try Data(contentsOf: destination)
+            env.autosaveTick()
+            check("이후 자동 저장은 같은 파일 하나에만 덮어씀", env.projectURL == projectURL && savedFiles().count == 1 && !env.hasUnsavedChanges)
+            let originalBytes = try Data(contentsOf: projectURL)
             let file = try ProjectFile.decoded(from: originalBytes)
-            try reopened.adopt(file, from: destination)
+            let reopened = environment()
+            try reopened.adopt(file, from: projectURL)
             check("도면·feature·Anchor·노드·엣지·메타데이터 완전 재열기", !file.buildingProject!.levels[0].editing.features.features.isEmpty && file.commonProject().routingGraph.nodes.count == 2 &&
                   file.commonProject().routingGraph.edges.count == 1 && reopened.makeProjectFile()!.hasSameContents(as: file) &&
-                  reopened.routing.node(first)?.metadataJSON == "{\"kind\":\"entry\"}")
+                  reopened.routing.node(first)?.metadataJSON == "{\"kind\":\"entry\"}" && !reopened.hasUnsavedChanges)
+            check("다음 실행은 마지막 작업 파일을 엶", try environment().lastWorkedProjectURL() == projectURL)
             env.selectRoutingNode(first)
             env.selectRoutingFloor(env.routing.floors[0].id)
             env.showAnchorScreen = true
             env.selection.selected = []
             check("선택·화면 변경은 저장할 수정사항으로 판단하지 않음", !env.hasUnsavedChanges)
             env.updateRoutingNode(first, field: "name") { $0.name = "변경" }
-            check("노드 데이터 수정은 저장 상태에 반영", env.hasUnsavedChanges && env.projectSaveStatus == "수정사항 있음")
+            check("노드 데이터 수정은 자동 저장 대기로 반영", env.hasUnsavedChanges && env.projectSaveStatus == "자동 저장 대기")
             env.undo()
-            check("저장 시점으로 Undo하면 수정 상태 해제", !env.hasUnsavedChanges)
+            check("자동 저장 시점으로 Undo하면 대기 해제", !env.hasUnsavedChanges)
             env.redo()
-            env.autosaveTick()
-            check("자동 저장은 복구본만 갱신하고 원본·미저장 상태 보존", try Data(contentsOf: destination) == originalBytes &&
-                  ProjectFile.decoded(from: Data(contentsOf: backup)).commonProject().routingGraph.node(first)?.name == "변경" && env.hasUnsavedChanges)
-            try reopened.restoreRecovery(from: backup)
-            check("복구 시 원본 저장 위치와 미저장 변경 구분", reopened.projectURL == destination && reopened.hasUnsavedChanges && reopened.routing.node(first)?.name == "변경")
-            let beforeCancel = env.makeProjectFile()!
-            var saveCalled = false
-            check("취소는 저장을 부르지 않고 작업 보존", !env.resolveUnsavedChanges(.cancel, saving: { saveCalled = true; return true }) &&
-                  !saveCalled && env.makeProjectFile()!.hasSameContents(as: beforeCancel))
-            check("저장 창 취소는 후속 작업을 막음", !env.resolveUnsavedChanges(.save, saving: { false }))
+            let leftCleanly = env.autosaveBeforeLeaving(action: "검사")
+            let afterLeaving = try ProjectFile.decoded(from: Data(contentsOf: projectURL))
+            check("다른 작업으로 넘어가기 전 자동 저장", leftCleanly && !env.hasUnsavedChanges &&
+                  afterLeaving.commonProject().routingGraph.node(first)?.name == "변경")
+
             let blocker = folder.appendingPathComponent("not-a-folder")
             try Data("block".utf8).write(to: blocker)
-            check("저장 실패는 파일 위치·dirty·내용을 유지하고 후속 작업을 막음", !env.resolveUnsavedChanges(.save, saving: {
-                env.saveProject(to: blocker.appendingPathComponent("invalid.imdfrnt"))
-            }) && env.projectURL == destination && env.hasUnsavedChanges && env.makeProjectFile()!.hasSameContents(as: beforeCancel))
-            try env.discardRecoveryChanges()
-            try reopened.restoreRecovery(from: backup)
-            let bytesAfterDiscard = try Data(contentsOf: destination)
-            check("저장하지 않고 종료할 변경이 복구에서 부활하지 않음", !reopened.hasUnsavedChanges && reopened.routing.node(first)?.name != "변경" &&
-                  bytesAfterDiscard == originalBytes)
-            let broken = AppEnvironment(recoveryURL: blocker.appendingPathComponent("recovery.imdfrnt"), projectDefaults: defaults)
-            broken.openSample()
-            let brokenID = broken.projectID
-            do { try broken.createNewProject(); check("복구본 쓰기 실패 시 새 프로젝트로 교체하지 않음", false) }
-            catch { check("복구본 쓰기 실패 시 새 프로젝트로 교체하지 않음", broken.document != nil && broken.projectID == brokenID) }
+            let failing = environment(blocker)
+            failing.openSample()
+            check("자동 저장 실패는 파일 위치·대기 상태를 유지", !failing.persist(showingBanner: false) && failing.projectURL == nil && failing.hasUnsavedChanges)
+
+            let beforeInvalid = env.makeProjectFile()!
             var invalid = file
             invalid.buildingProject!.levels[0].info.svg = "broken"
             do { try env.adopt(invalid, from: nil); check("잘못된 프로젝트를 열어도 현재 데이터 보존", false) }
-            catch { check("잘못된 프로젝트를 열어도 현재 데이터 보존", env.makeProjectFile()!.hasSameContents(as: beforeCancel)) }
+            catch { check("잘못된 프로젝트를 열어도 현재 데이터 보존", env.makeProjectFile()!.hasSameContents(as: beforeInvalid)) }
             var legacyJSON = try JSONSerialization.jsonObject(with: file.legacyEditorView().encoded()) as! [String: Any]
             legacyJSON.removeValue(forKey: "hasDrawing")
             legacyJSON["version"] = 3
             let legacy = try ProjectFile.decoded(from: JSONSerialization.data(withJSONObject: legacyJSON))
-            try reopened.adopt(legacy, from: destination)
-            check("기존 hasDrawing 없는 파일과 버전 3 호환", reopened.document != nil && reopened.routing == env.lastExplicitSavedProject!.commonProject().routingGraph && !reopened.hasUnsavedChanges)
+            try reopened.adopt(legacy, from: projectURL)
+            check("기존 hasDrawing 없는 파일과 버전 3 호환", reopened.document != nil && reopened.routing == file.commonProject().routingGraph && !reopened.hasUnsavedChanges)
+
+            let bytesBeforeNew = try Data(contentsOf: projectURL)
             try env.createNewProject()
-            let bytesAfterNew = try Data(contentsOf: destination)
-            check("새 프로젝트 생성은 이전 파일을 덮어쓰지 않음", env.projectID != blankID && bytesAfterNew == originalBytes)
-            let unsaved = environment()
-            unsaved.openSample()
-            unsaved.autosaveTick()
-            try unsaved.discardRecoveryChanges()
-            check("한 번도 저장하지 않은 변경 폐기 시 복구본 제거", !FileManager.default.fileExists(atPath: backup.path))
+            env.openSample()
+            env.autosaveTick()
+            check("새 프로젝트는 이전 파일을 덮어쓰지 않고 자기 파일을 새로 만듦", env.projectID != blankID && env.projectURL != projectURL &&
+                  savedFiles().count == 2 && (try? Data(contentsOf: projectURL)) == bytesBeforeNew)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: projectURL.path)
+            let listed = env.savedProjects()
+            check("프로젝트 선택 목록은 자동 저장 폴더의 프로젝트를 최근 순으로 보여 줌", listed.count == 2 &&
+                  AppEnvironment.isSameFile(listed[0].url, env.projectURL!) && AppEnvironment.isSameFile(listed[1].url, projectURL))
+            check("열린 프로젝트가 있으면 전환 시 저장 질문 대상", env.hasOpenProject && environment().hasOpenProject == false)
+            let taken = environment().nextAutosaveURL(at: nameDate)
+            try Data().write(to: taken)
+            check("같은 분에 만든 프로젝트는 _2를 붙여 구분", environment().nextAutosaveURL(at: nameDate).lastPathComponent == "새 도면_261017_1530_2.imdfrnt")
+
+            let legacyFolder = folder.appendingPathComponent("legacy", isDirectory: true)
+            try FileManager.default.createDirectory(at: legacyFolder, withIntermediateDirectories: true)
+            let legacyAutosave = legacyFolder.appendingPathComponent("autosave.imdfrnt")
+            try originalBytes.write(to: legacyAutosave)
+            let migrated = try environment(legacyFolder).lastWorkedProjectURL()
+            check("예전 공용 복구본은 새 도면_ 이름 파일로 옮겨 엶", migrated.map { $0.lastPathComponent.hasPrefix("새 도면_") } == true &&
+                  !FileManager.default.fileExists(atPath: legacyAutosave.path) && migrated.flatMap { try? Data(contentsOf: $0) } == originalBytes)
         } catch { check("프로젝트 저장·전환 통합 검사", false); print(error) }
         print("== Project: \(count - failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)

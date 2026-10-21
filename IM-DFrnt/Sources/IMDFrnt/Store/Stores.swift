@@ -39,6 +39,9 @@ struct OwnershipRegistry: Equatable, Codable {
 
 struct FeatureStore: Equatable, Codable {
     private(set) var features: [FeatureGroup] = []
+    /// unit 레이어의 보조 선분(2026-10-18 요청). feature가 아니라 내보내지 않고, 면 단위에서 면을 막는 경계로만 쓴다.
+    /// 층마다 따로 있고 feature와 함께 저장·실행취소된다.
+    private(set) var guides: [LineSegment] = []
 
     /// id → 배열 위치. 조회를 한 번에 끝내기 위한 색인이다(`07) 성능 최적화 제안.md` 제안 3).
     /// 이전에는 `features.first { $0.id == id }`로 목록을 앞에서부터 훑었는데,
@@ -48,19 +51,40 @@ struct FeatureStore: Equatable, Codable {
 
     init() {}
 
-    enum CodingKeys: String, CodingKey { case features }
+    enum CodingKeys: String, CodingKey { case features, guides }
     // 색인은 저장하지 않는다 — 배열에서 언제든 다시 만들 수 있고,
     // 파일에 넣으면 이전에 저장한 프로젝트 파일과 형식이 갈린다.
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         features = try c.decode([FeatureGroup].self, forKey: .features)
+        guides = try c.decodeIfPresent([LineSegment].self, forKey: .guides) ?? []
+        // 보조 선분이 생기기 전의 파일에는 이 키가 없다.
         rebuildIndex()
     }
 
-    static func == (l: FeatureStore, r: FeatureStore) -> Bool { l.features == r.features }
+    static func == (l: FeatureStore, r: FeatureStore) -> Bool { l.features == r.features && l.guides == r.guides }
     // 색인은 배열에서 파생된 값이라 비교 대상이 아니다. 넣으면 실행취소의
     // "바뀐 게 없다" 판정(`AppEnvironment.perform`)이 엉뚱하게 달라질 수 있다.
+
+    /// 두 상태가 feature 속성(`properties`)만 다르면 바뀐 feature를, 그 밖의 것(도형·구성원·휴지통·일련번호·보조 선분·순서)이
+    /// 하나라도 다르면 nil을 돌려준다. 속성 입력칸의 글자 하나에 도형 계산을 다시 하지 않으려는 것이다.
+    static func propertyOnlyChanges(from old: FeatureStore, to new: FeatureStore) -> Set<FeatureGroupID>? {
+        guard old.features.count == new.features.count, old.guides == new.guides else { return nil }
+        var changed = Set<FeatureGroupID>()
+        for (a, b) in zip(old.features, new.features) {
+            guard a.id == b.id else { return nil }
+            if a.properties == b.properties {
+                guard a == b else { return nil }
+                continue
+            }
+            var same = a
+            same.properties = b.properties
+            guard same == b else { return nil }
+            changed.insert(a.id)
+        }
+        return changed
+    }
 
     func feature(_ id: FeatureGroupID) -> FeatureGroup? {
         guard let i = indexByID[id], features.indices.contains(i) else { return nil }
@@ -97,6 +121,10 @@ struct FeatureStore: Equatable, Codable {
         guard let i = indexByID[id], features.indices.contains(i) else { return }
         body(&features[i])
     }
+
+    mutating func addGuide(_ s: LineSegment) { guides.append(s) }
+    mutating func removeGuide(at i: Int) { if guides.indices.contains(i) { guides.remove(at: i) } }
+    mutating func removeAllGuides() { guides = [] }
 }
 
 // MARK: - LayerStore
@@ -231,12 +259,34 @@ struct SegmentationStore: Equatable, Codable, Sendable {
     @discardableResult
     mutating func segmentize(_ id: VectorObjectID, geometry: PathGeometry,
                              tolerance: Double) -> [SegmentationDefect] {
-        let segs = CurveFlattener.flatten(geometry, tolerance: tolerance)
-        let defects = SegmentationValidator.validate(segs, epsilon: 1e-4)
-        guard defects.isEmpty else { return defects }
-        segmentations[id] = Segmentation(sourceObjectID: id, segments: segs,
-                                         tolerance: tolerance, createdAt: Date())
-        return []
+        switch Self.prepare(id, geometry: geometry, tolerance: tolerance) {
+        case .success(let s): segmentations[id] = s; return []
+        case .failure(let defects): return defects.defects
+        }
+    }
+
+    /// 계산된 선분화 결과를 넣는다. 많은 개체를 백그라운드에서 선분화한 뒤 한 번에 반영할 때 쓴다.
+    mutating func insert(_ s: Segmentation) { segmentations[s.sourceObjectID] = s }
+
+    struct Rejected: Error { let defects: [SegmentationDefect] }
+
+    /// 선분화 계산만 한다(저장소를 바꾸지 않아 백그라운드에서 돌릴 수 있다).
+    ///
+    /// **교차는 막지 않는다**(2026-10-18 요청). 작은 곡선을 거칠게 펴서 생긴 교차는 더 잘게 다시 잘라 없애고,
+    /// 그래도 남는 교차는 원본 도면 자체가 꼬인 것이라 그대로 받아들인다. 끝점이 벌어진 것만 거절한다.
+    static func prepare(_ id: VectorObjectID, geometry: PathGeometry,
+                        tolerance: Double) -> Result<Segmentation, Rejected> {
+        var t = tolerance
+        var segs = CurveFlattener.flatten(geometry, tolerance: t)
+        var defects = SegmentationValidator.validate(segs, epsilon: 1e-4)
+        while t > 0.01, defects.contains(where: \.isCrossing), !defects.contains(where: \.isGap) {
+            t = max(0.01, t / 4)
+            segs = CurveFlattener.flatten(geometry, tolerance: t)
+            defects = SegmentationValidator.validate(segs, epsilon: 1e-4)
+        }
+        let gaps = defects.filter(\.isGap)
+        guard gaps.isEmpty else { return .failure(Rejected(defects: gaps)) }
+        return .success(Segmentation(sourceObjectID: id, segments: segs, tolerance: t, createdAt: Date()))
     }
 
     mutating func desegmentize(_ id: VectorObjectID) {

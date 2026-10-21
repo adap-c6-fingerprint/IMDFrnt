@@ -16,6 +16,10 @@ struct SpatialIndex: Sendable {
 
     private(set) var cellSize: Double = 0
     private var buckets: [Cell: [VectorObjectID]] = [:]
+    /// 개체 → 도면 순서(`objects` 안의 자리). 화면에 그릴 후보를 원래 겹침 순서대로 돌려주는 데 쓴다.
+    private var order: [VectorObjectID: Int] = [:]
+    /// 모든 개체 상자를 감싼 범위. 화면이 이 범위의 절반 넘게 덮으면 후보를 모으지 않고 바로 '전체'로 답한다.
+    private(set) var extent: CGRect = .null
 
     var isEmpty: Bool { buckets.isEmpty }
 
@@ -26,7 +30,10 @@ struct SpatialIndex: Sendable {
         guard longest > 0, !objects.isEmpty else { return }
         cellSize = max(1, Double(longest) / Double(divisions))
 
-        for o in objects {
+        order.reserveCapacity(objects.count)
+        for (i, o) in objects.enumerated() {
+            order[o.id] = i
+            extent = extent.union(o.boundingBox)
             for cell in cells(covering: o.boundingBox) {
                 buckets[cell, default: []].append(o.id)
             }
@@ -43,6 +50,25 @@ struct SpatialIndex: Sendable {
             if let ids = buckets[cell] { out.formUnion(ids) }
         }
         return out
+    }
+
+    /// 화면에 그릴 개체의 도면 순서 번호(오름차순). 그리기 순서가 곧 겹침 순서라 정렬해 돌려준다.
+    /// 화면에 도면 대부분이 보이면 `nil`이다 — 그때는 전체를 차례로 도는 편이 정렬보다 싸다.
+    /// 격자가 이 도면으로 만든 것이 아니면(`count`가 다르면) 역시 `nil`이다.
+    func drawIndices(in rect: CGRect, moved: Set<VectorObjectID>, count: Int) -> [Int]? {
+        guard cellSize > 0, order.count == count, !rect.isNull, !rect.isInfinite,
+              rect.width < cellSize * 1_000, rect.height < cellSize * 1_000 else { return nil }
+        // 화면 범위를 모르거나(`.infinite`는 폭이 유한한 아주 큰 수다) 도면보다 터무니없이 크면 칸 번호가 Int를 넘는다.
+        // 그때는 격자를 쓰지 않고 전체를 그린다.
+        let seen = rect.insetBy(dx: -cellSize, dy: -cellSize).intersection(extent)
+        if !seen.isNull, extent.width * extent.height > 0,
+           seen.width * seen.height * 2 >= extent.width * extent.height { return nil }
+        // 도면 범위의 절반 넘게 보이면 후보를 모으지 않고 바로 전체로 답한다(2026-10-19 캔버스 이동 렉).
+        // 6만 개를 집합에 넣었다가 결국 버리는 데만 한 번에 5 ms, 한 프레임에 두 번이었다.
+        guard let ids = candidates(in: rect.insetBy(dx: -cellSize, dy: -cellSize), moved: moved),
+              ids.count * 2 < count else { return nil }
+        // 선 두께·곡선을 펴서 생긴 차이로 상자가 칸 경계를 살짝 넘을 수 있어 한 칸 넉넉히 본다.
+        return ids.compactMap { order[$0] }.sorted()
     }
 
     func candidates(near point: LocalPoint, tolerance: Double,

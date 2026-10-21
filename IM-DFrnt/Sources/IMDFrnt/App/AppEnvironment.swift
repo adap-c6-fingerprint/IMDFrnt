@@ -14,6 +14,12 @@ struct ObjectRenderState {
     // 다른 property type이 이미 소유한 개체 — 선택 불가
     var isBorrowed: Bool = false
     // 지금 레이어가 opening에서 빌려 쓰는 개체(명세 10-2-2). 소유하지 않았다는 것을 색으로 알린다.
+    var isHighlighted: Bool = false
+    // 강조 중인 feature(펼친 카드·눈으로 띄운 것)의 구성원.
+    var isTaggedHere: Bool = false
+    // 지금 레이어(property type)에서 태깅한 개체.
+    var isTaggedOtherLayer: Bool = false
+    // 다른 레이어(property type)에서 태깅한 개체. 옅은 초록으로 그린다 — 고를 수 없는 것(`isDisabled`)은 그대로다.
 }
 
 /// 캔버스 배경 전환. 선 색이 배경에 묻히면 자동으로 반전시킨다.
@@ -168,11 +174,18 @@ final class AppEnvironment: ObservableObject {
     // MARK: 문서와 상태
 
     @Published var document: DrawingDocument? {
-        didSet { if !isInstallingLevelDrawing { rebuildDocumentIndexes() } }
+        didSet { geometryRevision &+= 1; if !isInstallingLevelDrawing { rebuildDocumentIndexes() } }
     }
+
+    /// 도면·feature·선분화가 바뀔 때마다 오르는 번호. 화면을 그릴 때마다 읽는 캐시가 이 번호로 유효한지 먼저 본다.
+    /// 번호가 같으면 링·선분 전체를 다시 모아 비교하지 않는다 — 면 하나마다 그 비교를 하던 것이 버벅임의 원인이었다.
+    private(set) var geometryRevision = 0
 
     /// 개체별 파생 데이터(Path · 선분 · 경계 상자). 제안 2.
     let renderCache = RenderCacheStore()
+
+    /// 도면 대부분이 보일 때 캔버스가 묶어 그리는 경로(`CanvasBatches`). 표시 상태·도형이 바뀌면 다음 프레임에 다시 만든다.
+    let canvasBatchStore = CanvasBatchStore()
 
     /// 드래그 중 이동량. **`@Published`가 아니다** — 이 객체가 바뀌어도 `AppEnvironment`는
     /// 알림을 보내지 않으므로, 좌우 사이드바처럼 이동과 무관한 화면이 다시 그려지지 않는다(제안 4).
@@ -191,11 +204,11 @@ final class AppEnvironment: ObservableObject {
     /// 클릭·사각형 선택·겹침 후보를 도면 전체가 아니라 해당 칸에서만 찾기 위한 격자(제안 5).
     private(set) var spatialIndex = SpatialIndex()
 
-    let recoveryURLOverride: URL?
+    let autosaveFolderOverride: URL?
     let projectDefaults: UserDefaults
 
-    init(recoveryURL: URL? = nil, projectDefaults: UserDefaults = .standard) {
-        recoveryURLOverride = recoveryURL
+    init(autosaveFolder: URL? = nil, projectDefaults: UserDefaults = .standard) {
+        autosaveFolderOverride = autosaveFolder
         self.projectDefaults = projectDefaults
         moves.onSettled = { [weak self] in self?.objectWillChange.send() }
         // 드래그가 끝난 시점에 한 번만 환경 전체에 알린다 — `도구` 메뉴의 '모든 개체 원위치'
@@ -204,6 +217,14 @@ final class AppEnvironment: ObservableObject {
     @Published var layers = LayerStore() { didSet { invalidateRenderStates() } }
     @Published var features = FeatureStore() {
         didSet {
+            if let changed = FeatureStore.propertyOnlyChanges(from: oldValue, to: features) {
+                refreshRenderStates(owners: changed)
+                return
+            }
+            // 속성(category·name 등)만 바뀌었으면 도형·점·면·진행률은 그대로다(2026-10-19 이름표 편집 창 렉).
+            // 예전에는 글자 하나마다 아래를 전부 돌아, 진행률 다시 세기 하나로 포스텍 도서관에서 한 글자 300 ms였다.
+            // category는 필터 통과 여부를 바꾸므로 그 feature의 구성원 개체만 다시 판정한다.
+            geometryRevision &+= 1
             invalidateRenderStates(); refreshOverlap(); refreshOpenRingGaps()
             scheduleDerivedGeometryRefresh()
             // 저장된 opening의 선이 면을 닫는 선분이라 면이 달라질 수 있다(#21). 열쇠가 같으면 바로 돌아온다.
@@ -222,6 +243,7 @@ final class AppEnvironment: ObservableObject {
     }
     @Published var segmentation = SegmentationStore() {
         didSet {
+            geometryRevision &+= 1
             invalidateSegmentationCaches(since: oldValue); refreshOverlap(); refreshOpenRingGaps()
             scheduleDerivedGeometryRefresh()
         }
@@ -237,7 +259,10 @@ final class AppEnvironment: ObservableObject {
             // 보조 개체 제외 창 안에서는 미룬다 — 클릭마다 다시 셀 이유가 없다. 창을 닫을 때 한 번 센다.
         }
     }
-    @Published var doorClosures = DoorClosureStore() { didSet { refreshOpenRingGaps(); scheduleDerivedGeometryRefresh() } }
+    @Published var doorClosures = DoorClosureStore() {
+        didSet { refreshOpenRingGaps(); scheduleDerivedGeometryRefresh(); refreshPointProgress() }
+        // 임시 문 자리 안의 문짝·호도 진행률의 '저장'에 들어간다(`pointCoveredObjects`).
+    }
     /// '문 임시로 닫기'로 만들어 둔, 아직 Openings 레이어에 반영하지 않은 문(신기능 3항).
     @Published var openingGate = OpeningGateStore()
     @Published var borrow = BorrowRegistry() {
@@ -328,8 +353,15 @@ final class AppEnvironment: ObservableObject {
     /// 보조 개체 제외 창의 사이드바 폭. 메인과 따로 두는 이유는 담는 내용이 다르기 때문이다 —
     /// 그쪽은 feature 인스펙터, 이쪽은 쌍둥이 그룹 목록이라 편한 폭이 서로 다르다.
 
-    @Published var canvasRotation = 0
-    /// 도면 표시 회전(90° 단위). 표시 전용이며 도면 좌표는 바뀌지 않는다 —
+    /// 층별 도면 표시 회전(90° 단위). 층 도면마다 놓인 방향이 달라 층마다 따로 기억한다(2026-10-19 요청).
+    /// 층이 없는 단일 도면은 `nil` 열쇠를 쓴다. 화면 상태라 프로젝트 파일에는 저장하지 않는다.
+    @Published var canvasRotationByLevel: [UUID?: Int] = [:]
+
+    var canvasRotation: Int {
+        get { canvasRotationByLevel[routingFloorID] ?? 0 }
+        set { canvasRotationByLevel[routingFloorID] = newValue == 0 ? nil : newValue }
+    }
+    /// 지금 층의 도면 표시 회전. 표시 전용이며 도면 좌표는 바뀌지 않는다 —
     /// Anchor 쌍과 추출 좌표가 회전에 영향받으면 안 되기 때문이다.
 
     @Published var canvasBackground: CanvasBackground = .light
@@ -361,7 +393,8 @@ final class AppEnvironment: ObservableObject {
     }
 
     var isSelectModeActive: Bool {
-        (selectModifierDown || forceSelectMode) && !mode.blocksSelection
+        (selectModifierDown || forceSelectMode || isObjectWorkMode) && !mode.blocksSelection
+        // 선 단위에서는 키를 누르지 않아도 클릭·드래그가 개체를 고른다.
     }
 
     // MARK: UI 상태
@@ -371,14 +404,14 @@ final class AppEnvironment: ObservableObject {
     /// 카드 전부를 감싸는 최상위 트리(`FEATURES` 섹션) 하나로 접혔다 — 사용자가 원한 것은
     /// **카드마다 따로 접고 펴되, 버튼 하나로 그 개별 토글을 한꺼번에 움직이는 것**이다.
     @Published private(set) var expandedFeatures: Set<FeatureGroupID> = [] {
-        didSet { invalidateRenderStates(); refreshOpenRingGaps() }
+        didSet { refreshRenderStates(owners: oldValue.symmetricDifference(expandedFeatures)); refreshOpenRingGaps() }
+        // 펼침은 그 feature의 개체 색(강조·빌림)만 바꾼다. 도면 전체를 다시 판정하지 않는다.
     }
 
     /// 지금 '주로 보고 있는' 카드. 상단바의 display point 찍기처럼 **대상이 하나여야 하는**
     /// 동작이 이 값을 쓴다. 여러 개가 펼쳐져 있을 때 무엇을 겨냥하는지 모호해지면 안 된다.
-    @Published private(set) var focusedFeature: FeatureGroupID? {
-        didSet { invalidateRenderStates() }
-    }
+    @Published private(set) var focusedFeature: FeatureGroupID?
+    // 개체 표시 상태는 펼친 카드 전부(`expandedFeatures`)를 보고, 이 값은 보지 않는다.
 
     /// 기존 호출부를 위한 창구. 대입하면 그 하나만 펼친 상태가 된다.
     var expandedFeature: FeatureGroupID? {
@@ -390,6 +423,54 @@ final class AppEnvironment: ObservableObject {
     }
 
     func isFeatureExpanded(_ id: FeatureGroupID) -> Bool { expandedFeatures.contains(id) }
+
+    /// 캔버스에서 다른 색으로 강조할 feature인가 — 우측 사이드바에서 펼친(고른) 카드이거나
+    /// '이 feature만 보이게 하기'(눈)로 띄운 것.
+    func isFeatureHighlighted(_ id: FeatureGroupID) -> Bool {
+        layers.isolatedFeature == id || expandedFeatures.contains(id) || hoveredFeature == id
+    }
+
+    /// 캔버스의 일련번호 태그(unit-014 등) 위에 마우스가 올라가 있는 feature. 떼면 nil이 되어 원래 색으로 돌아간다.
+    @Published var hoveredFeature: FeatureGroupID? {
+        didSet {
+            if oldValue != hoveredFeature { refreshRenderStates(owners: Set([oldValue, hoveredFeature].compactMap { $0 })) }
+        }
+        // 이름표 위를 지날 때마다 바뀐다. 도면 개체 6만 개를 매번 다시 판정하면 마우스를 움직일 때마다 멈췄다.
+    }
+
+    /// 캔버스에 category·name 편집 창을 열어 달라는 요청. 창의 자리(이름표 위치)는 캔버스만 알므로
+    /// 여기서는 대상만 남기고, 캔버스가 받아 창을 연 뒤 비운다.
+    @Published var tagEditorRequest: FeatureGroupID?
+
+    /// 우측 패널의 category 필터(#52). type마다 고른 category 값이고, 비어 있으면 전부 보인다.
+    /// category가 null인 feature는 빈 문자열로 고른다. 화면 상태라 실행취소 대상인 `LayerStore`에 두지 않는다.
+    @Published var categoryFilters: [IMDFFeatureType: Set<String>] = [:] {
+        didSet {
+            let changed = Set(oldValue.keys).union(categoryFilters.keys).filter { oldValue[$0] != categoryFilters[$0] }
+            refreshRenderStates(owners: Set(features.features.filter { changed.contains($0.featureType) }.map(\.id)))
+        }
+        // 필터가 바뀐 type의 feature 구성원만 숨김 여부가 달라진다.
+    }
+
+    /// feature의 category 값. null이면 빈 문자열이다.
+    static func categoryValue(of f: FeatureGroup) -> String {
+        if case .string(let s) = f.value("category") { return s }
+        return ""
+    }
+
+    /// feature의 name을 이름표 위에 다는 글자. ko·en이 다 있으면 category와 같은 `한국어(영어)`, 하나만 있으면 그것, 없으면 빈 문자열이다.
+    static func nameText(of f: FeatureGroup) -> String {
+        guard case .localized(let en, let ko) = f.value("name") else { return "" }
+        let e = en.trimmingCharacters(in: .whitespaces), k = ko.trimmingCharacters(in: .whitespaces)
+        if !k.isEmpty, !e.isEmpty { return "\(k)(\(e))" }
+        return k.isEmpty ? e : k
+    }
+
+    /// category 필터를 통과하는가. 걸러진 feature는 카드 목록과 캔버스(도형·이름표)에서 빠진다.
+    func passesCategoryFilter(_ f: FeatureGroup) -> Bool {
+        guard let picked = categoryFilters[f.featureType], !picked.isEmpty else { return true }
+        return picked.contains(Self.categoryValue(of: f))
+    }
 
     /// 카드 하나의 개별 토글.
     func toggleFeatureExpansion(_ id: FeatureGroupID) {
@@ -427,9 +508,29 @@ final class AppEnvironment: ObservableObject {
     var hasExpandedFeature: Bool { !expandedFeatures.isEmpty }
     @Published var conflict: ConflictInfo?
     @Published var exportBlockers: [ExportBlocker] = []
+    /// IMDF 아카이브를 막은 이유. 층 이름을 붙인 문장 목록이다.
+    @Published var archiveExportBlockers: [String] = []
+    /// 클라이언트용 묶음(#54)을 막은 이유. 지도·길찾기·통합 검증 문장 목록이다.
+    @Published var clientDatasetBlockers: [String] = []
     @Published var banner: Banner?
     @Published var showAnchorScreen = false
+    /// 지도 정렬 화면(신기능 11항, #31). Anchor 화면과 같은 전체 화면 전환이다.
+    @Published var showMapAlignScreen = false
+    /// 지도에 그릴 층별 선 묶음. 화면 상태가 아니라 계산 캐시라 `@Published`가 아니다.
+    var mapAlignPathCache: [UUID: MapAlignPathEntry] = [:]
+    /// 다른 층 도면을 차례로 불러오는 작업. 새로 부르면 이전 것을 끊는다.
+    var mapAlignPrepareTask: Task<Void, Never>?
     @Published var segmentationTolerance: Double = CurveFlattener.defaultTolerance
+    /// 메인 캔버스에서 제외된 보조 개체의 진하기(0이면 숨김). 기본 0.4는 종전 고정값이다.
+    /// 화면 취향이라 프로젝트 파일이 아니라 이 Mac에 기억한다.
+    @Published var excludedAuxiliaryOpacity: Double =
+        UserDefaults.standard.object(forKey: AppEnvironment.excludedOpacityKey) as? Double ?? 0.4 {
+        didSet {
+            invalidateRenderStates()
+            UserDefaults.standard.set(excludedAuxiliaryOpacity, forKey: Self.excludedOpacityKey)
+        }
+    }
+    static let excludedOpacityKey = "IMDFrnt.excludedAuxiliaryOpacity"
 
     struct Banner: Identifiable {
         let id = UUID()
@@ -474,7 +575,8 @@ final class AppEnvironment: ObservableObject {
         projectID = id
         projectURL = nil
         hasCreatedProject = true
-        lastExplicitSavedProject = nil
+        showProjectPicker = false
+        // Finder 열기·새 프로젝트처럼 다른 경로로 프로젝트가 바뀌어도 선택 창이 남지 않게 한다.
         lastRecoveryProject = nil
         features = FeatureStore()
         ownership = OwnershipRegistry()
@@ -490,6 +592,7 @@ final class AppEnvironment: ObservableObject {
         assignment = nil
         layers = LayerStore()
         layers.bootstrap()
+        categoryFilters = [:]
         buildingProject = BuildingProject()
         showBuildingManager = false
         routingFloorID = nil
@@ -512,7 +615,7 @@ final class AppEnvironment: ObservableObject {
         undoStack.clear()
         moves.reset(nil)
         isMoveEnabled = false
-        canvasRotation = 0
+        canvasRotationByLevel = [:]
         marqueeSubtracts = false
         auxiliarySelection = []
         focusedTwinKey = nil
@@ -526,6 +629,9 @@ final class AppEnvironment: ObservableObject {
         doorDraftPoints = []
         showRoutingScreen = false
         showAnchorScreen = false
+        showMapAlignScreen = false
+        mapAlignPathCache = [:]
+        mapAlignPrepareTask?.cancel(); mapAlignPrepareTask = nil
         showDoorClosureScreen = false
         showCurvedScreen = false
         showAuxiliaryScreen = false
@@ -569,21 +675,17 @@ final class AppEnvironment: ObservableObject {
                 try setRoutingDrawing(target, data: data, name: name)
                 return
             }
-            if confirmingReplacement && !confirmUnsavedChanges(action: "다른 도면 열기") { return }
+            if confirmingReplacement && !autosaveBeforeLeaving(action: "다른 도면 열기") { return }
             let retainingEmptyProject = canFillEmptyProject
             let previousID = projectID
             let previousURL = projectURL
-            let previousSaved = lastExplicitSavedProject
             resetProjectState(id: retainingEmptyProject ? previousID : UUID())
             document = doc
             loadedSVG = String(data: data, encoding: .utf8)
             let info = ProjectLevelInfo(name: "1층", ordinal: 0, sourceName: name, svg: loadedSVG ?? "")
             buildingProject.levels = [ProjectLevel(info: info)]
             routingFloorID = info.id
-            if retainingEmptyProject {
-                projectURL = previousURL
-                lastExplicitSavedProject = previousSaved
-            }
+            if retainingEmptyProject { projectURL = previousURL }
             notify("\(name) — 개체 \(doc.objects.count)개를 읽었습니다.")
         } catch {
             notify("SVG 파싱 실패: \(error)", isError: true)
@@ -593,7 +695,7 @@ final class AppEnvironment: ObservableObject {
     // MARK: 프로젝트 파일 (명세 7-3-2, 9-7)
 
     @Published var projectURL: URL?
-    /// 마지막으로 저장하거나 연 위치. `저장`이 이 자리에 덮어쓴다.
+    /// 이 프로젝트의 단일 파일. 자동 저장이 이 자리에 덮어쓴다. 아직 한 번도 저장 전이면 nil.
 
     // MARK: 저장 루프와 작업 공유 (신기능 1항)
 
@@ -607,8 +709,14 @@ final class AppEnvironment: ObservableObject {
     /// 배정본을 합친 결과. 팝업으로 그대로 보여준다 — 조용히 건너뛰면 나중에 내보내기에서야 드러난다.
 
     @Published var hasCreatedProject = false
-    @Published var lastExplicitSavedProject: ProjectFile?
-    var lastRecoveryProject: ProjectFile?
+    @Published var showProjectPicker = false
+    /// 정보 입력 창을 연 메타데이터 type(address·building·occupant·manifest). nil이면 닫힘.
+    @Published var metadataEditorType: IMDFFeatureType?
+    /// 오래 걸리는 계산의 진행률 팝업(`LongTaskProgress.swift`). 끝나면 nil이 되어 저절로 닫힌다.
+    @Published var longTask: LongTaskProgress?
+    /// 프로젝트 선택 창. 앱 시작 때와 파일 → 프로젝트 선택…에서 뜬다.
+    @Published var lastRecoveryProject: ProjectFile?
+    /// 마지막으로 파일에 쓴 내용. 지금 내용과 다르면 다음 자동 저장을 기다리는 중이다.
     @Published var isProjectActionInProgress = false
 
     var autosaveTimer: Timer?
@@ -624,23 +732,6 @@ final class AppEnvironment: ObservableObject {
         !features.features.isEmpty || !anchors.pairs.isEmpty || auxiliary.count > 0
     }
 
-    @discardableResult
-    func saveProject(as newLocation: Bool = false) -> Bool {
-        guard hasSomethingToPersist else { return false }
-        var destination = projectURL
-        if newLocation || projectURL == nil {
-            let panel = NSSavePanel()
-            panel.nameFieldStringValue = projectDisplayName + "." + ProjectFile.fileExtension
-            panel.allowedContentTypes = [UTType(filenameExtension: ProjectFile.fileExtension) ?? .data]
-            panel.canCreateDirectories = true
-            panel.title = "프로젝트 저장 위치 선택"
-            guard panel.runModal() == .OK, let url = panel.url else { return false }
-            destination = url
-        }
-        guard let destination else { return false }
-        return saveProject(to: destination)
-    }
-
     func openProject() {
         guard !isProjectBusy else { return }
         isProjectActionInProgress = true
@@ -650,13 +741,20 @@ final class AppEnvironment: ObservableObject {
         // 잠깐 쓰였던 `.imdfproj`도 고를 수 있게 둔다. 그 사이에 저장한 파일이 있으면 열려야 한다.
         // 버전 1 파일은 확장자가 같아 여기서 걸러지지 않고, `ProjectFile.decoded`가 이유를 말하며 거절한다.
         panel.allowsMultipleSelection = false
-        panel.title = "프로젝트 열기 (.imdfrnt)"
-        panel.message = "도면·층·노드·연결이 저장된 .imdfrnt 프로젝트를 선택하세요."
-        panel.prompt = "프로젝트 열기"
+        panel.directoryURL = autosaveFolder
+        // 자동 저장 폴더에서 시작한다. 프로젝트마다 `새 도면_YYMMDD_HHmm.imdfrnt`가 여기 쌓인다.
+        let intoLevel = importsProjectIntoActiveLevel ? activeLevel : nil
+        // 빈 층에서 누르면 프로젝트를 바꾸지 않고 고른 파일의 층을 이 층에 넣는다(`LevelProjectImport.swift`).
+        panel.title = intoLevel.map { "\($0.info.name)에 넣을 .imdfrnt 불러오기" } ?? ".imdfrnt 불러오기"
+        panel.message = intoLevel.map { "고른 프로젝트의 층 하나를 \($0.info.name)에 넣습니다. 지금 프로젝트는 그대로입니다." }
+            ?? "자동 저장된 .imdfrnt 프로젝트를 선택하세요."
+        panel.prompt = "불러오기"
         let response = panel.runModal()
         isProjectActionInProgress = false
         guard response == .OK, let url = panel.url else { return }
-        Task { await openDocumentAsync(at: url) }
+        Task {
+            if intoLevel != nil { await importProjectLevel(from: url) } else { await openDocumentAsync(at: url) }
+        }
     }
 
     // MARK: 진행률 (명세 3-1) — 전역 하나만 둔다
@@ -674,9 +772,12 @@ final class AppEnvironment: ObservableObject {
     var claimedCount: Int {
         ownership.claimedObjectIDs
             .union(doorClosures.consumedObjectIDs)
+            .union(pointCoveredObjectIDs)
             .subtracting(auxiliary.excluded)
             .count
     }
+    // #21 이후 모든 레이어의 기본 작업이 점 단위라 feature가 개체를 소유하지 않는다.
+    // 소유만 세면 openings를 아무리 태깅해도 '저장'이 0이었다 — 점으로 덮은 개체도 함께 센다.
 
     var excludedCount: Int { auxiliary.count }
 
@@ -744,12 +845,34 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 렌더 상태
 
-    private var renderStateCache: [VectorObjectID: ObjectRenderState]?
+    private var renderStateCache: [VectorObjectID: ObjectRenderState]? { didSet { renderStateRevision &+= 1 } }
+
+    /// 표시 상태 사전이 바뀔 때마다 오르는 번호. 캔버스가 묶어 그리는 경로(`CanvasBatches`)가 이 번호로 유효한지 본다.
+    private(set) var renderStateRevision = 0
 
     /// 표시 상태를 다시 판정해야 한다고 표시한다. `@Published` 상태의 `didSet` 한 곳에서만 부른다 —
     /// 지우는 코드를 여기저기 흩으면 새 기능이 들어올 때마다 한 군데씩 빠지고,
     /// 그때 증상은 "화면이 갱신되지 않는다"로 나타나 원인을 찾기 어렵다.
     func invalidateRenderStates() { renderStateCache = nil }
+
+    /// 몇 feature의 표시(강조·펼침·category 필터)만 바뀌었을 때, 그 구성원과 빌린 개체만 다시 판정한다.
+    /// 다른 개체의 상태는 이 feature들과 무관하다. 사전이 아직 없으면 할 일이 없다(다음에 통째로 만든다).
+    func refreshRenderStates(owners: Set<FeatureGroupID>) {
+        guard !owners.isEmpty, renderStateCache != nil, let doc = document else { return }
+        var ids = Set<VectorObjectID>()
+        for owner in owners {
+            ids.formUnion(borrow.objects(borrowedBy: owner))
+            if let f = features.feature(owner) { ids.formUnion(f.memberIDs) }
+        }
+        guard !ids.isEmpty, var table = renderStateCache else { return }
+        // 점으로 그린 feature는 구성원 개체가 없다. 다시 판정할 개체가 없으면 사전을 건드리지 않는다 —
+        // 건드리면 번호가 올라 캔버스가 묶음 경로를 통째로 다시 만든다.
+        renderStateCache = nil
+        // 꺼내 두고 고친다. 원본이 사전을 함께 쥐고 있으면 고치는 순간 6만 칸이 통째로 복사된다.
+        let context = renderStateContext()
+        for id in ids { if let o = doc.object(id) { table[id] = computeRenderState(for: o, context: context) } }
+        renderStateCache = table
+    }
 
     /// 선분화가 바뀐 개체의 파생 데이터만 지운다(제안 2).
     func invalidateSegmentationCaches(since old: SegmentationStore) {
@@ -766,41 +889,105 @@ final class AppEnvironment: ObservableObject {
         guard let doc = document else { return [:] }
         var table: [VectorObjectID: ObjectRenderState] = [:]
         table.reserveCapacity(doc.objects.count)
-        for o in doc.objects { table[o.id] = computeRenderState(for: o) }
+        let context = renderStateContext()
+        for o in doc.objects { table[o.id] = computeRenderState(for: o, context: context) }
         renderStateCache = table
         return table
     }
 
     /// 이름과 동작을 유지한다 — `--selftest`와 UI가 이미 이 이름으로 20곳 넘게 쓰고 있다.
-    func renderState(for object: VectorObject) -> ObjectRenderState {
-        if let table = renderStateCache, let hit = table[object.id] { return hit }
-        return renderStates()[object.id] ?? computeRenderState(for: object)
+    /// property type 레이어의 투명도. 그 type으로 저장된 다각형·선·점을 그릴 때 곱한다. 레이어가 없으면 100%.
+    func polygonOpacity(for type: IMDFFeatureType) -> Double {
+        layers.layers.first { $0.kind == .propertyType(type) }?.opacity ?? 1
     }
 
-    private func computeRenderState(for object: VectorObject) -> ObjectRenderState {
-        if currentRoutingFloor?.imdfCoordinates == nil, !primarySVGPresentation.isVisible {
+    func renderState(for object: VectorObject) -> ObjectRenderState {
+        if let table = renderStateCache, let hit = table[object.id] { return hit }
+        return renderStates()[object.id] ?? computeRenderState(for: object, context: renderStateContext())
+    }
+
+    /// 표시 상태를 판정할 때 개체마다 같은 값. 사전을 만들 때 한 번만 구한다.
+    /// 예전에는 개체마다 지금 층(`activeLevel`, 층 구조체 복사)·활성 레이어를 찾고, `@Published` 저장소를
+    /// 여러 번 읽었다(읽을 때마다 Combine을 거친다). 6만 개면 그것만 수백 ms였다.
+    struct RenderStateContext {
+        var hidesAll: Bool
+        var activeLayer: EditorLayer?
+        var activeType: IMDFFeatureType?
+        var isolatedMembers: Set<VectorObjectID>?
+        var excludedMembers: Set<VectorObjectID>
+        var typeOpacity: [IMDFFeatureType: Double]
+        var selected: Set<VectorObjectID>
+        var ownership: OwnershipRegistry
+        /// 소유 feature → (type, category 필터 통과 여부). feature 구조체(링 포함)를 개체마다 꺼내지 않는다.
+        var owners: [FeatureGroupID: (type: IMDFFeatureType, passes: Bool)]
+        var auxiliary: AuxiliaryStore
+        var assigned: Set<VectorObjectID>?
+        var mode: InteractionMode
+        var segmentation: SegmentationStore
+        var excludedOpacity: Double
+        /// 펼친 카드들이 빌린 개체. 선택한 개체는 빌릴 수 있는 opening이면 빌림 표시다(`isBorrowedHere`).
+        var borrowedByExpanded: Set<VectorObjectID>
+        var canBorrowOpenings: Bool
+        var highlighted: Set<FeatureGroupID>
+    }
+
+    private func renderStateContext() -> RenderStateContext {
+        let features = features, layers = layers
+        let activeType = layers.activePropertyType
+        let expanded = expandedFeatures
+        let borrow = borrow
+        var highlighted = expanded
+        if let id = layers.isolatedFeature { highlighted.insert(id) }
+        if let id = hoveredFeature { highlighted.insert(id) }
+        return RenderStateContext(
+            hidesAll: currentRoutingFloor?.imdfCoordinates == nil && !primarySVGPresentation.isVisible,
+            activeLayer: layers.activeLayer,
+            activeType: activeType,
+            isolatedMembers: layers.isolatedFeature.map { features.feature($0)?.memberIDs ?? [] },
+            excludedMembers: layers.excludedFeature.flatMap { features.feature($0)?.memberIDs } ?? [],
+            typeOpacity: Dictionary(uniqueKeysWithValues: IMDFFeatureType.allCases.map { ($0, polygonOpacity(for: $0)) }),
+            selected: selection.selected,
+            ownership: ownership,
+            owners: Dictionary(features.features.map { ($0.id, ($0.featureType, passesCategoryFilter($0))) },
+                              uniquingKeysWith: { first, _ in first }),
+            auxiliary: auxiliary,
+            assigned: assignment?.objectIDs,
+            mode: mode,
+            segmentation: segmentation,
+            excludedOpacity: excludedAuxiliaryOpacity,
+            borrowedByExpanded: expanded.reduce(into: Set<VectorObjectID>()) { $0.formUnion(borrow.objects(borrowedBy: $1)) },
+            canBorrowOpenings: activeType?.canBorrowOpenings ?? false,
+            highlighted: highlighted)
+    }
+
+    private func computeRenderState(for object: VectorObject, context c: RenderStateContext) -> ObjectRenderState {
+        if c.hidesAll {
             return ObjectRenderState(opacity: 0, isVisible: false, isSelected: false, isDisabled: true)
         }
         var opacity = 1.0
         var visible = true
-        let isSelected = selection.selected.contains(object.id)
+        let isSelected = c.selected.contains(object.id)
 
-        let ownerFeature = ownership.ownerOf(object.id)
-        let ownerType = ownerFeature.flatMap { features.feature($0)?.featureType }
-        let activeType = layers.activePropertyType
-        let isDisabled = (ownerType != nil && activeType != nil) || auxiliary.isExcluded(object.id)
-            || !isWithinAssignment(object.id)
+        let ownerFeature = c.ownership.ownerOf(object.id)
+        let owner = ownerFeature.flatMap { c.owners[$0] }
+        let ownerType = owner?.type
+        let activeType = c.activeType
+        let isExcluded = c.auxiliary.isExcluded(object.id)
+        let isDisabled = (ownerType != nil && activeType != nil) || isExcluded
+            || !(c.assigned?.contains(object.id) ?? true)
             // 담당 밖 개체는 '고를 수 없다'는 뜻에서 이미 남이 가져간 개체와 같은 상태다(신기능 1-2-4).
             // 색을 새로 만들지 않고 기존 비활성 색을 쓴다 — 사용자가 배워야 할 상태가 늘지 않는다.
 
         // 활성 레이어가 무엇을 보여주는 레이어인지가 표시 여부의 1차 기준이다(명세 2항).
         // 이전에는 레이어를 만들기만 하고 렌더링이 전혀 참조하지 않아, 속성 필터 레이어가
         // 목록에 이름만 생기고 화면은 그대로였다.
-        if let active = layers.activeLayer {
+        if let active = c.activeLayer {
             if active.isHidden { visible = false }
-            opacity *= active.opacity
-            // 레이어별 투명도(2026-08-27). 상위 기본 레이어·property type 레이어·속성 필터
-            // 레이어에서 그려지는 개체는 **지금 열려 있는 레이어의 것**이므로 그 값을 곱한다.
+            if case .propertyType = active.kind {} else { opacity *= active.opacity }
+            // 레이어별 투명도(2026-08-27). 상위 기본 레이어·속성 필터 레이어에서 그려지는 개체는
+            // **지금 열려 있는 레이어의 것**이므로 그 값을 곱한다.
+            // property type 레이어의 투명도는 도면 개체가 아니라 그 레이어에 표시된 다각형에 건다
+            // (2026-10-18 요청, `polygonOpacity(for:)`). 태깅한 개체(예전 방식 구성원)만 주인 type 값을 따른다.
             // 하위 기본 레이어(고스트)는 따로 그려지므로 캔버스가 자기 값을 직접 쓴다.
             // 숨긴 레이어의 개체는 보이지 않는다. 눈 아이콘이 상태만 바꾸고 화면이 안 바뀌면
             // 사용자는 기능이 고장 난 것으로 읽는다.
@@ -813,39 +1000,51 @@ final class AppEnvironment: ObservableObject {
             }
         }
 
-        if let iso = layers.isolatedFeature {
-            visible = features.feature(iso)?.memberIDs.contains(object.id) ?? false
+        if let iso = c.isolatedMembers {
+            visible = iso.contains(object.id)
         }
-        if let ex = layers.excludedFeature,
-           features.feature(ex)?.memberIDs.contains(object.id) == true {
+        if c.excludedMembers.contains(object.id) {
             visible = false
         }
+        if owner?.passes == false {
+            visible = false
+        }
+        // category 필터로 걸러진 feature의 구성원 개체도 숨긴다(#52). 점으로 그린 도형은 캔버스가 따로 거른다.
 
-        switch mode {
+        switch c.mode {
         case .ungroupedOnly:
             if ownerFeature != nil { opacity = 0.75 }
         case .curvedOnly(let showSegmentedOnly):
             if !object.isCurved {
                 opacity = 0.75
             } else if showSegmentedOnly {
-                opacity = segmentation.isSegmented(object.id) ? 1.0 : 0.5
+                opacity = c.segmentation.isSegmented(object.id) ? 1.0 : 0.5
             }
         default:
             break
         }
 
-        if auxiliary.isExcluded(object.id) { opacity *= 0.4 }
+        if isExcluded { opacity *= c.excludedOpacity }
         // 제외된 보조 개체는 계속 보이되(명세 2항: 파일에서 사라지지 않는다) 눈에 띄게 옅어진다.
 
-        if selection.dimsOthers && !isSelected {
+        if !c.selected.isEmpty && !isSelected {
             opacity *= 0.7
             // 명세 5항: 선택된 개체 이외에는 70% opacity
         }
         if isDisabled { opacity *= 0.85 }
+        if let ownerType, activeType != nil { opacity *= c.typeOpacity[ownerType] ?? 1 }
+        // 예전 방식(구성원 개체)으로 태깅한 feature는 그 개체 선이 곧 표시된 도형이다. 주인 type 레이어의 투명도를 따른다.
 
+        let isBorrowed = c.borrowedByExpanded.contains(object.id)
+            || (isSelected && c.canBorrowOpenings && ownerType == .opening)
+        // `isBorrowedHere`·`canBorrow`와 같은 규칙을 미리 모은 값으로 판정한다.
         return ObjectRenderState(opacity: opacity, isVisible: visible,
                                  isSelected: isSelected, isDisabled: isDisabled,
-                                 isBorrowed: isBorrowedHere(object.id))
+                                 isBorrowed: isBorrowed,
+                                 isHighlighted: ownerFeature.map(c.highlighted.contains) ?? false,
+                                 isTaggedHere: ownerType != nil && ownerType == activeType,
+                                 isTaggedOtherLayer: ownerType != nil && activeType != nil && ownerType != activeType
+                                     && !isExcluded)
     }
 
     func geometry(for object: VectorObject) -> PathGeometry {
@@ -1203,6 +1402,19 @@ final class AppEnvironment: ObservableObject {
         notify("\(added.count)개 선택")
     }
 
+    /// 보조 개체 제외 창에서 개체 하나를 클릭했을 때. 같은 자리에 겹친 똑같은 개체까지 함께 고르거나 함께 푼다.
+    func handleAuxiliaryClick(_ hit: VectorObjectID) {
+        let stack = stackedTwins(of: hit)
+        // 드래그는 겹친 것을 다 담는데 클릭만 하나를 잡으면, 같은 지정이 입력 방식에 따라 결과가 갈린다.
+        if auxiliarySelection.contains(hit) {
+            auxiliarySelection.subtract(stack)
+        } else {
+            auxiliarySelection.formUnion(stack)
+        }
+        focusedTwinKey = nil
+        // 캔버스에서 직접 고르면 목록 강조는 풀어준다 — 둘이 어긋나면 무엇이 100%인지 헷갈린다.
+    }
+
     enum MarqueeAdmission { case allow, curvedOnly, auxiliary, owned, outsideAssignment }
 
     /// 개체 하나가 드래그 선택에 들어갈 수 있는가. `handleCanvasClick`의 거절 사유와 1:1로 맞춘다.
@@ -1311,6 +1523,8 @@ final class AppEnvironment: ObservableObject {
         let before = snapshot
         undoStack.record(name, coalescingKey: coalescingKey, before: before)
         body()
+        stampEditedTypes(before: before.features)
+        // 고친 type의 시각을 같은 실행취소 칸에 넣는다. 되돌리면 시각도 함께 되돌아간다.
         refreshCanvasReferences()
         if snapshot == before, undoStack.undoName == name { undoStack.discardLast() }
     }
@@ -1381,9 +1595,6 @@ final class AppEnvironment: ObservableObject {
     /// 도면 전체를 훑으며 수십 개를 골라내는 작업이라 화면이 넓어야 한다.
     // MARK: 다각형 선택 (신기능 5항 + 5-4 전환)
 
-    /// 지금 레이어에서 고를 수 있는 면 전부. 폴리곤 type 레이어를 열 때 만들어진다.
-    @Published var closedPolygonFaces: [ClosedPolygonFinder.Face] = []
-
     @Published var faceSelection: Set<String> = [] {
         didSet { invalidateRenderStates() }
     }
@@ -1397,10 +1608,16 @@ final class AppEnvironment: ObservableObject {
     var snapPointIndex = SnapPointGrid()
     /// 점 기준 진행률의 분자 — 태깅된 점 수.
     @Published var taggedPointCount = 0
+    /// 점 단위로 그린 feature가 덮은 도면 개체. 전체 진행률의 '저장'에 들어간다(`refreshPointProgress`).
+    @Published var pointCoveredObjectIDs: Set<VectorObjectID> = []
     /// 지금 화면의 면·점이 어떤 열쇠로 계산된 것인가. `nil`이면 아직 계산 전이다.
     var derivedKey: DerivedGeometryKey?
+    /// 마지막으로 반영한 면·점. 다음 계산이 점을 재사용할 수 있는지 판단하는 데 쓴다.
+    var lastDerivedGeometry: DerivedGeometry = .empty
     var derivedTask: Task<Void, Never>?
     var derivedToken = UUID()
+    /// 점·면 계산의 진행률 팝업 id.
+    var derivedLongTask: UUID?
     @Published var isComputingDerivedGeometry = false
 
     // MARK: 점 단위 편집 상태 (#21)
@@ -1409,6 +1626,25 @@ final class AppEnvironment: ObservableObject {
     @Published var layerEditMode: LayerEditMode = .point
     /// 작성 중인 도형. 실행취소 대상이다(점 추가·삭제·이동을 cmd+z로 되돌린다).
     @Published var pointDraft = PointDraft()
+    /// 우측 패널에서 MultiPolygon으로 지정해 새 다각형을 받고 있는 feature. 화면 상태라 저장하지 않는다.
+    @Published var multiPolygonTargetID: FeatureGroupID?
+    /// 면 단위에서 면을 둘러싸는 경계를 지금 레이어로 볼지 모든 레이어로 볼지.
+    @Published var faceBoundaryScope: FaceBoundaryScope = .currentLayer
+    /// unit 레이어에서 빈틈(빨간 점무늬)·겹침(빨간 빗금)을 도면에 표시할지.
+    @Published var showUnitCoverage = false
+    var unitCoverageCache: UnitCoverageCache?
+    /// 저장된 feature로 찾은 면. 화면을 그릴 때마다 읽으므로 경계가 같으면 다시 찾지 않는다.
+    var savedFaceCache: SavedFeatureFaceCache?
+    /// fixture 점 단위에서 '닫을 때 똑같이 생긴 개체에도 저장'. 켜면 쌍둥이 자리마다 개별 fixture를 함께 만든다.
+    @Published var savesFixtureTwins = false
+    /// 찍은 점 → 쌍둥이 자리. 화면을 그릴 때마다 읽으므로 점과 도면 점이 같으면 다시 찾지 않는다.
+    var fixtureTwinCache: FixtureTwinCache?
+    /// 펼친 unit과 겹치는 unit. 화면을 그릴 때마다 읽으므로 펼친 것과 unit 링이 같으면 다시 계산하지 않는다.
+    var unitOverlapCache: UnitOverlapCache?
+    /// unit 레이어 점 단위의 도구(그리기·보조 선분·자르기·점 끼우기). 바꾸면 작성 중인 점을 비운다.
+    @Published var unitPointTool: UnitPointTool = .draw {
+        didSet { if oldValue != unitPointTool { cancelPointDraft() } }
+    }
     /// '꼭짓점 이동' 모드. 꺼져 있으면(고정) 드래그는 화면 이동이다.
     @Published var isVertexMoveEnabled = false
     /// 꼭짓점을 끄는 중이면 그 대상과 지금 위치. 놓을 때 한 번만 실행취소 칸을 쌓는다.
@@ -1565,6 +1801,35 @@ final class AppEnvironment: ObservableObject {
         let keys = Set(ids.compactMap { twinKeyByObject[$0] })
         var out = Set<VectorObjectID>()
         for key in keys { out.formUnion(twinMembersByKey[key] ?? []) }
+        return out
+    }
+
+    /// 같은 자리에 같은 모양으로 겹쳐 그려진 개체(자기 자신 포함). **스타일은 보지 않는다.**
+    /// 실도면(포스텍 도서관 3층)은 PDF에서 바꾼 SVG라 면(fill만)과 테두리(stroke만)가 같은 모양의 별개 path로
+    /// 겹쳐 있다(겹친 묶음 8,111개 중 6,867개가 스타일이 다르다). 면은 안쪽 클릭으로 잡히므로 면만 제외되고,
+    /// 작업 화면에 보이는 테두리 path는 그대로 남아 "지정했는데 안 지워진다"로 보였다.
+    func stackedTwins(of id: VectorObjectID) -> Set<VectorObjectID> {
+        guard let doc = document, let target = doc.object(id) else { return [id] }
+        let box = target.boundingBox
+        func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.01 }
+        // `twinKey`와 같은 0.01 단위 허용치다. SVG 파서의 부동소수 오차를 흡수한다.
+        func sameShape(_ o: VectorObject) -> Bool {
+            let a = o.geometry.subpaths, b = target.geometry.subpaths
+            guard a.count == b.count else { return false }
+            for (s, t) in zip(a, b) {
+                guard s.isClosed == t.isClosed, s.points.count == t.points.count else { return false }
+                for (p, q) in zip(s.points, t.points) where !near(p.x, q.x) || !near(p.y, q.y) { return false }
+            }
+            return true
+        }
+        var out: Set<VectorObjectID> = [id]
+        for o in doc.objects {
+            let b = o.boundingBox
+            guard near(b.minX, box.minX), near(b.minY, box.minY),
+                  near(b.maxX, box.maxX), near(b.maxY, box.maxY), sameShape(o) else { continue }
+            out.insert(o.id)
+        }
+        // 상자부터 견줘 대부분을 걸러낸다. 클릭 한 번에 한 번 도는 것이라 6만 개도 수 ms다.
         return out
     }
 
@@ -1815,6 +2080,11 @@ final class AppEnvironment: ObservableObject {
     // MARK: property type 레이어
 
     func selectPropertyType(_ type: IMDFFeatureType) {
+        if type.isMetadataOnly {
+            openMetadataEditor(type)
+            return
+            // 도형이 없는 type은 캔버스에서 할 일이 없다. 레이어 대신 정보 입력 창을 연다.
+        }
         guard type == .opening || openingGate.allowsOtherTypes else {
             notify("opening을 먼저 태깅해야 합니다. 문을 먼저 확정해야 방 폴리곤을 닫을 수 있습니다.",
                    isError: true)
@@ -1843,10 +2113,22 @@ final class AppEnvironment: ObservableObject {
         closedPolygonNotice = nil
     }
 
-    /// 점 단위와 면 단위를 오간다. 면 단위는 polygon·multipolygon type(footprint 제외)에서만 된다.
+    /// 점 단위·면 단위·선 단위를 오간다. 면 단위는 polygon·multipolygon type(footprint 제외), 선 단위는 fixture에서만 된다.
     func setLayerEditMode(_ next: LayerEditMode) {
         guard next != layerEditMode else { return }
-        if next == .face {
+        if layerEditMode == .object { selection.clear() }
+        // 선 단위에서 고른 개체는 다른 모드에서 쓸 곳이 없다. 남겨 두면 보이지 않는 선택이 다음 동작에 섞인다.
+        if next == .object {
+            guard let type = layers.activePropertyType, type.allowsObjectSelection else {
+                notify("선 단위 선택은 fixture 레이어에서만 쓸 수 있습니다.", isError: true)
+                return
+            }
+            cancelPointDraft()
+            layerEditMode = .object
+            faceSelection = []
+            closedPolygonNotice = nil
+            notify("선 단위: 도면 개체를 클릭하거나 드래그해 고른 뒤 'Feature로 저장'을 누르면 \(type.displayName) 하나로 저장합니다.")
+        } else if next == .face {
             guard let type = layers.activePropertyType, type.allowsFaceSelection else {
                 notify("면 단위 선택은 polygon·multipolygon type에서만 쓸 수 있습니다. footprint는 점으로 그립니다.",
                        isError: true)
@@ -1890,6 +2172,9 @@ final class AppEnvironment: ObservableObject {
         let serial = serials.next(for: type)
         var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: owned)
         for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
+        let memberTwins = type == .fixture ? freeFixtureMemberTwins(of: owned) : []
+        // fixture는 똑같이 생긴 자리도 그 자리 도면 개체로 함께 저장한다(2026-10-19 요청). 윤곽선이 자리마다 도면을 따른다.
+        var twinsAdded = 0
         // 일련번호는 `perform` 바깥에서 이미 뽑혔지만, 스냅샷이 `serials`도 담으므로
         // 되돌리면 번호도 함께 돌아간다 — 실행취소 후 재저장해도 번호가 건너뛰지 않는다.
         perform("\(serial) 저장") {
@@ -1897,17 +2182,19 @@ final class AppEnvironment: ObservableObject {
                 try ownership.claim(owned, for: f.id)
                 features.insert(f)
                 if !lent.isEmpty { borrow.borrow(lent, by: f.id) }
+                twinsAdded = insertFixtureMemberTwins(memberTwins, properties: f.properties)
                 expandedFeature = f.id
                 selection.clear()
+                let together = twinsAdded > 0 ? " 똑같이 생긴 \(twinsAdded)곳도 함께 저장했습니다." : ""
                 let closure = features.feature(f.id).flatMap { ringClosure(of: $0) }
                 if let c = closure, !c.isClosed {
-                    notify(gapMessage(serial: serial, result: c), isError: true)
+                    notify(gapMessage(serial: serial, result: c) + together, isError: true)
                     // 저장은 막지 않는다. 도면을 고쳐 다시 저장하는 것이 정상 흐름이고,
                     // 저장 자체를 막으면 작업하던 선택이 통째로 날아간다.
                 } else {
-                    notify(lent.isEmpty
-                           ? "\(serial) 로 저장했습니다."
-                           : "\(serial) 로 저장했습니다. opening \(lent.count)개를 빌려 폴리곤을 닫았습니다.")
+                    notify((lent.isEmpty
+                            ? "\(serial) 로 저장했습니다."
+                            : "\(serial) 로 저장했습니다. opening \(lent.count)개를 빌려 폴리곤을 닫았습니다.") + together)
                 }
             } catch {
                 notify("이미 다른 feature에 속한 개체가 포함되어 있습니다.", isError: true)
@@ -2030,23 +2317,53 @@ final class AppEnvironment: ObservableObject {
     }
 
     func segmentize(_ targets: Set<VectorObjectID>) {
-        guard let doc = document else { return }
-        var done = 0
-        var problems: [String] = []
-        perform("선분화") {
-            for id in targets {
-                guard let o = doc.object(id), o.isCurved, !segmentation.isSegmented(id) else { continue }
-                let defects = segmentation.segmentize(id, geometry: o.geometry,
-                                                      tolerance: segmentationTolerance)
-                if defects.isEmpty { done += 1 }
-                else { problems.append("\(o.displayName): \(defects[0].message)") }
-            }
+        guard let doc = document, !isProjectBusy else { return }
+        let jobs = targets.compactMap { id -> (VectorObjectID, PathGeometry)? in
+            guard let o = doc.object(id), o.isCurved, !segmentation.isSegmented(id) else { return nil }
+            return (id, o.geometry)
         }
-        // 여러 개를 한 버튼으로 선분화하므로 실행취소도 그 묶음 단위여야 한다 —
-        // 개체마다 칸을 쌓으면 되돌리려고 cmd+z를 다섯 번 눌러야 한다.
-        if done > 0 { notify("\(done)개 곡선 개체를 선분화했습니다.") }
-        if !problems.isEmpty { notify(problems.joined(separator: " / "), isError: true) }
-        if done == 0 && problems.isEmpty { notify("선분화할 곡선 개체가 없습니다.") }
+        guard !jobs.isEmpty else { notify("선분화할 곡선 개체가 없습니다."); return }
+        let tolerance = segmentationTolerance
+        guard jobs.count > 50, !Self.isRunningSelfTests else {
+            applySegmentations(jobs.map { SegmentationStore.prepare($0.0, geometry: $0.1, tolerance: tolerance) })
+            return
+            // 몇 개 안 되면 그 자리에서 끝낸다. 백그라운드로 넘기면 오히려 화면이 한 번 잠긴다.
+        }
+        // 전체 곡선 선분화는 개체가 수천 개라 메인 스레드에서 돌리면 앱이 멈췄다.
+        // 계산은 백그라운드에서 하고, 결과는 실행취소 칸 하나로 한 번에 반영한다.
+        isProjectActionInProgress = true
+        let task = beginLongTask("곡선 선분화", detail: "0 / \(jobs.count)개")
+        let reporter = longTaskReporter(task)
+        Task {
+            defer { isProjectActionInProgress = false; endLongTask(task) }
+            let results = await Task.detached(priority: .userInitiated) {
+                var out: [Result<Segmentation, SegmentationStore.Rejected>] = []
+                out.reserveCapacity(jobs.count)
+                for (i, job) in jobs.enumerated() {
+                    out.append(SegmentationStore.prepare(job.0, geometry: job.1, tolerance: tolerance))
+                    reporter.report(Double(i + 1) / Double(jobs.count), "\(i + 1) / \(jobs.count)개")
+                }
+                return out
+            }.value
+            guard document?.fingerprint == doc.fingerprint else { return }
+            // 계산하는 사이 다른 도면으로 바뀌었으면 반영하지 않는다.
+            applySegmentations(results)
+        }
+    }
+
+    /// 선분화 결과를 실행취소 칸 하나로 반영한다. 여러 개를 한 버튼으로 선분화하므로 되돌리기도 그 묶음 단위다.
+    private func applySegmentations(_ results: [Result<Segmentation, SegmentationStore.Rejected>]) {
+        let made = results.compactMap { try? $0.get() }.filter { !segmentation.isSegmented($0.sourceObjectID) }
+        let rejected = results.count - results.filter { (try? $0.get()) != nil }.count
+        if !made.isEmpty {
+            perform("선분화") { for s in made { segmentation.insert(s) } }
+            notify("\(made.count)개 곡선 개체를 선분화했습니다.")
+        }
+        if rejected > 0 {
+            notify("곡선 \(rejected)개는 이어지지 않는 조각이 있어 곡선 그대로 두었습니다.")
+            // 교차는 더 이상 막지 않는다(2026-10-18). 끝점이 벌어진 경우만 남으며, 오류가 아니라 안내로 짧게 알린다.
+        }
+        if made.isEmpty && rejected == 0 { notify("선분화할 곡선 개체가 없습니다.") }
     }
 
     func desegmentize(_ targets: Set<VectorObjectID>) {
@@ -2076,9 +2393,11 @@ final class AppEnvironment: ObservableObject {
             notify("먼저 도면에서 Anchor 위치를 찍으세요.", isError: true)
             return
         }
+        let layerSerial = anchorLayerPoint(near: local)?.feature.serialNumber
+        // anchor 레이어 점을 찍었으면 라벨을 비워 둬도 그 점의 일련번호를 붙인다.
         perform("Anchor 추가") {
             anchors.add(local: local, geo: GeoPoint(longitude: longitude, latitude: latitude),
-                        label: label.isEmpty ? "Anchor \(anchors.pairs.count + 1)" : label)
+                        label: label.isEmpty ? layerSerial ?? "Anchor \(anchors.pairs.count + 1)" : label)
         }
         pendingAnchorLocal = nil
     }
@@ -2171,7 +2490,8 @@ final class AppEnvironment: ObservableObject {
             serialToUUID[f.serialNumber] = ids.id(for: f.id)
         }
         let exporter = GeoJSONExporter(document: doc, segmentation: segmentation,
-                                       georeferencer: georeferencer, borrow: borrow)
+                                       georeferencer: georeferencer, borrow: borrow, levelID: activeLevel?.id)
+        // level_id는 지금 층(층 관리)의 UUID다. IMDF 아카이브 내보내기와 같은 값이 나온다.
         var assigner = ids
         let collection = exporter.buildFeatureCollection(type: type, features: features.features,
                                                          ids: &assigner, serialToUUID: serialToUUID)

@@ -72,7 +72,7 @@ enum PropertySchema {
         case .address:
             list = [
                 .init(key: "address", type: .string),
-                .init(key: "unit", type: .alwaysNull),
+                .init(key: "unit", type: .string),
                 .init(key: "locality", type: .string),
                 .init(key: "province", type: .string),
                 .init(key: "country", type: .string),
@@ -105,9 +105,9 @@ enum PropertySchema {
         case .building:
             list = [
                 .init(key: "name", type: .localizedName),
-                .init(key: "alt_name", type: .alwaysNull),
+                .init(key: "alt_name", type: .localizedName),
                 .init(key: "category", type: .string),
-                .init(key: "restriction", type: .alwaysNull),
+                .init(key: "restriction", type: .string),
                 .init(key: "display_point", type: .point, isEditable: false),
                 .init(key: "address_id", type: .reference(.address)),
             ]
@@ -140,10 +140,11 @@ enum PropertySchema {
             ]
         case .manifest:
             list = [
-                .init(key: "version", type: .string),
+                .init(key: "version", type: .string, isEditable: false),
                 .init(key: "created", type: .string, isEditable: false),
                 .init(key: "generated_by", type: .string),
                 .init(key: "language", type: .string),
+                .init(key: "extensions", type: .alwaysNull),
             ]
         case .occupant:
             list = [
@@ -151,13 +152,14 @@ enum PropertySchema {
                 .init(key: "name", type: .localizedName),
                 .init(key: "unit_id", type: .reference(.unit), isNonStandard: true,
                       note: "공식 스펙에 없음 — 스펙상 위치는 anchor_id로만 결정"),
-                .init(key: "level_id", type: .reference(.level)),
+                .init(key: "level_id", type: .reference(.level), isNonStandard: true,
+                      note: "공식 스펙에 없음 — occupant는 위치가 없는 feature이고 층은 anchor_id로 정해진다"),
                 .init(key: "correlation_id", type: .alwaysNull),
                 .init(key: "anchor_id", type: .reference(.anchor)),
-                .init(key: "hours", type: .alwaysNull),
-                .init(key: "phone", type: .alwaysNull),
+                .init(key: "hours", type: .string),
+                .init(key: "phone", type: .string),
                 .init(key: "validity", type: .alwaysNull),
-                .init(key: "website", type: .alwaysNull),
+                .init(key: "website", type: .string),
             ]
         case .opening:
             list = [
@@ -366,10 +368,10 @@ enum PropertySchema {
                     "parkingfacility", "resort", "retailstore", "shoppingcenter", "stadium", "stripmall",
                     "theater", "themepark", "trainstation", "transitstation", "university",
             ]
+        case .occupant:
+            return OccupantCategories.all
+            // 스펙 페이지로는 전량을 얻지 못해 자유 입력이었다. Apple 배포 범주 파일로 채웠다(2026-10-20).
         default:
-            // OCCUPANT-CATEGORY는 수백~1000여 개 규모이고 스펙 페이지 응답이 축약되어 **전량 미확보**다.
-            // 빈 배열을 돌려주면 UI가 자유 입력으로 떨어진다 — 근거 없는 값 몇 개로 드롭다운을 만들면
-            // 스펙에 실제로 있는 나머지 업종을 아예 입력할 수 없게 된다.
             return []
         }
     }

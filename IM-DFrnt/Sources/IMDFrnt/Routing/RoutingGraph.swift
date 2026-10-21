@@ -9,6 +9,8 @@ struct ProjectLevelInfo: Identifiable, Equatable, Codable {
     var sourceName: String = ""
     var svg: String = ""
     var anchors = AnchorStore()
+    /// 지도 위에 직접 맞춘 자리(신기능 11항, #31). 선택적이라 이전 프로젝트 파일도 그대로 읽힌다.
+    var mapAlignment: MapAlignment?
     /// IMDF already contains WGS 84 geometry; no manual calibration is needed.
     var imdfCoordinates: IMDFCoordinateSpace?
 

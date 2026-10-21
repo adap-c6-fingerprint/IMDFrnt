@@ -2,66 +2,77 @@ import Foundation
 
 /// 점·면 작업에 쓰는 파생 기하(#21, 2026-10-15).
 ///
-/// **도면·선분화·보조 제외·닫는 선분 넷이 같으면 결과도 같다.** 그래서 이 넷을 열쇠로 삼고,
+/// **도면·선분화·보조 제외 셋이 같으면 결과도 같다.** 그래서 이 셋을 열쇠로 삼고,
 /// 열쇠가 바뀔 때만 다시 계산한다. 계산은 백그라운드에서 하고 결과만 메인 액터에 넘긴다.
 /// 예전에는 면 찾기를 레이어를 만들 때마다 메인 스레드에서 돌려 C5 도면에서 앱이 약 5초 멈췄다
 /// (`04) 엔진 디버깅.md` 3장).
+///
+/// **도면 전체의 면은 더 찾지 않는다**(2026-10-20, 엔진 디버깅 7번). 면 단위 편집이 저장된 feature 경계로
+/// 막힌 면(`faceModeFaces`)으로 바뀐 뒤(10-18) 그 결과를 읽는 곳이 없었다. 그런데 열쇠에 opening 선이
+/// 들어 있어, opening 하나를 저장할 때마다 도면 선분 수만 개로 면을 다시 찾았다(Debug 약 1초, 팝업이 뜬다).
 struct DerivedGeometryKey: Equatable, Sendable {
     var segmentation: SegmentationStore
     var excluded: Set<VectorObjectID>
-    /// 도면에 없는데 면을 닫는 데 쓰는 선분. 임시 문과 저장된 opening의 선이다.
-    var closingSegments: [LineSegment]
 }
 
 struct DerivedGeometry: Sendable {
-    /// 보조 제외를 뺀 선분과 닫는 선분으로 찾은 면.
-    let faces: [ClosedPolygonFinder.Face]
     /// 고를 수 있는 점(꼭짓점·끝점·교차점). **보조 개체로 제외한 개체의 점은 뺀다** —
     /// 치수선·해치의 점까지 고를 수 있으면 방 모서리 근처에서 엉뚱한 점이 잡힌다.
     let snapPoints: [SnapPointExtractor.SnapPoint]
     /// 진행률 분모. 보조 개체까지 포함한 전체 점 수다.
     let totalPointCount: Int
+    /// 점을 어떤 입력으로 셌는가. 다음 계산의 입력이 같으면 점을 다시 세지 않는다.
+    let pointSource: PointSource?
 
-    static let empty = DerivedGeometry(faces: [], snapPoints: [], totalPointCount: 0)
-
-    static func make(document: DrawingDocument?, key: DerivedGeometryKey) throws -> DerivedGeometry {
-        guard let doc = document else { return .empty }
-        try Task.checkCancellation()
-        let all = SnapPointExtractor.points(in: doc.objects, segmentation: key.segmentation)
-        try Task.checkCancellation()
-        let remaining = key.excluded.isEmpty ? doc.objects : doc.objects.filter { !key.excluded.contains($0.id) }
-        let snaps = key.excluded.isEmpty ? all : SnapPointExtractor.points(in: remaining, segmentation: key.segmentation)
-        try Task.checkCancellation()
-
-        var sources: [ClosedPolygonFinder.SourceSegment] = []
-        for o in remaining {
-            let geometry = key.segmentation.effectiveGeometry(for: o.id, fallback: o.geometry)
-            for s in geometry.lineSegments() { sources.append(.init(segment: s, objectID: o.id)) }
-        }
-        for s in key.closingSegments { sources.append(.init(segment: s, objectID: nil)) }
-        let faces = ClosedPolygonFinder.faces(in: sources)
-        try Task.checkCancellation()
-        return DerivedGeometry(faces: faces, snapPoints: snaps, totalPointCount: all.count)
+    /// 도면·선분화·보조 제외. 같으면 점을 다시 세지 않는다.
+    struct PointSource: Equatable, Sendable {
+        let fingerprint: String
+        let segmentation: SegmentationStore
+        let excluded: Set<VectorObjectID>
     }
 
-    /// 면을 닫는 선분. **임시 문뿐 아니라 저장된 opening의 선도 넣는다** — 점 단위로 그린
-    /// opening은 도면에 개체가 없는 선이라, 넣지 않으면 문 자리에서 방이 닫히지 않는다.
-    static func closingSegments(doors: [TemporaryDoor], features: [FeatureGroup]) -> [LineSegment] {
-        var out = doors.map { LineSegment(start: $0.start, end: $0.end) }
-        for f in features where f.featureType == .opening && !f.isInTrash {
-            if let c = f.closureSegment { out.append(c); continue }
-            guard let v = f.drawnVertices, v.count >= 2 else { continue }
-            for i in 0..<(v.count - 1) { out.append(LineSegment(start: v[i], end: v[i + 1])) }
+    static let empty = DerivedGeometry(snapPoints: [], totalPointCount: 0, pointSource: nil)
+
+    /// `previous`가 같은 도면·선분화로 센 결과면 점을 재사용한다(2026-10-19 opening 저장 지연).
+    /// 포스텍 도서관 2층에서 opening 하나를 저장할 때 2.1초 중 2.0초가 점 다시 세기였다 —
+    /// 면 찾기는 0.1초다. 보조 개체까지 포함한 전체 점(33만 개)은 분모를 세는 데만 쓰인다.
+    static func make(document: DrawingDocument?, key: DerivedGeometryKey,
+                     reporter: LongTaskReporter? = nil,
+                     reusing previous: DerivedGeometry? = nil) throws -> DerivedGeometry {
+        guard let doc = document else { return .empty }
+        try Task.checkCancellation()
+        let source = PointSource(fingerprint: doc.fingerprint, segmentation: key.segmentation, excluded: key.excluded)
+        let reusable = previous.flatMap { p in
+            p.pointSource.map { $0.fingerprint == source.fingerprint && $0.segmentation == source.segmentation } == true ? p : nil
         }
-        return out
+        // 전체 점 수는 보조 제외와 무관하므로 도면·선분화만 같으면 재사용한다.
+        let remaining = key.excluded.isEmpty ? doc.objects : doc.objects.filter { !key.excluded.contains($0.id) }
+        let snaps: [SnapPointExtractor.SnapPoint]
+        if let reusable, reusable.pointSource?.excluded == key.excluded {
+            snaps = reusable.snapPoints
+        } else {
+            reporter?.report(0.05, "꼭짓점·교점 찾는 중")
+            snaps = SnapPointExtractor.points(in: remaining, segmentation: key.segmentation)
+        }
+        try Task.checkCancellation()
+        let total: Int
+        if let reusable {
+            total = reusable.totalPointCount
+        } else if key.excluded.isEmpty {
+            total = snaps.count
+        } else {
+            reporter?.report(0.5, "보조 개체를 포함한 전체 점 세는 중")
+            total = SnapPointExtractor.points(in: doc.objects, segmentation: key.segmentation).count
+        }
+        try Task.checkCancellation()
+        reporter?.report(1, "완료")
+        return DerivedGeometry(snapPoints: snaps, totalPointCount: total, pointSource: source)
     }
 }
 
 extension LevelEditingState {
     var derivedKey: DerivedGeometryKey {
-        DerivedGeometryKey(segmentation: segmentation, excluded: auxiliary.excluded,
-                           closingSegments: DerivedGeometry.closingSegments(
-                               doors: doorClosures.doors, features: features.features))
+        DerivedGeometryKey(segmentation: segmentation, excluded: auxiliary.excluded)
     }
 }
 
@@ -70,9 +81,7 @@ extension AppEnvironment {
 
     /// 지금 편집 상태의 열쇠.
     var currentDerivedKey: DerivedGeometryKey {
-        DerivedGeometryKey(segmentation: segmentation, excluded: auxiliary.excluded,
-                           closingSegments: DerivedGeometry.closingSegments(
-                               doors: doorClosures.doors, features: features.features))
+        DerivedGeometryKey(segmentation: segmentation, excluded: auxiliary.excluded)
     }
 
     /// 열쇠가 바뀌었으면 다시 계산한다. **같으면 아무것도 하지 않는다** — `features`는 속성 입력칸의
@@ -81,23 +90,31 @@ extension AppEnvironment {
         guard !isInstallingLevelDrawing else { return }
         guard let doc = document else {
             derivedTask?.cancel(); derivedTask = nil
+            if let derivedLongTask { endLongTask(derivedLongTask) }
             applyDerivedGeometry(.empty, key: nil)
             return
         }
         let key = currentDerivedKey
         guard key != derivedKey else { return }
         derivedTask?.cancel()
+        let previous = lastDerivedGeometry
         if derivedGeometryInline {
-            applyDerivedGeometry((try? DerivedGeometry.make(document: doc, key: key)) ?? .empty, key: key)
+            applyDerivedGeometry((try? DerivedGeometry.make(document: doc, key: key, reusing: previous)) ?? .empty, key: key)
             return
         }
         let token = UUID()
         derivedToken = token
         isComputingDerivedGeometry = true
+        if let derivedLongTask { endLongTask(derivedLongTask) }
+        let progress = beginLongTask("점·면 계산 중", detail: "꼭짓점·교점 찾는 중", showAfter: 1_000_000_000)
+        derivedLongTask = progress
+        let reporter = longTaskReporter(progress)
         derivedTask = Task { [weak self] in
             let result = try? await Task.detached(priority: .userInitiated) {
-                try DerivedGeometry.make(document: doc, key: key)
+                try DerivedGeometry.make(document: doc, key: key, reporter: reporter, reusing: previous)
             }.value
+            defer { if self?.derivedToken == token { self?.endLongTask(progress) } }
+            // 1초 안에 끝나면 팝업이 아예 뜨지 않는다. opening 하나 저장할 때마다 깜빡이지 않게 한다.
             guard let self, !Task.isCancelled, self.derivedToken == token, let result else { return }
             guard self.document?.fingerprint == doc.fingerprint, self.currentDerivedKey == key else {
                 self.isComputingDerivedGeometry = false
@@ -111,9 +128,9 @@ extension AppEnvironment {
 
     func applyDerivedGeometry(_ g: DerivedGeometry, key: DerivedGeometryKey?) {
         derivedKey = key
+        lastDerivedGeometry = g
         isComputingDerivedGeometry = false
-        closedPolygonFaces = g.faces
-        let ids = Set(g.faces.map(\.id))
+        let ids = Set(faceModeFaces.map(\.id))
         if !faceSelection.isSubset(of: ids) { faceSelection.formIntersection(ids) }
         // 사라진 면의 선택을 들고 있으면 저장 버튼의 개수와 화면이 어긋난다.
         snapPoints = g.snapPoints

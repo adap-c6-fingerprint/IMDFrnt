@@ -147,6 +147,27 @@ struct ToolbarMenuLabel: ViewModifier {
     }
 }
 
+/// 캔버스 위에 뜨는 막대를 캔버스 폭 안에 담는다.
+///
+/// 들어가면 제 크기 그대로 두고, 넘치면 가로로 스크롤한다. 스크롤 막대를 보여 옆에 더 있다는 것을 알린다
+/// (숨기면 오른쪽 버튼이 잘린 것처럼만 보였다). **막대를 억지로 줄이지 않는 이유:**
+/// 줄이면 버튼 글자가 한 글자씩 줄바꿈돼 버튼이 세로로 길쭉한 빈 상자가 되고, 그래도 넘친 폭이
+/// 캔버스 칸을 밀어 오른쪽 사이드바를 덮는다.
+struct CanvasBarFit<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            content.fixedSize()
+            ScrollView(.horizontal, showsIndicators: true) {
+                content.fixedSize().padding(.vertical, 10).padding(.horizontal, 4)
+                // 카드 그림자가 스크롤 영역 가장자리에서 잘리지 않게 여백을 둔다.
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+}
+
 /// 상단바 안 구분선. `.quaternary`는 시스템 외관을 따라가 카드 바탕과 어긋나므로 쓰지 않는다.
 struct ToolbarDivider: View {
     @Environment(\.canvasBackground) private var bg

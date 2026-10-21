@@ -7,15 +7,38 @@ extension AppEnvironment {
     static let autosaveInterval: TimeInterval = 30
     static let lastProjectPathKey = "IMDFrnt.lastProjectPath"
 
-    static var autosaveURL: URL {
+    /// 프로젝트마다 `새 도면_YYMMDD_HHmm.imdfrnt` 파일 하나가 이 폴더에 생긴다.
+    static var defaultAutosaveFolder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("IM-DFrnt", isDirectory: true)
-            .appendingPathComponent("autosave." + ProjectFile.fileExtension)
     }
 
-    static var interimAutosaveURL: URL {
-        autosaveURL.deletingLastPathComponent()
-            .appendingPathComponent("autosave." + ProjectFile.interimFileExtension)
+    var autosaveFolder: URL {
+        if let autosaveFolderOverride { return autosaveFolderOverride }
+        if Self.isRunningSelfTests {
+            return FileManager.default.temporaryDirectory.appendingPathComponent("IMDFrntSelfTestAutosave", isDirectory: true)
+        }
+        return Self.defaultAutosaveFolder
+        // 검사가 사용자의 실제 자동 저장 폴더에 파일을 만들지 않게 한다.
+    }
+
+    /// 프로젝트별 파일로 바꾸기 전, 앱 전체가 함께 쓰던 복구본 자리.
+    var legacyAutosaveURLs: [URL] {
+        [ProjectFile.fileExtension, ProjectFile.interimFileExtension].map {
+            autosaveFolder.appendingPathComponent("autosave." + $0)
+        }
+    }
+
+    /// 같은 분에 프로젝트를 두 번 만들면 `_2`, `_3`을 붙여 기존 파일을 덮어쓰지 않는다.
+    func nextAutosaveURL(at date: Date = Date()) -> URL {
+        let base = Self.defaultProjectFileName(at: date)
+        var candidate = autosaveFolder.appendingPathComponent(base + "." + ProjectFile.fileExtension)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = autosaveFolder.appendingPathComponent("\(base)_\(suffix).\(ProjectFile.fileExtension)")
+            suffix += 1
+        }
+        return candidate
     }
 
     func startAutosaveLoop() {
@@ -34,23 +57,29 @@ extension AppEnvironment {
     }
 
     func autosaveTick() {
-        guard !isProjectBusy, let file = makeProjectFile() else { return }
-        if let lastRecoveryProject, file.hasSameContents(as: lastRecoveryProject) { return }
+        guard !isProjectBusy, hasUnsavedChanges else { return }
         persist(showingBanner: false)
     }
 
     var hasSomethingToPersist: Bool { hasCreatedProject || document != nil || !routing.floors.isEmpty }
 
-    /// 자동 저장은 복구본만 갱신한다. 사용자가 저장한 파일은 명시적인 저장에서만 바꾼다.
+    /// 프로젝트의 단일 파일(`projectURL`)에 덮어쓴다. 아직 파일이 없으면 자동 저장 폴더에 새로 만든다.
     @discardableResult
     func persist(showingBanner: Bool) -> Bool {
         guard let file = makeProjectFile() else { return false }
+        if isUnwrittenEmptyProject { return true }
+        let url = projectURL ?? nextAutosaveURL()
         do {
-            try writeRecovery(file, projectURL: projectURL)
-            if showingBanner { notify("복구용 작업을 저장했습니다.") }
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try file.encoded().write(to: url, options: .atomic)
+            // 쓰기가 성공한 뒤에만 파일 위치와 완료 상태를 갱신한다.
+            projectURL = url
+            projectDefaults.set(url.path, forKey: Self.lastProjectPathKey)
+            lastRecoveryProject = file
+            if showingBanner { notify("작업을 자동 저장했습니다: \(url.lastPathComponent)") }
             return true
         } catch {
-            notify("복구본 저장 실패: \(error.localizedDescription)", isError: true)
+            notify("자동 저장 실패: \(error.localizedDescription)", isError: true)
             return false
         }
     }
@@ -79,57 +108,27 @@ extension AppEnvironment {
         showRoutingScreen = project.imdfSourceName != nil
         assignment = file.assignment
         projectURL = url
-        lastExplicitSavedProject = makeProjectFile()
         lastRecoveryProject = makeProjectFile()
     }
 
-    func restoreAutosaveIfAvailable() {
-        guard !hasSomethingToPersist, !Self.isRunningSelfTests else { return }
+    /// 마지막으로 작업한 프로젝트 파일. 프로젝트 선택 창에서 '지난 작업'으로 표시한다.
+    /// 예전 공용 복구본(`autosave.imdfrnt`)이 남아 있으면 새 이름 파일로 옮긴다.
+    func lastWorkedProjectURL() throws -> URL? {
         let fm = FileManager.default
-        let url: URL
-        if fm.fileExists(atPath: recoveryURL.path) {
-            url = recoveryURL
-        } else if recoveryURLOverride == nil, fm.fileExists(atPath: Self.interimAutosaveURL.path) {
-            url = Self.interimAutosaveURL
-        } else { return }
-        isProjectActionInProgress = true
-        Task {
-            defer { isProjectActionInProgress = false }
-            do {
-                let validated = try await Task.detached(priority: .userInitiated) {
-                    try ProjectOpeningPreparation.validate(Data(contentsOf: url))
-                }.value
-                try adoptPreparedProject(validated, from: nil)
-                lastExplicitSavedProject = projectContents == BuildingProject() ? makeProjectFile() : nil
-                if let path = projectDefaults.string(forKey: Self.lastProjectPathKey) {
-                    let originalURL = URL(fileURLWithPath: path)
-                    let data = try? await Task.detached { try Data(contentsOf: originalURL) }.value
-                    if let data, let original = try? ProjectFile.decoded(from: data), original.projectID == projectID {
-                        projectURL = originalURL; lastExplicitSavedProject = original
-                    }
-                }
-                notify("지난 작업을 이어서 엽니다 — \(projectDisplayName)")
-            } catch { notify("지난 작업을 불러오지 못했습니다: \(error.localizedDescription)", isError: true) }
+        if let legacy = legacyAutosaveURLs.first(where: { fm.fileExists(atPath: $0.path) }) {
+            let migrated = nextAutosaveURL()
+            try fm.moveItem(at: legacy, to: migrated)
+            return migrated
+            // 예전 구조에서는 이 복구본이 늘 가장 최신이었다. 지우지 않고 이름만 바꾼다.
         }
-    }
-
-    func restoreRecovery(from url: URL) throws {
-        let file = try ProjectFile.decoded(from: Data(contentsOf: url))
-        try adopt(file, from: nil)
-        lastExplicitSavedProject = projectContents == BuildingProject() ? makeProjectFile() : nil
-        if let path = projectDefaults.string(forKey: Self.lastProjectPathKey) {
-            let originalURL = URL(fileURLWithPath: path)
-            if let data = try? Data(contentsOf: originalURL),
-               let original = try? ProjectFile.decoded(from: data), original.projectID == file.projectID {
-                projectURL = originalURL
-                lastExplicitSavedProject = original
-            }
-        }
+        guard let path = projectDefaults.string(forKey: Self.lastProjectPathKey),
+              fm.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     func confirmTermination() -> Bool {
         guard !isProjectBusy, NSApp.modalWindow == nil else { return false }
-        guard confirmUnsavedChanges(action: "앱 종료", discardRecovery: true) else { return false }
+        guard autosaveBeforeLeaving(action: "앱 종료") else { return false }
         stopAutosaveLoop()
         return true
     }

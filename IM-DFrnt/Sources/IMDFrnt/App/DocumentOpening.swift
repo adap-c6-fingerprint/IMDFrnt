@@ -33,14 +33,15 @@ extension AppEnvironment {
         do {
             if project {
                 let file = try ProjectFile.decoded(from: Data(contentsOf: url))
-                guard confirmingChanges?() ?? confirmUnsavedChanges(action: "다른 프로젝트 열기") else { return .cancelled }
+                let target = url.deletingPathExtension().lastPathComponent
+                guard confirmingChanges?() ?? confirmProjectSwitch("‘\(target)’ 프로젝트로 전환할까요?") else { return .cancelled }
                 try adopt(file, from: url)
             } else {
                 let data = try Data(contentsOf: url)
                 let svg = try ext == "svg" ? DrawingImageImporter.embedLocalImages(in: data, relativeTo: url)
                     : DrawingImageImporter.embeddedSVG(from: data)
                 _ = try SVGParser.parse(data: svg, sourceName: url.lastPathComponent)
-                guard confirmingChanges?() ?? confirmUnsavedChanges(action: "다른 도면 열기") else { return .cancelled }
+                guard confirmingChanges?() ?? autosaveBeforeLeaving(action: "다른 도면 열기") else { return .cancelled }
                 load(data: svg, name: url.lastPathComponent)
                 guard loadedSVGText == String(decoding: svg, as: UTF8.self) else { return .failed }
             }

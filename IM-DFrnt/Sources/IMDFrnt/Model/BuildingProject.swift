@@ -71,6 +71,10 @@ struct ProjectLevel: Identifiable, Equatable, Codable {
     /// Optional additions keep existing v5 projects readable without migration.
     var svgPresentation: DrawingLayerPresentation?
     var referenceDrawing: LevelReferenceDrawing?
+    /// 이 층의 feature type별 작업 상태(신기능 12항). 키는 type 이름이다. 없으면 Todo다.
+    var workStatus: [String: LayerWorkStatus]?
+    /// 이 층에서 type별로 사용자가 마지막으로 feature를 고친 시각. 최근 작업 순 정렬에 쓴다.
+    var lastEdited: [String: Date]?
 }
 
 /// Common building and Levels are authoritative. RoutingGraph is a compatibility
@@ -87,6 +91,12 @@ struct BuildingProject: Equatable, Codable {
     var hardSearchRadiusMeters = 25.0
     var imdfSourceName: String?
     var footprintPresentation: DrawingLayerPresentation?
+    /// 층에 귀속되지 않는 정보 type(address·building·manifest·occupant)의 작업 상태(신기능 12항).
+    var metadataWorkStatus: [String: LayerWorkStatus]?
+    /// 상단바의 층 표시 순서. 화면 순서일 뿐이고 층 번호(ordinal)는 바꾸지 않는다. 없으면 층 번호 순이다.
+    var levelDisplayOrder: [UUID]?
+    /// 좌측 Feature Type 목록의 사용자 지정 순서(type 이름). 없으면 기본 순서다.
+    var featureTypeOrder: [String]?
 
     func validate() throws {
         guard Set(levels.map(\.id)).count == levels.count,

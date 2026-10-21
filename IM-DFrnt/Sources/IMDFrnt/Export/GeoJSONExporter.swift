@@ -67,6 +67,9 @@ struct GeoJSONExporter {
     let segmentation: SegmentationStore
     let georeferencer: Georeferencer
     var borrow = BorrowRegistry()
+    var levelID: UUID? = nil
+    // 이 feature들이 속한 층(건물·층 관리의 층)의 UUID. 있으면 `level_id`와 level feature의 `id`를 이 값으로 쓴다.
+    // 슬롯에 남은 값(예전에 고른 일련번호 등)보다 앞선다 — 어느 층인지는 층 관리가 정한다.
 
     func buildFeatureCollection(type: IMDFFeatureType,
                                 features: [FeatureGroup],
@@ -80,10 +83,10 @@ struct GeoJSONExporter {
         return ["type": "FeatureCollection", "features": out]
     }
 
-    private func serialize(_ f: FeatureGroup,
+    func serialize(_ f: FeatureGroup,
                            ids: inout IDAssigner,
                            serialToUUID: [String: UUID]) -> [String: Any] {
-        let uuid = ids.id(for: f.id)
+        let uuid = f.featureType == .level ? (levelID ?? ids.id(for: f.id)) : ids.id(for: f.id)
         let kind = GeometryClassifier.classify(f, document: document)
 
         var props: [String: Any] = [:]
@@ -98,6 +101,10 @@ struct GeoJSONExporter {
                 continue
             }
             let v = f.value(field.key)
+            if field.key == "level_id", let levelID {
+                props[field.key] = levelID.uuidString.lowercased()
+                continue
+            }
             if case .reference = field.type {
                 // 사람은 슬롯에 unit-014 같은 일련번호를 넣고, 파일에는 UUID가 들어간다.
                 if case .string(let s) = v, let mapped = serialToUUID[s] {
@@ -128,13 +135,15 @@ struct GeoJSONExporter {
         guard kind != .none else { return nil }
 
         let rings = VertexExtractor.rings(for: f)
-        if kind == .multiPolygon, rings.count > 1 {
-            // fixture처럼 면 여러 개가 한 feature인 경우(신기능 5-4 2번).
+        if (kind == .multiPolygon && rings.count > 1) || (kind.isAreal && f.multiPolygon == true && !rings.isEmpty) {
+            // fixture처럼 면 여러 개가 한 feature인 경우(신기능 5-4 2번)와 우측 패널에서 MultiPolygon으로 지정한 면 feature.
             // 링마다 따로 변환한다 — 한 줄로 이으면 서로 다른 면이 하나의 링으로 뭉개진다.
             let converted = rings.compactMap { georeferencer.geoPoints(for: $0) }
             guard converted.count == rings.count else { return nil }
+            let coords = converted.map { closeRing($0.map(\.geoJSONArray)) }
             return ["type": "MultiPolygon",
-                    "coordinates": converted.map { [closeRing($0.map(\.geoJSONArray))] }]
+                    "coordinates": RingNesting.polygons(rings).map { [coords[$0.outer]] + $0.holes.map { coords[$0] } }]
+            // 다른 링 안에 든 링은 바깥 다각형의 구멍(안쪽 링)으로 붙인다. 구멍 안의 링은 다시 다각형이다.
         }
 
         let locals = VertexExtractor.vertices(for: f, document: document,

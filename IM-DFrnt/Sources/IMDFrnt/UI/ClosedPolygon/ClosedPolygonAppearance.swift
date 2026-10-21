@@ -16,9 +16,30 @@ enum ClosedPolygonAppearance {
     /// "고른 것"과 "다른 종류의 면"이 구분되지 않는다.
     static let selectedFillOpacity: Double = 0.55
 
-    /// 이미 저장된 면. 고를 수 없다는 뜻을 회색으로 알린다.
-    static let savedFill = Color(red: 0.55, green: 0.55, blue: 0.6)
+    /// 지금 레이어에서 태깅(저장)한 선·면. 초록이다 — 회색이면 도면 선·비활성 개체와 구별되지 않아
+    /// 어디까지 태깅했는지 한눈에 안 보인다(2026-10-17 요청). 파랑(선택·고를 수 있는 면)·청록(경계선)·
+    /// 노랑(꼭짓점)·주황(강조·제외)·보라(임시 문)·빨강(이상치) 어느 것과도 겹치지 않는다.
+    static let savedFill = Color(red: 0.16, green: 0.66, blue: 0.24)
     static let savedFillOpacity: Double = 0.35
+
+    /// category를 정한 feature의 이름표. 태깅 초록보다 **진한 초록**이라 아직 category가 없는 것과 한눈에 갈린다
+    /// (2026-10-19 요청). 강조(주황)·겹침(빨강) 이름표가 이보다 앞선다.
+    static let categorizedLabelFill = Color(red: 0.04, green: 0.38, blue: 0.13)
+
+    /// 다른 레이어(property type)에서 태깅한 면·선·점·개체. 지금 레이어의 태깅 초록보다 **옅은 초록**이다
+    /// (2026-10-17 요청: 편집 중이 아닌 레이어의 태깅 결과도 지금 화면에서 보이게, 단 더 옅게).
+    /// 회색이던 것을 바꿨다 — 회색은 도면 선·비활성 개체와 섞여 다른 레이어가 무엇을 가져갔는지 안 보였다.
+    /// 지금 레이어에서는 여전히 고를 수 없다(비활성 그대로). 색만 "이미 태깅됨"을 알린다.
+    static let otherLayerFill = Color(red: 0.62, green: 0.86, blue: 0.6)
+    static let otherLayerFillOpacity: Double = 0.18
+    // 채움. 지금 레이어(`savedFillOpacity` 0.35)의 절반쯤이라 겹쳐도 지금 레이어가 위에서 또렷하다.
+    static let otherLayerStrokeOpacity: Double = 0.8
+    // 선. 옅은 색이라 채움보다는 진하게 두어야 밝은 배경에서도 윤곽이 보인다.
+
+    /// 지금 보고 있는 저장 개체 — 우측 사이드바에서 펼친 카드이거나 '이 feature만 보기'(눈)로 띄운 것.
+    /// 초록 태깅 색과 확실히 갈라지는 주황이다. 파랑(고를 수 있는 면·선택)과 노랑(꼭짓점)과도 겹치지 않는다.
+    static let highlightFill = Color(red: 1.0, green: 0.42, blue: 0.1)
+    static let highlightFillOpacity: Double = 0.45
 
     /// 선 — 면의 경계. 면보다 진하고 점보다 어둡다.
     static let edgeStroke = Color(red: 0.15, green: 0.75, blue: 0.6)

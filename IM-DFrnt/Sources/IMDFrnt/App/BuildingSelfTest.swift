@@ -15,7 +15,7 @@ enum BuildingSelfTest {
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? FileManager.default.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
         func environment() -> AppEnvironment {
-            AppEnvironment(recoveryURL: directory.appendingPathComponent("recovery.imdfrnt"), projectDefaults: defaults)
+            AppEnvironment(autosaveFolder: directory, projectDefaults: defaults)
         }
         do {
             let env = environment()
@@ -24,8 +24,9 @@ enum BuildingSelfTest {
             let initialBuilding = env.globalFeatures("building")
             env.autosaveTick()
             let recovered = environment()
-            try recovered.restoreRecovery(from: directory.appendingPathComponent("recovery.imdfrnt"))
-            check("Level 없이 작성한 건물 정보도 복구 시 미저장으로 유지", recovered.hasUnsavedChanges && recovered.globalFeatures("building") == initialBuilding)
+            let autosaved = try env.projectURL.map { try ProjectFile.decoded(from: Data(contentsOf: $0)) }
+            if let autosaved { try recovered.adopt(autosaved, from: env.projectURL) }
+            check("Level 없이 작성한 건물 정보도 자동 저장 파일로 복원", autosaved != nil && !recovered.hasUnsavedChanges && recovered.globalFeatures("building") == initialBuilding)
             env.openSample()
             check("첫 SVG 입력은 기존 건물과 프로젝트 ID 보존", env.globalFeatures("building") == initialBuilding && env.buildingProject.levels.count == 1)
             env.undo()
@@ -85,7 +86,8 @@ enum BuildingSelfTest {
             env.undo()
             check("Footprint 삭제 Undo", env.globalFeatures("footprint").count == 1)
             let url = directory.appendingPathComponent("two-levels.imdfrnt")
-            check("공통 건물·여러 층 저장", env.saveProject(to: url))
+            env.projectURL = url
+            check("공통 건물·여러 층 저장", env.persist(showingBanner: false))
             let file = try ProjectFile.decoded(from: Data(contentsOf: url))
             check("v5 파일은 Level 내부에 저장, 중복 RoutingGraph 없음", file.version == 5 && file.routing == nil && file.hasDrawing == false && file.buildingProject?.levels.count == 2)
             let reopened = environment()
@@ -138,6 +140,173 @@ enum BuildingSelfTest {
                 check("사용자 실제 v4 → v5 왕복 후 동일", reopened.projectContents == actual.projectContents)
             }
         } catch { check("공통 층 통합 검증", false); print(error) }
+
+        // 신기능 12항: feature type 상태·층 완료·순서·최근 작업.
+        do {
+            let ws = environment()
+            try ws.createNewProject()
+            let l1 = ws.addProjectLevel()
+            let l2 = ws.addProjectLevel()
+            ws.selectProjectLevel(l1)
+            await ws.waitForLevelDrawing()
+            func level(_ id: UUID) -> ProjectLevel { ws.buildingProject.levels.first { $0.id == id }! }
+            check("상태: 처음은 Todo", ws.workStatus(.unit) == .todo)
+            ws.setWorkStatus(.complete, for: .unit)
+            check("상태: 층마다 따로 둔다", ws.workStatus(.unit) == .complete && ws.workStatus(.unit, level: level(l2)) == .todo)
+            ws.setWorkStatus(.inReview, for: .occupant)
+            check("상태: 정보 type은 프로젝트에 하나다",
+                  ws.buildingProject.metadataWorkStatus?["occupant"] == .inReview
+                  && ws.workStatus(.occupant, level: level(l2)) == .inReview)
+            check("층 완료: 일부만 Complete면 층은 미완료", !ws.isLevelComplete(level(l1)))
+            for type in AppEnvironment.levelFeatureTypes { ws.setWorkStatus(.complete, for: type) }
+            check("층 완료: 좌측 type이 모두 Complete면 층도 Complete(정보 type은 보지 않는다)",
+                  ws.isLevelComplete(level(l1)) && !ws.isLevelComplete(level(l2))
+                  && ws.workStatus(.address) == .todo)
+
+            let ordinals = ws.buildingProject.levels.map { $0.info.ordinal }
+            ws.moveLevel(l2, to: l1)
+            check("층 순서: 끌면 화면 순서만 바뀌고 층 번호는 그대로",
+                  ws.displayedLevels.map(\.id) == [l2, l1] && ws.buildingProject.levels.map { $0.info.ordinal } == ordinals)
+
+            ws.setWorkStatus(.todo, for: .fixture)
+            ws.setWorkStatus(.inProgress, for: .opening)
+            check("정렬: 미완료 순은 Todo가 먼저", ws.sortedFeatureTypes(.incompleteFirst).prefix(2) == [.fixture, .opening])
+            check("정렬: 완료 순은 Todo가 마지막", ws.sortedFeatureTypes(.completeFirst).suffix(2) == [.opening, .fixture])
+            let shown = ws.sortedFeatureTypes(.custom)
+            ws.moveFeatureType(.unit, to: shown[0], shown: shown)
+            check("정렬: 끌어 옮긴 순서가 사용자 지정 순서로 저장된다",
+                  ws.customFeatureTypeOrder.first == .unit && ws.buildingProject.featureTypeOrder?.first == "unit")
+
+            check("최근 작업: 상태만 바꾼 것은 작업이 아니다", ws.activeLevel?.lastEdited?["fixture"] == nil)
+            ws.perform("amenity 추가") {
+                ws.features.insert(FeatureGroup(featureType: .amenity, serialNumber: "amenity-901", memberIDs: []))
+            }
+            check("최근 작업: feature를 고친 type의 시각이 남는다",
+                  ws.activeLevel?.lastEdited?["amenity"] != nil && ws.sortedFeatureTypes(.recent).first == .amenity)
+            ws.undo()
+            check("최근 작업: 실행취소하면 시각도 되돌아간다", ws.activeLevel?.lastEdited?["amenity"] == nil)
+
+            let decoded = try JSONDecoder().decode(BuildingProject.self, from: JSONEncoder().encode(ws.projectContents))
+            check("상태·순서는 프로젝트 파일에 저장된다",
+                  decoded.levels.first { $0.id == l1 }?.workStatus?["unit"] == .complete
+                  && decoded.metadataWorkStatus?["occupant"] == .inReview
+                  && decoded.levelDisplayOrder == [l2, l1] && decoded.featureTypeOrder?.first == "unit")
+        } catch { check("신기능 12항 검증", false); print(error) }
+
+        // #31: 빈 층에서 .imdfrnt 불러오기는 프로젝트를 바꾸지 않고 그 층에 넣는다.
+        do {
+            let env = environment()
+            try env.createNewProject()
+            let drawn = env.addProjectLevel()
+            try env.setRoutingDrawing(drawn, data: Data(SampleFloorplan.svg.utf8), name: "first.svg")
+            let blank = env.addProjectLevel()
+            await env.waitForLevelDrawing()
+            check("빈 층 + 다른 층에 작업 있음 → 층에 넣기", env.routingFloorID == blank && env.importsProjectIntoActiveLevel)
+            env.selectProjectLevel(drawn)
+            await env.waitForLevelDrawing()
+            check("작업된 층에서는 예전처럼 프로젝트 전환", !env.importsProjectIntoActiveLevel)
+            env.selectProjectLevel(blank)
+            await env.waitForLevelDrawing()
+
+            let sourceID = UUID(), stamp = Date(timeIntervalSince1970: 1_000_000)
+            var source = ProjectLevel(info: ProjectLevelInfo(id: sourceID, name: "5층", ordinal: 4, sourceName: "fifth.svg", svg: SampleFloorplan.svg))
+            source.editing.features.insert(FeatureGroup(featureType: .amenity, serialNumber: "amenity-501", memberIDs: []))
+            let a = RoutingNode(floorID: sourceID, point: LocalPoint(1, 2)), b = RoutingNode(floorID: sourceID, point: LocalPoint(3, 4))
+            source.nodes = [a, b]
+            source.edges = [RoutingEdge(from: a.id, to: b.id)]
+            source.workStatus = ["amenity": .complete]
+            source.lastEdited = ["amenity": stamp]
+            let before = env.buildingProject.levels.first { $0.id == blank }!.info
+            let projectID = env.projectID
+            env.importLevel(source, into: blank)
+            await env.waitForLevelDrawing()
+            let level = env.buildingProject.levels.first { $0.id == blank }!
+            check("층 불러오기: 프로젝트는 그대로, 층 ID·이름·번호 유지",
+                  env.projectID == projectID && env.buildingProject.levels.count == 2
+                  && level.info.name == before.name && level.info.ordinal == before.ordinal)
+            check("층 불러오기: 도면·태깅·노드·연결·상태가 들어온다",
+                  level.info.svg == SampleFloorplan.svg && env.document?.sourceName == "fifth.svg"
+                  && env.features.features.count == 1 && level.nodes.allSatisfy { $0.floorID == blank }
+                  && level.nodes.count == 2 && level.edges.count == 1 && level.workStatus?["amenity"] == .complete)
+            check("층 불러오기: 불러온 것은 '최근 작업'으로 찍지 않는다", level.lastEdited?["amenity"] == stamp)
+            let third = env.addProjectLevel()
+            env.importLevel(source, into: third)
+            check("층 불러오기: 같은 층을 두 번 넣어도 노드 ID가 겹치지 않는다", (try? env.projectContents.validate()) != nil)
+            env.undo(); env.undo(); env.undo()
+            await env.waitForLevelDrawing()
+            check("층 불러오기: 실행취소하면 빈 층으로 돌아간다",
+                  AppEnvironment.isBlankLevel(env.projectContents.levels.first { $0.id == blank }!))
+        } catch { check("#31 빈 층 .imdfrnt 불러오기 검증", false); print(error) }
+
+        // 정보 type 스펙 점검(2026-10-20): 칸별 문제와 내보내기 차단.
+        do {
+            func feature(_ type: IMDFFeatureType, _ props: [String: PropertyValue]) -> FeatureGroup {
+                var f = FeatureGroup(featureType: type, serialNumber: "\(type.rawValue)-001", memberIDs: [])
+                for field in PropertySchema.fields(for: type) { f.properties[field.key] = props[field.key] ?? .null }
+                return f
+            }
+            func severity(_ f: FeatureGroup, _ key: String) -> FieldProblem.Severity? { PropertyRules.problem(f.featureType, key, in: f)?.severity }
+            let empty = feature(.address, [:])
+            check("address: 필수 address·locality·country가 비면 위반, postal_code는 경고",
+                  severity(empty, "address") == .violation && severity(empty, "locality") == .violation
+                  && severity(empty, "country") == .violation && severity(empty, "postal_code") == .warning
+                  && severity(empty, "unit") == nil)
+            let good = feature(.address, ["address": .string("청암로 77"), "locality": .string("포항시"),
+                                          "country": .string("KR"), "province": .string("KR-47"), "postal_code": .string("37673")])
+            check("address: 올바른 값은 문제 없음", PropertyRules.problems(in: good).isEmpty)
+            let wrong = feature(.address, ["address": .string("  "), "locality": .string("포항시"),
+                                           "country": .string("대한민국"), "province": .string("경상북도")])
+            check("address: 공백만·글자 국가명·글자 시도명은 위반",
+                  severity(wrong, "address") == .violation && severity(wrong, "country") == .violation
+                  && severity(feature(.address, ["country": .string("KR"), "province": .string("경상북도")]), "province") == .violation
+                  && severity(feature(.address, ["country": .string("KR")]), "province") == .violation)
+            check("address: 국가·시도는 목록에서 고른다(한국 17개)",
+                  PropertyRules.choices(.address, "country", in: good)?.contains { $0.value == "KR" } == true
+                  && PropertyRules.choices(.address, "province", in: good)?.count == 17
+                  && PropertySchema.fields(for: .address).first { $0.key == "unit" }?.type == .string)
+            let occupant = feature(.occupant, ["name": .localized(en: "Cafe", ko: "카페"), "category": .string("cafe"),
+                                               "anchor_id": .string("anchor-001"), "hours": .string("Mo-Fr 09:00-18:00; Sa off"),
+                                               "phone": .string("+82542792114"), "website": .string("https://example.com")])
+            check("occupant: 올바른 값은 문제 없음", PropertyRules.problems(in: occupant).isEmpty)
+            let badOccupant = feature(.occupant, ["name": .localized(en: "Cafe", ko: ""), "category": .string("커피"),
+                                                  "hours": .string("평일 9시"), "phone": .string("054-279-2114"), "website": .string("example.com")])
+            check("occupant: ko 없는 이름·목록 밖 category·anchor 없음·형식 틀린 hours·phone·website는 위반",
+                  ["name", "category", "anchor_id", "hours", "phone", "website"].allSatisfy { severity(badOccupant, $0) == .violation })
+            check("occupant: category 목록은 Apple 범주 파일 전량", PropertySchema.categoryOptions(for: .occupant).count == 1116)
+            check("phone 칸은 공백·하이픈을 떼고, 공백만 넣으면 null",
+                  PropertySlotRow.text(" +82 54-279-2114 ", key: "phone") == .string("+82542792114")
+                  && PropertySlotRow.text("   ", key: "address") == .null)
+            let building = feature(.building, ["category": .string("unspecified"), "restriction": .string("private")])
+            check("building: restriction은 employeesonly·restricted만, 이름 없음은 경고",
+                  severity(building, "restriction") == .violation && severity(building, "name") == .warning
+                  && severity(building, "category") == nil)
+            check("manifest: 언어 태그 점검",
+                  severity(feature(.manifest, ["language": .string("korean")]), "language") == .violation
+                  && severity(feature(.manifest, ["language": .string("ko-KR")]), "language") == nil)
+
+            let env = environment()
+            try env.createNewProject()
+            let l = env.addProjectLevel()
+            await env.waitForLevelDrawing()
+            env.addMetadataFeature(.address)
+            var project = env.projectContents
+            var blocked: [String] = []
+            do { guard var file = env.makeProjectFile() else { throw CocoaError(.fileWriteUnknown) }; file.buildingProject = project; _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:]) }
+            catch let b as IMDFArchive.Blocked { blocked = b.messages }
+            check("내보내기: 빈 address는 막고 고칠 칸을 알려준다", blocked.contains { $0.contains("address-001 country") })
+            let i = project.levels.firstIndex { $0.id == l }!
+            let id = project.levels[i].editing.features.features(ofType: .address)[0].id
+            project.levels[i].editing.features.update(id) { f in
+                f.properties["address"] = .string("청암로 77"); f.properties["locality"] = .string("포항시")
+                f.properties["country"] = .string("KR"); f.properties["province"] = .string("KR-47")
+            }
+            blocked = []
+            do { guard var file = env.makeProjectFile() else { throw CocoaError(.fileWriteUnknown) }; file.buildingProject = project; _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:]) }
+            catch let b as IMDFArchive.Blocked { blocked = b.messages }
+            check("내보내기: address를 채우면 그 칸 때문에 막히지 않는다", !blocked.contains { $0.contains("address-001") })
+            check("manifest created는 소수 초 없는 DATE-TIME",
+                  (IMDFArchive.manifest(imported: nil, feature: nil, now: Date(timeIntervalSince1970: 0))["created"] as? String) == "1970-01-01T00:00:00Z")
+        } catch { check("정보 type 스펙 점검", false); print(error) }
         print("== Building: \(total - failures)/\(total) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

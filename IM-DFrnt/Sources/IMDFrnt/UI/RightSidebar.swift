@@ -9,22 +9,30 @@ struct RightSidebar: View {
             header
             Divider()
             if let type = env.layers.activePropertyType {
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        let live = env.features.features(ofType: type)
-                        featureListHeader(count: live.count)
+                        let all = env.features.features(ofType: type)
+                        let live = all.filter { env.passesCategoryFilter($0) }
+                        featureListHeader(count: live.count, total: all.count)
                         // **카드 전부를 감싸는 접기 트리를 두지 않는다**(2026-08-26 요청).
                         // 상위 토글 하나로 통째로 접히면 카드마다 따로 접고 펴는 뜻이 사라진다.
                         // 여기서는 개수만 알려주고, 접고 펴는 것은 카드 각자의 몫이다.
+                        if !all.isEmpty { CategoryFilterBar(type: type, features: all) }
 
-                        if live.isEmpty {
+                        if all.isEmpty {
                             Text("아직 저장된 feature가 없습니다.\n캔버스에서 개체를 선택하고 'Feature로 저장'을 누르세요.")
                                 .font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 20)
+                        } else if live.isEmpty {
+                            Text("고른 category에 해당하는 feature가 없습니다.")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 20)
                         }
-                        ForEach(live) { f in featureCard(f) }
+                        ForEach(live) { f in featureCard(f).id(f.id) }
 
                         let trashed = env.features.features(ofType: type, includingTrashed: true)
                             .filter(\.isInTrash)
@@ -37,6 +45,13 @@ struct RightSidebar: View {
                         }
                     }
                     .padding(12)
+                }
+                .onChange(of: env.focusedFeature) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id) }
+                }
+                // 캔버스 이름표로 고른 카드가 목록 아래에 있으면 고른 것이 안 보인다. 그 카드로 내린다.
+                // 위치를 정하지 않아 이미 보이는 카드(패널에서 직접 누른 카드)는 움직이지 않는다.
                 }
             } else {
                 Spacer()
@@ -51,10 +66,11 @@ struct RightSidebar: View {
     }
 
     /// 카드 목록의 머리글. 접히지 않는 표시 전용 줄이다.
-    private func featureListHeader(count: Int) -> some View {
+    private func featureListHeader(count: Int, total: Int) -> some View {
         HStack(spacing: 6) {
             Text("FEATURES").font(.caption.weight(.semibold))
-            Text("\(count)").font(.caption2.monospacedDigit())
+            Text(count == total ? "\(count)" : "\(count) / \(total)").font(.caption2.monospacedDigit())
+            // category 필터가 걸려 있으면 보이는 수 / 전체 수다(#52).
             Spacer(minLength: 0)
         }
         .foregroundStyle(.secondary)
@@ -221,6 +237,9 @@ struct RightSidebar: View {
                 .font(.caption).foregroundStyle(.orange)
         }
 
+        if env.canDesignateMultiPolygon(f) { multiPolygonSection(f) }
+        if f.featureType == .fixture { fixtureTwinSection(f) }
+
         VStack(alignment: .leading, spacing: 6) {
             ForEach(PropertySchema.fields(for: f.featureType)) { field in
                 PropertySlotRow(feature: f, field: field)
@@ -245,6 +264,66 @@ struct RightSidebar: View {
 
         Divider()
         coordinateTable(f)
+    }
+
+    /// 저장한 다각형을 MultiPolygon으로 지정하고 다각형·구멍을 더한다. 스펙상 POLYGONAL인 모든 type이 대상이다.
+    private func multiPolygonSection(_ f: FeatureGroup) -> some View {
+        let isTarget = env.multiPolygonTargetID == f.id
+        let summary = env.multiPolygonSummary(f)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(f.isMultiPolygon ? "MultiPolygon · 다각형 \(summary.polygons) · 구멍 \(summary.holes)" : "Polygon")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                if !f.isMultiPolygon {
+                    Button("MultiPolygon으로 지정") { env.designateMultiPolygon(f.id) }
+                        .controlSize(.small)
+                } else {
+                    if f.multiPolygon == true, f.polygonRings.count == 1 {
+                        Button("Polygon으로") { env.releaseMultiPolygon(f.id) }
+                            .controlSize(.small)
+                    }
+                    Button(isTarget ? "추가 끝내기" : "다각형 추가") {
+                        if isTarget { env.finishMultiPolygonAdding() } else { env.startMultiPolygonAdding(f.id) }
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .tint(isTarget ? .orange : .accentColor)
+                }
+            }
+            if isTarget || !f.isMultiPolygon {
+                Text(isTarget
+                     ? "다각형을 닫거나 면을 저장하면 이 feature에 더해집니다. 기존 다각형을 감싸면 기존 것이 구멍이 되고, 기존 다각형 안쪽이면 새 것이 구멍이 됩니다."
+                     : "MultiPolygon으로 지정한 뒤 '다각형 추가'를 누른 동안에만 새 다각형이 이 feature에 더해집니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(7)
+        .background((isTarget ? Color.orange : Color.secondary).opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    /// fixture와 똑같이 생긴 자리마다 같은 태깅의 fixture를 둔다(2026-10-18 요청). 자리는 캔버스에 보라 점선으로 보인다.
+    private func fixtureTwinSection(_ f: FeatureGroup) -> some View {
+        let count = f.polygonRings.isEmpty && !f.memberIDs.isEmpty
+            ? env.fixtureMemberTwins(of: f.memberIDs).count
+            : env.fixtureTwinPlacements(of: f).count
+        // 선 단위로 저장한 fixture는 도면 개체로 자리를 찾는다.
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(count > 0 ? "똑같이 생긴 개체 \(count)곳" : "똑같이 생긴 개체 없음")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Button("같은 태깅으로 저장") { env.applyTaggingToFixtureTwins(f.id) }
+                    .controlSize(.small)
+                    .disabled(count == 0)
+            }
+            Text("자리마다 이 카드의 속성을 그대로 가진 fixture를 개별 Polygon으로 저장합니다. 이미 저장된 자리는 속성만 이 카드와 같게 맞춥니다. 회전·반전된 모양은 찾지 않습니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(7)
+        .background(env.canvasBackground.twinStroke.opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
     }
 
     /// 명세 7-3-5·6) 좌표 표
@@ -350,7 +429,21 @@ struct PropertySlotRow: View {
             // 폭을 못 박으면 좁은 사이드바에서 라벨이 값 칸을 밀어낸다(뷰 디버깅 16번).
             // 범위로 두면 넓을 때는 종전과 같고, 좁을 때는 라벨이 먼저 양보한다.
 
-            control
+            VStack(alignment: .leading, spacing: 2) {
+                control
+                if let guide = PropertyRules.guide(feature.featureType, field.key) {
+                    Text(guide).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let problem = PropertyRules.problem(feature.featureType, field.key, in: feature) {
+                    Label(problem.message, systemImage: problem.severity == .violation ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(problem.severity == .violation ? Color.red : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            // 정보 type은 칸 아래에 입력 가이드를, 스펙을 어기면 고치는 방법을 빨간 글씨로 붙인다(2026-10-20).
+            // Apple 검증의 경고(Warning)만 해당하면 주황이다. 가이드가 없는 type은 종전과 같다.
         }
     }
 
@@ -362,6 +455,17 @@ struct PropertySlotRow: View {
             Text(env.ids.peek(feature.id)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
                 .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        } else if !field.isEditable, field.type == .string {
+            Text(feature.featureType == .manifest && field.key == "version" ? "1.0.0"
+                 : feature.featureType == .manifest && field.key == "created" ? "내보낼 때 자동 기록" : value.displayText)
+                .font(.caption2).foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let choices = PropertyRules.choices(feature.featureType, field.key, in: feature) {
+            let labels = Dictionary(choices.map { ($0.value, $0.label) }, uniquingKeysWith: { a, _ in a })
+            SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
+                             options: choices.map(\.value),
+                             onSelect: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id) },
+                             label: { labels[$0] ?? $0 })
         } else if field.type == .alwaysNull {
             Text("null").font(.caption2).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -371,17 +475,17 @@ struct PropertySlotRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.key == "category",
                   !PropertySchema.categoryOptions(for: feature.featureType).isEmpty {
-            Picker("", selection: Binding(
-                get: { if case .string(let s) = value { return s }; return "" },
-                set: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0),
-                                          in: feature.id) }
-            )) {
-                Text("null").tag("")
-                ForEach(PropertySchema.categoryOptions(for: feature.featureType), id: \.self) {
-                    Text($0).tag($0)
-                }
-            }
-            .labelsHidden().controlSize(.small)
+            let type = feature.featureType
+            let ordered = env.categoryOptionsOrdered(for: type)
+            SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
+                             options: ordered.options,
+                             onSelect: {
+                env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
+                env.recordRecentCategory($0, type: type)
+            }, label: { CategoryLabel.display($0, type: type) }, recent: ordered.recent)
+            // unit은 최근 고른 category가 맨 위에 최근 순으로 온다(2026-10-19 요청).
+            // 드롭다운 대신 검색해서 고른다. 모든 레이어의 category 칸이 이 한 곳을 지난다.
+            // 보이는 이름은 `한국어(영어)`, 저장되는 값은 영어 원문이다(#52).
         } else if field.type == .boolean {
             Toggle("", isOn: Binding(
                 get: { if case .boolean(let b) = value { return b }; return false },
@@ -394,16 +498,12 @@ struct PropertySlotRow: View {
                 textField("en", get: { if case .localized(let en, _) = value { return en }; return "" },
                           set: { en in
                     let ko = { if case .localized(_, let k) = value { return k }; return "" }()
-                    env.updateProperty(field.key,
-                                       value: en.isEmpty && ko.isEmpty ? .null : .localized(en: en, ko: ko),
-                                       in: feature.id)
+                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
                 })
                 textField("ko", get: { if case .localized(_, let ko) = value { return ko }; return "" },
                           set: { ko in
                     let en = { if case .localized(let e, _) = value { return e }; return "" }()
-                    env.updateProperty(field.key,
-                                       value: en.isEmpty && ko.isEmpty ? .null : .localized(en: en, ko: ko),
-                                       in: feature.id)
+                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
                 })
             }
         } else if field.type == .integer {
@@ -420,30 +520,50 @@ struct PropertySlotRow: View {
                 env.updateProperty(field.key, value: parts.isEmpty ? .null : .stringArray(parts),
                                    in: feature.id)
             })
-        } else if case .reference(let refType) = field.type {
-            Picker("", selection: Binding(
-                get: { if case .string(let s) = value { return s }; return "" },
-                set: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0),
-                                          in: feature.id) }
-            )) {
-                Text("null").tag("")
-                ForEach(env.features.features(ofType: refType)) { f in
-                    Text(f.serialNumber).tag(f.serialNumber)
-                }
+        } else if field.key == "level_id", let level = env.activeLevel {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(level.info.name) · ordinal \(level.info.ordinal)")
+                    .font(.caption)
+                Text(level.id.uuidString.lowercased())
+                    .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+                    .textSelection(.enabled)
             }
-            .labelsHidden().controlSize(.small)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help("건물·층 관리에서 정한 지금 층으로 자동 지정됩니다. 내보내기 때 이 UUID가 level_id로 들어갑니다.")
+            // 직접 고르지 않는다. 예전에는 이 층에 그린 level feature의 일련번호를 골랐는데,
+            // 내보내기는 level feature의 id를 층 UUID로 바꾸므로 고른 값과 실제 level id가 어긋날 수 있었다.
+        } else if case .reference(let refType) = field.type {
+            SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
+                             options: env.features.features(ofType: refType).map(\.serialNumber)) {
+                env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
+            }
             .help("일련번호로 고르면 내보내기 때 해당 feature의 UUID로 치환됩니다.")
+            // 참조 칸(unit_id·anchor_id 등)도 드롭다운이었다. 일련번호가 수백 개면 찾을 수 없어 같은 검색 칸을 쓴다.
         } else {
             textField("null", get: { if case .string(let s) = value { return s }; return "" },
-                      set: { env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0),
-                                                in: feature.id) })
+                      set: { env.updateProperty(field.key, value: Self.text($0, key: field.key), in: feature.id) })
         }
     }
 
+    /// 글자칸 값. 앞뒤 공백을 떼고, 남는 것이 없으면 null이다 — 공백만 든 값은 Apple 검증의 '빈 값' 위반이다.
+    /// phone은 사람이 흔히 넣는 공백·하이픈·괄호를 떼어 E.164 모양에 가깝게 둔다.
+    static func text(_ raw: String, key: String) -> PropertyValue {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key == "phone" { s.removeAll { " -()".contains($0) } }
+        return s.isEmpty ? .null : .string(s)
+    }
+
+    static func label(en: String, ko: String) -> PropertyValue {
+        let en = en.trimmingCharacters(in: .whitespacesAndNewlines), ko = ko.trimmingCharacters(in: .whitespacesAndNewlines)
+        return en.isEmpty && ko.isEmpty ? .null : .localized(en: en, ko: ko)
+    }
+
+    /// 글자칸. 입력 중에는 칸만 바뀌고, 잠깐 멈추거나 확정할 때 저장한다(`DraftTextField`).
     private func textField(_ placeholder: String,
                            get: @escaping @MainActor @Sendable () -> String,
                            set: @escaping @MainActor @Sendable (String) -> Void) -> some View {
-        TextField(placeholder, text: Binding(get: get, set: set))
+        DraftTextField(placeholder: placeholder, saved: get(), commit: set)
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)
             .font(.caption)
