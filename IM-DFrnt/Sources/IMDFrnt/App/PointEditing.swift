@@ -565,6 +565,12 @@ extension AppEnvironment {
             pointDraft = PointDraft()
         }
         notify("\(serial) 로 저장했습니다.")
+        if type == .amenity {
+            expandedFeature = f.id
+            tagEditorRequest = f.id
+        }
+        // amenity는 점 하나라 찍는 순간이 곧 저장이다. 이름표를 다시 누르지 않아도 category·name 창을 바로 연다.
+        // 이름표를 누른 것과 같게 그 feature를 고른 상태로 둔다 — 창은 고른 feature에만 뜬다.
     }
 
     private func savePolygonDrawnFeature(type: IMDFFeatureType, ring: [LocalPoint]) {

@@ -1,5 +1,46 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-20 — #31 브랜치 추가 작업: 정보 type 공식 스펙 대조·입력 가이드
+
+- address·building·occupant·manifest의 입력 칸을 OGC IMDF 1.0(Apple 제출 원문)과 Apple `IMDF.zip`의 검증 규칙(`imdf-validations-1.0.3.csv`)·범주 파일(`categories_20210728.csv`)에 맞췄다.
+- address: `unit` 입력 가능. `country`는 ISO 3166 목록, `province`는 한국이면 ISO 3166-2 17개 목록에서 고르고 그 밖의 나라는 형식만 점검한다.
+- building: `alt_name`·`restriction`(employeesonly·restricted) 입력 가능. occupant: `hours`·`phone`·`website` 입력 가능, category를 Apple 범주 파일 1116종 목록으로 채웠다. 스펙에 없는 `level_id`에도 비표준 표시를 붙였다.
+- manifest: `version`은 1.0.0 고정 표시, `extensions` 칸 추가, `created`는 소수 초 없는 DATE-TIME으로 쓴다.
+- 칸 아래에 입력 가이드를 보이고, Apple Violation이면 빨간 글씨, Warning이면 주황 글씨로 고치는 방법을 보인다(`PropertyRules`). Violation이 남으면 IMDF 내보내기를 막고 층·일련번호·칸을 알려준다. 글자칸은 앞뒤 공백을 떼고 phone은 공백·하이픈·괄호를 뗀다.
+- occupant 업종 한국어 표기는 아직 없어 영어로 보인다. occupant `validity`·`correlation_id`는 null로 둔다.
+- 자체점검(Debug): `--selftest` ALL PASS, Building 60/60(신규 13항목), Project 24/24, Routing 117/117, Drawing Loading C5·포스텍 각 56/56, Document open 20/23(기존 scratch 빌드 한계). 실제 창에서는 확인하지 않았다.
+
+## 2026-10-20 — #31 브랜치 추가 작업: 빈 층에서 .imdfrnt 불러오기
+
+- 새 층을 만들고 빈 캔버스나 사이드바의 `.imdfrnt 불러오기`를 누르면 지금 프로젝트가 저장되고 고른 프로젝트로 전환됐다. `openProject()`가 언제나 프로젝트 전환 경로(`openDocumentAsync`)만 탔기 때문이다.
+- 이제 지금 층이 비어 있고 다른 층에 작업이 있으면(`importsProjectIntoActiveLevel`), 고른 파일의 층 하나를 지금 층에 넣는다(`LevelProjectImport.swift`). 도면·태깅·anchor·지도 정렬·노드·층 안 연결·상태가 들어오고, 층 ID·이름·층 번호는 지금 층 것을 유지한다. 층간 연결은 가져오지 않는다.
+- 파일에 작업된 층이 여럿이면 어느 층을 넣을지 묻는다(이름이 같은 층이 기본). 노드 ID가 겹치면 새 ID로 바꾼다. IMDF에서 온 층의 GeoJSON 층 ID도 지금 층 ID로 바꾼다. 불러온 것은 '최근 작업' 시각으로 찍지 않는다.
+- 모든 층이 비어 있거나 작업된 층에서 누르면 예전처럼 프로젝트를 전환한다. 실행취소 한 번이면 빈 층으로 돌아간다.
+- 같은 날 상태 아이콘을 `Menu`에서 버튼·팝오버로 바꿔 상태 색이 보이게 하고, Feature Type 줄의 위아래 여백을 넓혔다(36b355e).
+- 자체점검(Debug): Building 47/47(신규 7항목), `--selftest` ALL PASS, Project 24/24, Document open 20/23(기존 scratch 빌드 한계). 실제 창에서 누르는 흐름은 확인하지 않았다.
+
+## 2026-10-20 — #31 브랜치 추가 작업: Feature Type 상태·순서·정렬 (신기능 12항)
+
+- [이슈 #31](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/31)에 추가 작업으로 기록하고 `feat/#31-map-align`에 포함했다.
+- 좌측 'PROPERTY TYPE'을 'FEATURE TYPE'으로 바꾸고, 층에 귀속되지 않는 정보 type(address·building·manifest·occupant)은 층 탭이 있는 상단바(`LevelTabBar`) 오른쪽으로 옮겼다.
+- 상태(`LayerWorkStatus`: Complete·In Review·In Progress·Todo)는 사용자가 아이콘 메뉴로 고른다. 층 type은 `ProjectLevel.workStatus`에 층마다, 정보 type은 `BuildingProject.metadataWorkStatus`에 하나씩 둔다. 층의 완료는 계산값이다 — 좌측 type이 모두 Complete이면 상단바의 그 층에 초록 체크가 붙는다.
+- 상단바의 층과 좌측 type은 끌어서 순서를 바꾼다(`levelDisplayOrder`·`featureTypeOrder`). 층 번호(ordinal)는 바꾸지 않는다. 좌측 목록은 사용자 지정·완료 순·미완료 순·최근 작업 순으로 정렬하며, 정렬 기준은 이 Mac에 저장한다.
+- 최근 작업은 `perform` 전후 feature를 비교해 바뀐 type의 시각을 `ProjectLevel.lastEdited`에 남긴다. 레이어를 열거나 상태만 바꾼 것은 남지 않고, 실행취소하면 시각도 되돌아간다.
+- '레이어' 섹션의 표시·투명도·닫기를 각 feature type 줄 아래로 옮겼다. 기본·속성 필터 레이어는 '기본·필터 레이어' 섹션에 남겼다.
+- 새 필드는 모두 선택 항목이라 이전 프로젝트 파일도 그대로 열린다.
+- 자체점검(Debug): `--selftest` ALL PASS, Building 40/40(신규 13항목), Drawing Loading C5·포스텍 각 56/56, Routing 117/117, Project 24/24. Document open 20/23은 기존 scratch 빌드 한계(`.app` Info.plist 없음)다.
+- 실제 화면의 끌어서 옮기기·상태 메뉴·정렬 메뉴는 확인하지 않았다(CLI 검사만). 수동 확인 대상으로 남긴다.
+
+## 2026-10-20 — #31 브랜치 추가 작업: amenity 창·겹침 이름표·opening 저장 지연
+
+- [이슈 #31](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/31)에 추가 작업 목록과 완료 조건을 기록하고 `feat/#31-map-align`에 포함했다.
+- amenity: 점을 찍어 저장하면 그 feature를 고르고 `tagEditorRequest`로 캔버스에 category·name 창을 요청한다. 캔버스는 다음 그리기에서 생긴 이름표 자리에, 없으면 찍은 점 위에 창을 띄운다.
+- 엔진 디버깅 6번: '빈틈/겹침' 토글이 켜지면 겹침 이름표가 같은 자리·같은 글꼴로 빨간 unit 이름표 위에 그려져 구멍 뚫기 입구를 덮었다. 겹침 이름표를 조각 상자 위쪽 안에 달고 feature 이름표보다 먼저 그린다. 토글은 클릭 경로에 관여하지 않는다.
+- 엔진 디버깅 7번: 파생 기하 열쇠에 opening 선(닫는 선분)이 있어 opening 하나를 저장할 때마다 도면 전체 면 찾기가 다시 돌았다. 그 결과 `closedPolygonFaces`는 10-18 면 단위가 저장된 feature 경계 방식(`faceModeFaces`)으로 바뀐 뒤 자체점검만 읽었다. 면 찾기·`closedPolygonFaces`·열쇠의 `closingSegments`를 없앴다. 층 불러오기에서도 면 찾기 시간이 빠진다.
+- 측정(Debug, CLI, 실프로젝트 사본): opening 하나 저장 포스텍 도서관 2층 약 1.3~1.8초 → 0.17초, C5 0.035초. 열쇠가 그대로라 백그라운드 재계산과 "점·면 계산 중" 팝업이 일어나지 않는다.
+- 자체점검(Debug): `--selftest` ALL PASS(신규 2항목), Drawing Loading C5·포스텍 각 56/56, Routing 117/117, Project 24/24, Building 27/27. Document open 20/23의 실패 3건은 scratch 빌드에 `.app` Info.plist가 없어서 나며 수정 전 HEAD에서도 같다.
+- 실제 화면의 amenity 창·겹침 이름표 클릭·opening 연속 저장은 확인하지 않았다(CLI 검사만). 수동 확인 대상으로 남긴다.
+
 ## 2026-10-15 — #37 Opening 두 점 태깅
 
 - [이슈 #37](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/37)에 목표·작업 목록·완료 조건을 기록하고, #21 커밋 위에 `feat/#37-opening-two-point`를 만들었다(#21 PR 병합 후 병합).

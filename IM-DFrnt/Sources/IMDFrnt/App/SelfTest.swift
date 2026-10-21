@@ -998,6 +998,20 @@ enum SelfTest {
         env.rotateCanvas(-1); check("회전 -90 순환", env.canvasRotation == 3)
         env.canvasRotation = 0
 
+        // 회전 — 층마다 따로 기억한다(2026-10-19). 한 층을 돌려도 다른 층은 그대로다.
+        let savedFloor = env.routingFloorID
+        let floorA = UUID(), floorB = UUID()
+        env.routingFloorID = floorA; env.rotateCanvas(1)
+        env.routingFloorID = floorB
+        check("회전: 다른 층은 돌지 않는다", env.canvasRotation == 0, "\(env.canvasRotation)")
+        env.rotateCanvas(-1)
+        env.routingFloorID = floorA
+        check("회전: 층으로 돌아오면 그 층 회전이 남아 있다", env.canvasRotation == 1, "\(env.canvasRotation)")
+        env.routingFloorID = floorB
+        check("회전: 층마다 따로 돈다", env.canvasRotation == 3, "\(env.canvasRotation)")
+        env.canvasRotationByLevel = [:]
+        env.routingFloorID = savedFloor
+
         // 배경 대비 — 밝은/어두운 배경 어느 쪽에서도 캔버스 요소가 묻히지 않아야 한다.
         for bg in CanvasBackground.allCases {
             let name = bg == .light ? "밝은 배경" : "어두운 배경"
@@ -1647,9 +1661,10 @@ enum SelfTest {
               !PropertySchema.categoryOptions(for: .venue).contains("hospital")
               && PropertySchema.categoryOptions(for: .venue).contains("healthcarefacility"),
               "의료시설은 healthcarefacility다")
-        check("category: OCCUPANT은 자유 입력",
-              PropertySchema.categoryOptions(for: .occupant).isEmpty,
-              "스펙 열거값 전량 미확보 — 드롭다운으로 막으면 나머지 업종을 입력할 수 없다")
+        check("category: OCCUPANT은 Apple 범주 파일 전량에서 고른다",
+              PropertySchema.categoryOptions(for: .occupant).count == 1116
+              && PropertySchema.categoryOptions(for: .occupant).contains("cafe"),
+              "2026-10-20 이전에는 전량 미확보로 자유 입력이었다")
 
         // 16. 사이드바 리사이즈 계산 (명세 디버깅 1·13번)
         // 드래그 조작 자체는 헤드리스로 재현할 수 없으므로 방향과 한계값만 못박는다.
@@ -2873,8 +2888,6 @@ enum SelfTest {
         cp.selectPropertyType(.unit)
         check("다각형 작업: unit 레이어도 기본은 점 단위다", cp.isPointWorkMode && !cp.isPolygonWorkMode,
               "#21: 모든 레이어의 기본은 점 단위 편집이다")
-        check("다각형 작업: 면은 층을 불러올 때 이미 찾아 둔다", !cp.closedPolygonFaces.isEmpty,
-              "면 \(cp.closedPolygonFaces.count)개 — 레이어를 열 때 메인 스레드에서 다시 찾지 않는다(#21)")
         // 면 단위는 도면 개체가 아니라 **저장된 개체의 경계로 막힌 면**만 고른다(2026-10-18).
         // 멀리 떨어진 자리에 unit 두 개(벽을 나눠 씀)와 opening 선 네 개(사각형)를 점으로 그려 둔다.
         let fo = 3_000_000.0
@@ -3345,6 +3358,7 @@ enum SelfTest {
         ow.document = doc
         ow.selectPropertyType(.opening)
         if ow.snapPoints.count >= 2 {
+            let keyBefore = ow.currentDerivedKey
             let p0 = ow.snapPoints[0].point
             let p1 = ow.snapPoints.max(by: { $0.point.distance(to: p0) < $1.point.distance(to: p0) })!.point
             ow.handlePointClick(at: p0, tolerance: tol, freePoint: false)
@@ -3358,8 +3372,9 @@ enum SelfTest {
                 check("#21 opening: 좌표는 찍은 두 점이다",
                       VertexExtractor.vertices(for: opening, document: doc, segmentation: ow.segmentation,
                                                kind: .lineString) == [p0, p1])
-                check("#21 opening: 저장한 선이 면을 닫는 선분이 된다",
-                      ow.currentDerivedKey.closingSegments.contains(LineSegment(start: p0, end: p1)))
+                check("opening 저장은 점·면을 다시 계산하지 않는다",
+                      ow.currentDerivedKey == keyBefore && !ow.isComputingDerivedGeometry,
+                      "엔진 디버깅 7번: 열쇠에 opening 선이 있으면 저장마다 도면 전체를 다시 계산한다")
             }
         }
 
@@ -3374,6 +3389,8 @@ enum SelfTest {
                 check("#21 amenity: Point 좌표는 찍은 점이다",
                       VertexExtractor.vertices(for: amenity, document: doc, segmentation: ow.segmentation,
                                                kind: .point) == [p])
+                check("amenity: 찍자마자 그 feature를 고르고 category·name 창을 요청한다",
+                      ow.focusedFeature == amenity.id && ow.tagEditorRequest == amenity.id)
             }
         }
 
@@ -3455,6 +3472,25 @@ enum SelfTest {
             check("fixture 쌍둥이: 다시 누르면 새로 만들지 않고 이미 저장된 자리의 속성만 맞춘다",
                   retagged.count == 3 && retagged.allSatisfy { $0.value("category") == .string("sink") })
         }
+
+        // 개체 하나(점 두 개)만 맞는 자리는 쌍둥이가 아니다(2026-10-19). 책상 모서리에 의자 선이 붙은 묶음을
+        // 그대로 옮긴 자리(아래 80)만 받고, 책상만 같고 의자가 딴 데 붙은 자리(아래 40)는 빼야 한다.
+        func chairLine(_ x: Double, _ y: Double, _ ord: Int) -> VectorObject {
+            VectorObject(id: UUID(),
+                         geometry: PathGeometry(subpaths: [Subpath(start: LocalPoint(x, y),
+                                                                   segments: [.line(to: LocalPoint(x + 2, y - 3))],
+                                                                   isClosed: false)]),
+                         style: .default, sourceElement: "line", ordinal: ord)
+        }
+        let fxPair = AppEnvironment()
+        fxPair.document = DrawingDocument(objects: [fixtureRect(0, 0, 10, 0), chairLine(10, 0, 1),
+                                                fixtureRect(0, 40, 10, 2), chairLine(10, 46, 3),
+                                                fixtureRect(0, 80, 10, 4), chairLine(10, 80, 5)],
+                                      canvasSize: CGSize(width: 100, height: 100), sourceName: "fixture 묶음 비교")
+        let deskEdge = fxPair.fixtureTwinPlacements(for: [LocalPoint(0, 0), LocalPoint(10, 0)])
+        check("fixture 쌍둥이: 점을 만든 개체가 모두 같은 만큼 옮겨진 자리만 쌍둥이다",
+              deskEdge.map { LocalPoint($0.dx, $0.dy) } == [LocalPoint(0, 80)],
+              deskEdge.map { "(\($0.dx), \($0.dy))" }.joined(separator: " ") + " — 의자 선이 다른 데 붙은 (0, 40)은 빠져야 한다")
 
         // MARK: unit — 펼친 unit과 겹치는 unit 빨강, 이름표로 구멍 뚫기 (2026-10-18 요청)
 
@@ -4123,10 +4159,11 @@ enum SelfTest {
                       SearchablePicker.filter(pickOptions, query: "  ") == pickOptions)
                 // 이 Mac에 기억되는 값이라 점검이 사용자 설정을 바꿔 놓지 않게 되돌린다.
 
-                let unlabeled = IMDFFeatureType.allCases.flatMap { t in
+                let unlabeled = IMDFFeatureType.allCases.filter { $0 != .occupant }.flatMap { t in
                     PropertySchema.categoryOptions(for: t).filter { CategoryLabel.korean($0, type: t) == nil }
                         .map { "\(t.rawValue).\($0)" }
                 }
+                // occupant 업종 1116종은 한국어 표기가 아직 없어 영어 원문으로 보인다(2026-10-20 목록 추가).
                 check("category 한국어: 모든 레이어의 category 값에 한국어 표기가 있다",
                       unlabeled.isEmpty, unlabeled.prefix(5).joined(separator: ", "))
                 check("category 한국어: `한국어(영어)`로 보이고 type마다 다른 뜻을 구분한다",

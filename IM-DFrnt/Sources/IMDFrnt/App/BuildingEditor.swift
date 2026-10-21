@@ -258,7 +258,7 @@ extension AppEnvironment {
         }
     }
 
-    private func rewriteLevelID(_ feature: ProjectJSON, old: UUID, new: UUID) -> ProjectJSON {
+    func rewriteLevelID(_ feature: ProjectJSON, old: UUID, new: UUID) -> ProjectJSON {
         var value = feature
         if value["id"]?.uuid == old { value["id"] = .string(new.uuidString.lowercased()) }
         if var props = value["properties"] {

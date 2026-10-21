@@ -8,23 +8,20 @@ struct LevelDrawingInput: Equatable, Sendable {
     let sourceName: String
     var segmentation = SegmentationStore()
     var excluded: Set<VectorObjectID> = []
-    /// 면을 닫는 선분(임시 문·저장된 opening의 선, #21).
-    var closingSegments: [LineSegment] = []
 
     init(_ level: ProjectLevel) {
         levelID = level.id; svg = level.info.svg; sourceName = level.info.sourceName
         let key = level.editing.derivedKey
         segmentation = key.segmentation
         excluded = key.excluded
-        closingSegments = key.closingSegments
     }
 
     var derivedKey: DerivedGeometryKey {
-        DerivedGeometryKey(segmentation: segmentation, excluded: excluded, closingSegments: closingSegments)
+        DerivedGeometryKey(segmentation: segmentation, excluded: excluded)
     }
 
-    /// 파싱·색인 결과를 다시 써도 되는가. **제외 개체·닫는 선분은 면과 점에만 영향을 준다** —
-    /// 이 둘이 바뀌었다고 SVG 파싱부터 다시 하지 않는다(#21, 캐시 열쇠 분리).
+    /// 파싱·색인 결과를 다시 써도 되는가. **제외 개체는 점에만 영향을 준다** —
+    /// 제외가 바뀌었다고 SVG 파싱부터 다시 하지 않는다(#21, 캐시 열쇠 분리).
     func sharesParse(with other: LevelDrawingInput) -> Bool {
         levelID == other.levelID && svg == other.svg && sourceName == other.sourceName
             && segmentation == other.segmentation
@@ -43,7 +40,7 @@ struct PreparedLevelDrawing: Sendable {
     let spatialIndex: SpatialIndex
     let twinKeys: [VectorObjectID: String]
     let twinGroups: [PreparedTwinGroup]
-    /// 면·점(#21). 층을 불러올 때 백그라운드에서 함께 만들어, 레이어를 열 때 다시 계산하지 않는다.
+    /// 점(#21). 층을 불러올 때 백그라운드에서 함께 만들어, 레이어를 열 때 다시 계산하지 않는다.
     let derived: DerivedGeometry
     let preparationSeconds: Double
 
@@ -54,7 +51,7 @@ struct PreparedLevelDrawing: Sendable {
     }
 
     /// The same pipeline serves file validation and background UI loading.
-    /// `base`가 같은 도면·선분화의 결과이면 파싱·색인을 다시 하지 않고 면·점만 새로 만든다.
+    /// `base`가 같은 도면·선분화의 결과이면 파싱·색인을 다시 하지 않고 점만 새로 만든다.
     static func make(_ input: LevelDrawingInput, reusing base: PreparedLevelDrawing? = nil) throws -> Self {
         let start = ContinuousClock.now
         try Task.checkCancellation()

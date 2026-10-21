@@ -88,6 +88,16 @@ enum IMDFArchive {
                 blockers.append("\(name): level 다각형이 없습니다. level 레이어에서 층의 외곽을 그려야 다른 개체가 이 층을 가리킬 수 있습니다.")
             }
         }
+        for p in prepared {
+            let metadata = p.level.editing.features.features.filter { !$0.isInTrash && $0.featureType.isMetadataOnly }
+            for f in metadata {
+                for (key, problem) in PropertyRules.problems(in: f) {
+                    let message = "\(p.level.info.name): \(f.serialNumber) \(key) — \(problem.message)"
+                    if problem.severity == .violation { blockers.append(message) } else { warnings.append(message) }
+                }
+            }
+        }
+        // 정보 type 칸 점검(2026-10-20). Apple 검증의 Violation은 받아 주지 않으니 내보내기를 막고, Warning은 알리기만 한다.
         guard blockers.isEmpty else { throw Blocked(messages: blockers) }
 
         // 3. id 먼저 발급 — 건물·주소 id를 알아야 building_ids·address_id를 채운다.
@@ -192,7 +202,8 @@ enum IMDFArchive {
             }
         }
         let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.formatOptions = [.withInternetDateTime]
+        // 스펙의 DATE-TIME은 yyyy-MM-ddTHH:mm:ss±hh:mm(또는 Z)이다. 소수 초는 형식에 없다.
         m["version"] = "1.0.0"
         m["created"] = formatter.string(from: now)
         if (m["generated_by"] as? String ?? "").isEmpty { m["generated_by"] = "IM-DFrnt" }

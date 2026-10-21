@@ -353,8 +353,15 @@ final class AppEnvironment: ObservableObject {
     /// 보조 개체 제외 창의 사이드바 폭. 메인과 따로 두는 이유는 담는 내용이 다르기 때문이다 —
     /// 그쪽은 feature 인스펙터, 이쪽은 쌍둥이 그룹 목록이라 편한 폭이 서로 다르다.
 
-    @Published var canvasRotation = 0
-    /// 도면 표시 회전(90° 단위). 표시 전용이며 도면 좌표는 바뀌지 않는다 —
+    /// 층별 도면 표시 회전(90° 단위). 층 도면마다 놓인 방향이 달라 층마다 따로 기억한다(2026-10-19 요청).
+    /// 층이 없는 단일 도면은 `nil` 열쇠를 쓴다. 화면 상태라 프로젝트 파일에는 저장하지 않는다.
+    @Published var canvasRotationByLevel: [UUID?: Int] = [:]
+
+    var canvasRotation: Int {
+        get { canvasRotationByLevel[routingFloorID] ?? 0 }
+        set { canvasRotationByLevel[routingFloorID] = newValue == 0 ? nil : newValue }
+    }
+    /// 지금 층의 도면 표시 회전. 표시 전용이며 도면 좌표는 바뀌지 않는다 —
     /// Anchor 쌍과 추출 좌표가 회전에 영향받으면 안 되기 때문이다.
 
     @Published var canvasBackground: CanvasBackground = .light
@@ -430,6 +437,10 @@ final class AppEnvironment: ObservableObject {
         }
         // 이름표 위를 지날 때마다 바뀐다. 도면 개체 6만 개를 매번 다시 판정하면 마우스를 움직일 때마다 멈췄다.
     }
+
+    /// 캔버스에 category·name 편집 창을 열어 달라는 요청. 창의 자리(이름표 위치)는 캔버스만 알므로
+    /// 여기서는 대상만 남기고, 캔버스가 받아 창을 연 뒤 비운다.
+    @Published var tagEditorRequest: FeatureGroupID?
 
     /// 우측 패널의 category 필터(#52). type마다 고른 category 값이고, 비어 있으면 전부 보인다.
     /// category가 null인 feature는 빈 문자열로 고른다. 화면 상태라 실행취소 대상인 `LayerStore`에 두지 않는다.
@@ -604,7 +615,7 @@ final class AppEnvironment: ObservableObject {
         undoStack.clear()
         moves.reset(nil)
         isMoveEnabled = false
-        canvasRotation = 0
+        canvasRotationByLevel = [:]
         marqueeSubtracts = false
         auxiliarySelection = []
         focusedTwinKey = nil
@@ -732,13 +743,18 @@ final class AppEnvironment: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.directoryURL = autosaveFolder
         // 자동 저장 폴더에서 시작한다. 프로젝트마다 `새 도면_YYMMDD_HHmm.imdfrnt`가 여기 쌓인다.
-        panel.title = ".imdfrnt 불러오기"
-        panel.message = "자동 저장된 .imdfrnt 프로젝트를 선택하세요."
+        let intoLevel = importsProjectIntoActiveLevel ? activeLevel : nil
+        // 빈 층에서 누르면 프로젝트를 바꾸지 않고 고른 파일의 층을 이 층에 넣는다(`LevelProjectImport.swift`).
+        panel.title = intoLevel.map { "\($0.info.name)에 넣을 .imdfrnt 불러오기" } ?? ".imdfrnt 불러오기"
+        panel.message = intoLevel.map { "고른 프로젝트의 층 하나를 \($0.info.name)에 넣습니다. 지금 프로젝트는 그대로입니다." }
+            ?? "자동 저장된 .imdfrnt 프로젝트를 선택하세요."
         panel.prompt = "불러오기"
         let response = panel.runModal()
         isProjectActionInProgress = false
         guard response == .OK, let url = panel.url else { return }
-        Task { await openDocumentAsync(at: url) }
+        Task {
+            if intoLevel != nil { await importProjectLevel(from: url) } else { await openDocumentAsync(at: url) }
+        }
     }
 
     // MARK: 진행률 (명세 3-1) — 전역 하나만 둔다
@@ -1507,6 +1523,8 @@ final class AppEnvironment: ObservableObject {
         let before = snapshot
         undoStack.record(name, coalescingKey: coalescingKey, before: before)
         body()
+        stampEditedTypes(before: before.features)
+        // 고친 type의 시각을 같은 실행취소 칸에 넣는다. 되돌리면 시각도 함께 되돌아간다.
         refreshCanvasReferences()
         if snapshot == before, undoStack.undoName == name { undoStack.discardLast() }
     }
@@ -1576,9 +1594,6 @@ final class AppEnvironment: ObservableObject {
     /// 전용 창. Anchor 화면과 같은 이유로 시트가 아니라 전체 화면 전환이다 —
     /// 도면 전체를 훑으며 수십 개를 골라내는 작업이라 화면이 넓어야 한다.
     // MARK: 다각형 선택 (신기능 5항 + 5-4 전환)
-
-    /// 지금 레이어에서 고를 수 있는 면 전부. 폴리곤 type 레이어를 열 때 만들어진다.
-    @Published var closedPolygonFaces: [ClosedPolygonFinder.Face] = []
 
     @Published var faceSelection: Set<String> = [] {
         didSet { invalidateRenderStates() }

@@ -22,9 +22,8 @@ extension AppEnvironment {
 
     // MARK: 면 찾기
     //
-    // 면은 `DerivedGeometry`가 백그라운드에서 찾아 `closedPolygonFaces`에 넣는다(#21).
-    // 예전의 `rebuildClosedPolygons()`는 레이어를 열 때마다 메인 스레드에서 면을 다시 찾아
-    // C5 도면에서 앱이 약 5초 멈췄다(`04) 엔진 디버깅.md` 3장). 층을 불러올 때 찾은 면을 그대로 쓴다.
+    // 면 단위 편집의 면은 저장된 feature 경계로 막힌 면이다(`faceModeFaces`, 2026-10-18).
+    // 도면 전체의 면은 더 찾지 않는다 — 읽는 곳이 없는데 opening을 저장할 때마다 다시 찾았다(엔진 디버깅 7번).
 
     // MARK: 고르기
 
