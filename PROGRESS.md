@@ -461,3 +461,11 @@
 - 사용자 지시: 도형 없이 정보만 갖는 type(address·building·occupant·manifest, `requiredGeometry == .none` → `isMetadataOnly`)은 레이어를 만들지 않는다. 그릴 도형이 없어 레이어를 만들어도 캔버스에서 할 일이 없었다. 좌측 목록 버튼이 '정보 입력'이 되고, 누르면 입력 창(`UI/MetadataEditor.swift`)이 뜬다. 창에서 feature를 더하고(속성 모두 null로 시작, 실행취소 한 칸) 우측 패널과 같은 속성 칸(`PropertySlotRow`)으로 값을 넣으며, 휴지통으로 보낼 수 있다. manifest는 하나만 둔다. `selectPropertyType`도 이 type이면 창을 연다(opening 선행 게이트와 무관). 예전에 만든 이 type의 레이어는 창을 열 때 닫는다(feature는 그대로). 저장 위치는 종전과 같은 지금 층의 feature 목록이라 내보내기(모든 층에서 모음)는 바꾸지 않았다(`App/MetadataFeatures.swift`).
 - 사용자 지시: section 레이어 면 단위에 `unit 모양 기준`(`FaceBoundaryScope.unitShapes`, section 전용)을 추가했다. 저장된 unit의 다각형마다(MultiPolygon은 섬마다) 면이 하나씩이고 unit 안쪽 링은 구멍이라, 누르면 그 unit과 똑같은 모양(구멍 포함)의 section으로 저장된다. 경계선으로 면을 다시 찾으면 이웃 unit·보조 선분에 잘려 모양이 달라지기 때문에 unit 링을 그대로 쓴다. 이미 section으로 저장한 unit 자리는 다시 고를 수 없다 — 처음에는 면 캐시가 unit 경계만 비교해 section을 저장해도 갱신되지 않던 것을 자체점검으로 잡아, 비교에 section 링을 넣었다. 기준을 고를 수 없는 레이어에서는 `현재 레이어 기준`으로 돌아간다.
 - 자체점검 12항목 추가(메타데이터 7·section unit 모양 5). selftest 776·building 27·project 24·routing 117·drawing-loading 56 통과. 실제 화면 확인 필요.
+
+## 2026-10-19 — fixture 선 단위: 똑같이 생긴 개체 묶음은 그 자리 윤곽선대로 함께 저장
+
+- 사용자 지시: fixture는 똑같이 생긴 개체가 2개 이상이면 윤곽선에 맞춰 함께 태깅한다. 점 단위의 종전 기능(10-18)은 그린 도형을 평행이동해 저장하지만, 선 단위는 **그 자리의 도면 개체를 구성원으로** 저장해 자리마다 윤곽선이 도면을 그대로 따른다(`App/FixtureTwins.swift` `fixtureMemberTwins`).
+- 자리 찾기: 고른 개체 하나하나가 같은 만큼 옮긴 자리에 쌍둥이(`twinKey`)를 가져야 한 자리다. 쌍둥이가 가장 적은 개체를 기준으로 후보를 돌고, 위치는 0.01 격자(이웃 칸 포함)로 맞춘다. 보조 개체로 뺀 개체·고른 개체 자신은 넣지 않는다.
+- 'Feature로 저장'(`createFeature`)은 fixture면 아무 feature도 갖지 않은 자리마다 구성원 fixture를 함께 만든다(같은 속성, 실행취소 한 칸). 선 단위 상단바 안내에 함께 저장될 곳 수를 미리 보인다(짧은 선 하나를 고르면 수백 곳이 될 수 있다). 우측 패널 '같은 태깅으로 저장'도 선 단위 fixture면 개체로 자리를 찾아, 빈 자리는 새로 저장하고 그 자리 개체를 그대로 가진 fixture는 속성만 맞춘다(다른 feature가 가진 자리는 건너뜀).
+- 자체점검 7항목 추가(묶음째 자리 찾기·자리마다 저장·저장된 자리 제외·실행취소·쌍둥이 없는 개체·보조 제외 자리·우측 패널 속성 맞춤). selftest 786·building 27·project 24·routing 117 통과. 실제 화면 확인 필요(포스텍 도서관 3층 가구로).
+- 같은 작업 트리에 이번 작업과 무관한 미커밋 변경(보조 개체 클릭 시 겹친 개체 함께 고르기, `stackedTwins`)이 함께 있다.

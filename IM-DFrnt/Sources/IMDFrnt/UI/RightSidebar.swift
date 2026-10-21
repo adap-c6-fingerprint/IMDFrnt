@@ -284,7 +284,7 @@ struct RightSidebar: View {
                             .controlSize(.small)
                     }
                     Button(isTarget ? "추가 끝내기" : "다각형 추가") {
-                        if isTarget { env.finishMultiPolygonAdding() } else { env.designateMultiPolygon(f.id) }
+                        if isTarget { env.finishMultiPolygonAdding() } else { env.startMultiPolygonAdding(f.id) }
                     }
                     .controlSize(.small)
                     .buttonStyle(.borderedProminent)
@@ -292,7 +292,9 @@ struct RightSidebar: View {
                 }
             }
             if isTarget || !f.isMultiPolygon {
-                Text("지정한 뒤 다각형을 닫거나 면을 저장하면 이 feature에 더해집니다. 기존 다각형을 감싸면 기존 것이 구멍이 되고, 기존 다각형 안쪽이면 새 것이 구멍이 됩니다.")
+                Text(isTarget
+                     ? "다각형을 닫거나 면을 저장하면 이 feature에 더해집니다. 기존 다각형을 감싸면 기존 것이 구멍이 되고, 기존 다각형 안쪽이면 새 것이 구멍이 됩니다."
+                     : "MultiPolygon으로 지정한 뒤 '다각형 추가'를 누른 동안에만 새 다각형이 이 feature에 더해집니다.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -303,7 +305,10 @@ struct RightSidebar: View {
 
     /// fixture와 똑같이 생긴 자리마다 같은 태깅의 fixture를 둔다(2026-10-18 요청). 자리는 캔버스에 보라 점선으로 보인다.
     private func fixtureTwinSection(_ f: FeatureGroup) -> some View {
-        let count = env.fixtureTwinPlacements(of: f).count
+        let count = f.polygonRings.isEmpty && !f.memberIDs.isEmpty
+            ? env.fixtureMemberTwins(of: f.memberIDs).count
+            : env.fixtureTwinPlacements(of: f).count
+        // 선 단위로 저장한 fixture는 도면 개체로 자리를 찾는다.
         return VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(count > 0 ? "똑같이 생긴 개체 \(count)곳" : "똑같이 생긴 개체 없음")

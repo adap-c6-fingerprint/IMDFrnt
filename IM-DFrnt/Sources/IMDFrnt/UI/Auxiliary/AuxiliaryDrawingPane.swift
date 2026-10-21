@@ -261,13 +261,7 @@ extension AuxiliaryDrawingPane {
                     if let hit = HitTester.hitTest(toLocal(value.location), candidates: doc.objects,
                                                    cached: env.renderCache.geometryProvider(env.segmentation),
                                                    tolerance: 6 / Double(scale)) {
-                        if env.auxiliarySelection.contains(hit) {
-                            env.auxiliarySelection.remove(hit)
-                        } else {
-                            env.auxiliarySelection.insert(hit)
-                        }
-                        // 캔버스에서 직접 고르면 목록 강조는 풀어준다 — 둘이 어긋나면 무엇이 100%인지 헷갈린다.
-                        env.focusedTwinKey = nil
+                        env.handleAuxiliaryClick(hit)
                     }
                 }
 

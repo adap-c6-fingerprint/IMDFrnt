@@ -150,6 +150,14 @@ extension AppEnvironment {
         if f.multiPolygon != true, f.featureType.requiredGeometry != .multiPolygon {
             perform("\(f.serialNumber) MultiPolygon 지정") { features.update(id) { $0.multiPolygon = true } }
         }
+        notify("\(f.serialNumber)을 MultiPolygon으로 지정했습니다. 다각형을 더하려면 '다각형 추가'를 누르세요.")
+        // 지정만으로는 추가를 켜지 않는다(2026-10-19 요청). 예전에는 지정과 동시에 추가가 켜져,
+        // 그 뒤에 그린 다른 도형이 모르는 사이 이 feature의 다각형으로 들어갔다.
+    }
+
+    /// '다각형 추가'를 눌렀을 때만 새 다각형을 이 feature로 받는다. '추가 끝내기'까지 유지된다.
+    func startMultiPolygonAdding(_ id: FeatureGroupID) {
+        guard let f = features.feature(id), f.isMultiPolygon else { return }
         multiPolygonTargetID = id
         notify("\(f.serialNumber)에 다각형을 더합니다. 바깥을 감싸면 기존 다각형이 구멍이 되고, 안쪽에 그리면 새 다각형이 구멍이 됩니다.")
     }

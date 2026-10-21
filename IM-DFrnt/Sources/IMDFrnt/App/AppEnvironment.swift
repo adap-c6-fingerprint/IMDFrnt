@@ -1386,6 +1386,19 @@ final class AppEnvironment: ObservableObject {
         notify("\(added.count)개 선택")
     }
 
+    /// 보조 개체 제외 창에서 개체 하나를 클릭했을 때. 같은 자리에 겹친 똑같은 개체까지 함께 고르거나 함께 푼다.
+    func handleAuxiliaryClick(_ hit: VectorObjectID) {
+        let stack = stackedTwins(of: hit)
+        // 드래그는 겹친 것을 다 담는데 클릭만 하나를 잡으면, 같은 지정이 입력 방식에 따라 결과가 갈린다.
+        if auxiliarySelection.contains(hit) {
+            auxiliarySelection.subtract(stack)
+        } else {
+            auxiliarySelection.formUnion(stack)
+        }
+        focusedTwinKey = nil
+        // 캔버스에서 직접 고르면 목록 강조는 풀어준다 — 둘이 어긋나면 무엇이 100%인지 헷갈린다.
+    }
+
     enum MarqueeAdmission { case allow, curvedOnly, auxiliary, owned, outsideAssignment }
 
     /// 개체 하나가 드래그 선택에 들어갈 수 있는가. `handleCanvasClick`의 거절 사유와 1:1로 맞춘다.
@@ -1776,6 +1789,35 @@ final class AppEnvironment: ObservableObject {
         return out
     }
 
+    /// 같은 자리에 같은 모양으로 겹쳐 그려진 개체(자기 자신 포함). **스타일은 보지 않는다.**
+    /// 실도면(포스텍 도서관 3층)은 PDF에서 바꾼 SVG라 면(fill만)과 테두리(stroke만)가 같은 모양의 별개 path로
+    /// 겹쳐 있다(겹친 묶음 8,111개 중 6,867개가 스타일이 다르다). 면은 안쪽 클릭으로 잡히므로 면만 제외되고,
+    /// 작업 화면에 보이는 테두리 path는 그대로 남아 "지정했는데 안 지워진다"로 보였다.
+    func stackedTwins(of id: VectorObjectID) -> Set<VectorObjectID> {
+        guard let doc = document, let target = doc.object(id) else { return [id] }
+        let box = target.boundingBox
+        func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.01 }
+        // `twinKey`와 같은 0.01 단위 허용치다. SVG 파서의 부동소수 오차를 흡수한다.
+        func sameShape(_ o: VectorObject) -> Bool {
+            let a = o.geometry.subpaths, b = target.geometry.subpaths
+            guard a.count == b.count else { return false }
+            for (s, t) in zip(a, b) {
+                guard s.isClosed == t.isClosed, s.points.count == t.points.count else { return false }
+                for (p, q) in zip(s.points, t.points) where !near(p.x, q.x) || !near(p.y, q.y) { return false }
+            }
+            return true
+        }
+        var out: Set<VectorObjectID> = [id]
+        for o in doc.objects {
+            let b = o.boundingBox
+            guard near(b.minX, box.minX), near(b.minY, box.minY),
+                  near(b.maxX, box.maxX), near(b.maxY, box.maxY), sameShape(o) else { continue }
+            out.insert(o.id)
+        }
+        // 상자부터 견줘 대부분을 걸러낸다. 클릭 한 번에 한 번 도는 것이라 6만 개도 수 ms다.
+        return out
+    }
+
     // MARK: 우측 사이드바 목록 분리 (엔진 디버깅 1-3번, 2026-08-25)
     //
     // 예전 사이드바는 `twinGroups.filter { $0.count > 1 || 제외된 게 있으면 }` 하나뿐이라
@@ -2115,6 +2157,9 @@ final class AppEnvironment: ObservableObject {
         let serial = serials.next(for: type)
         var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: owned)
         for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
+        let memberTwins = type == .fixture ? freeFixtureMemberTwins(of: owned) : []
+        // fixture는 똑같이 생긴 자리도 그 자리 도면 개체로 함께 저장한다(2026-10-19 요청). 윤곽선이 자리마다 도면을 따른다.
+        var twinsAdded = 0
         // 일련번호는 `perform` 바깥에서 이미 뽑혔지만, 스냅샷이 `serials`도 담으므로
         // 되돌리면 번호도 함께 돌아간다 — 실행취소 후 재저장해도 번호가 건너뛰지 않는다.
         perform("\(serial) 저장") {
@@ -2122,17 +2167,19 @@ final class AppEnvironment: ObservableObject {
                 try ownership.claim(owned, for: f.id)
                 features.insert(f)
                 if !lent.isEmpty { borrow.borrow(lent, by: f.id) }
+                twinsAdded = insertFixtureMemberTwins(memberTwins, properties: f.properties)
                 expandedFeature = f.id
                 selection.clear()
+                let together = twinsAdded > 0 ? " 똑같이 생긴 \(twinsAdded)곳도 함께 저장했습니다." : ""
                 let closure = features.feature(f.id).flatMap { ringClosure(of: $0) }
                 if let c = closure, !c.isClosed {
-                    notify(gapMessage(serial: serial, result: c), isError: true)
+                    notify(gapMessage(serial: serial, result: c) + together, isError: true)
                     // 저장은 막지 않는다. 도면을 고쳐 다시 저장하는 것이 정상 흐름이고,
                     // 저장 자체를 막으면 작업하던 선택이 통째로 날아간다.
                 } else {
-                    notify(lent.isEmpty
-                           ? "\(serial) 로 저장했습니다."
-                           : "\(serial) 로 저장했습니다. opening \(lent.count)개를 빌려 폴리곤을 닫았습니다.")
+                    notify((lent.isEmpty
+                            ? "\(serial) 로 저장했습니다."
+                            : "\(serial) 로 저장했습니다. opening \(lent.count)개를 빌려 폴리곤을 닫았습니다.") + together)
                 }
             } catch {
                 notify("이미 다른 feature에 속한 개체가 포함되어 있습니다.", isError: true)
