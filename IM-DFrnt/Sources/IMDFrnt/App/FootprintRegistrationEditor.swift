@@ -39,6 +39,7 @@ extension AppEnvironment {
 
     /// Shared Footprints own their export identity globally rather than in every floor's ID allocator.
     func exportID(for feature: FeatureGroup) -> UUID? {
+        if isGlobalMetadata(feature.id) { return feature.id }
         if feature.featureType == .footprint {
             return buildingProject.sharedFootprint?.originals[feature.id.uuidString]?["id"]?.uuid ?? feature.id
         }

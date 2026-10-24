@@ -1,5 +1,15 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-25 — #78 / IMD-67 Apple IMDF 공통 정보·내보내기
+
+- Linear IMD-67 / GitHub #78에 공식 문서 대조와 재현된 10개 수정 항목을 먼저 기록하고, develop 2179869에서 `feat/#78-imdf-standard-export`를 만들었다. Push·PR 생성은 하지 않는다.
+- Address·Building·Occupant·Manifest 편집을 프로젝트 공통 원본으로 통합했다. 기존 층별 메타데이터는 수명 UUID·속성·참조·편집 원본을 보존해 이전하며, 옛 개체 소유권을 해제한다. 휴지통/복원/Undo/Redo와 층 단위 가져오기의 공통 정보 보존을 포함한다. Manifest 충돌은 사용자가 선택한다.
+- 공식 16종을 타입 목록과 내보내기에 포함하고 Detail·Kiosk·Relationship 및 컬렉션 헤더·foreign member를 보존한다. 선택 속성의 null 고정을 풀어 문·접근성·상관 ID·유효 기간·부모 관계·다국어 JSON을 편집한다. 다중 건물·합법적 동일 ordinal을 허용한다.
+- ZIP·개별 GeoJSON·클라이언트 묶음의 최종 검증을 공유한다. 필수 레코드/속성·공식 category·UUID v4/참조·부모 순환·기하 유효성·Venue 포함·Unit–Level·Opening 경계·Anchor/display_point 위치를 검사한다. 점 작도 도형의 display_point와 플래그 없는 Polygon 구멍 출력을 수정했다. Footprint category를 출력 시 ground로 추정하지 않는다.
+- 프로젝트 형식은 v7이며 v2~v6 읽기를 유지한다. 이전 앱의 조용한 데이터 유실을 방지한다. 초안 저장과 공식 IMDF 전달 검증은 구분한다.
+- Debug 빌드 및 8/8 CLI 모드 통과: SelfTest ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, Footprint 56/56, IMDF Compliance 50/50. 실제 5층 완료 프로젝트의 이전·저장·재열기 63/63, 원본 SHA-256 검사 전후 동일.
+- 실제 화면 조작·Apple IMDF Sandbox 업로드는 미검증이다. 실측 위치·층/시설의 현실 의미·조건부 상관 관계·복합 OSM hours·언어 하위 태그의 IANA 등록 등은 수동/Apple 검증을 남긴다. 로컬 검증을 Apple 인증이나 모든 의미 규칙 자동 충족으로 표현하지 않는다. [공통 정보와 출력 사용법](docs/projects/BUILDING_LEVELS.md#78--imd-67--공통-정보와-공식-imdf-내보내기).
+
 ## 2026-10-24 — #74 / IMD-64 전역 Footprint와 층 정렬
 
 - Footprint는 메인 화면의 기존 레이어·점 작도·꼭짓점 편집 UI를 사용하며 건물 전역의 한 저장소를 공유한다. GPS 없이도 작도한다. 기존 층별 편집/GeoJSON Footprint를 ID·원본 속성과 함께 이전한다.

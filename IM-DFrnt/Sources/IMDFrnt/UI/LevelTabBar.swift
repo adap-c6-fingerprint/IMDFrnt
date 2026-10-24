@@ -62,7 +62,6 @@ struct LevelTabBar: View {
             Button(type.displayName) { env.openMetadataEditor(type) }
                 .buttonStyle(.borderless)
                 .font(.callout)
-                .disabled(env.document == nil)
                 .help("\(type.displayName) 정보 입력 — 층과 무관한 정보라 상단바에 둡니다")
         }
         .padding(.horizontal, 8).padding(.vertical, 5)

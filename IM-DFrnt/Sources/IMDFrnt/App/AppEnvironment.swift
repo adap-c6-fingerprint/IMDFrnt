@@ -137,7 +137,8 @@ enum AuxiliaryOpacity {
 @MainActor
 final class AppEnvironment: ObservableObject {
 
-    @Published var buildingProject = BuildingProject()
+    @Published var buildingProject = BuildingProject() { didSet { referenceChoiceCache.removeAll() } }
+    var referenceChoiceCache: [IMDFFeatureType: [(id: String, label: String)]] = [:]
     @Published var showBuildingManager = false
     var routing: RoutingGraph {
         get { projectContents.routingGraph }
@@ -219,6 +220,7 @@ final class AppEnvironment: ObservableObject {
     @Published var layers = LayerStore() { didSet { invalidateRenderStates() } }
     @Published var features = FeatureStore() {
         didSet {
+            referenceChoiceCache.removeAll()
             if let changed = FeatureStore.propertyOnlyChanges(from: oldValue, to: features) {
                 refreshRenderStates(owners: changed)
                 return
@@ -462,10 +464,11 @@ final class AppEnvironment: ObservableObject {
 
     /// feature의 name을 이름표 위에 다는 글자. ko·en이 다 있으면 category와 같은 `한국어(영어)`, 하나만 있으면 그것, 없으면 빈 문자열이다.
     static func nameText(of f: FeatureGroup) -> String {
-        guard case .localized(let en, let ko) = f.value("name") else { return "" }
+        let labels = f.value("name").projectJSON.object
+        let en = labels["en"]?.string ?? "", ko = labels["ko"]?.string ?? ""
         let e = en.trimmingCharacters(in: .whitespaces), k = ko.trimmingCharacters(in: .whitespaces)
         if !k.isEmpty, !e.isEmpty { return "\(k)(\(e))" }
-        return k.isEmpty ? e : k
+        return k.isEmpty ? (e.isEmpty ? labels.sorted { $0.key < $1.key }.compactMap { $0.value.string }.first ?? "" : e) : k
     }
 
     /// category 필터를 통과하는가. 걸러진 feature는 카드 목록과 캔버스(도형·이름표)에서 빠진다.
@@ -554,6 +557,7 @@ final class AppEnvironment: ObservableObject {
         if buildingProject.sharedFootprint == nil, features.features.contains(where: { $0.featureType == .footprint }) {
             return Georeferencer(pairs: [])
         }
+        if activeLevel?.info.imdfCoordinates?.isValid == true, let level = activeLevel { return level.info.exportGeoreferencer }
         return Georeferencer(pairs: anchors.pairs)
     }
 
@@ -2249,6 +2253,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     func trash(_ fid: FeatureGroupID) {
+        if moveGlobalMetadata(fid) { return }
         guard let f = features.feature(fid) else { return }
 
         // 명세 10-4-4: 빌려 쓰는 쪽이 있으면 먼저 알린다. 지우고 나서 알리면 이미 폴리곤이 열렸다.
@@ -2273,6 +2278,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     func restore(_ fid: FeatureGroupID) {
+        if moveGlobalMetadata(fid, restoring: true) { return }
         guard let f = features.feature(fid) else { return }
         perform("\(f.serialNumber) 복원") {
             do {
@@ -2286,6 +2292,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     func updateProperty(_ key: String, value: PropertyValue, in fid: FeatureGroupID) {
+        if updateGlobalProperty(key, value: value, in: fid) { return }
         // 입력칸은 글자 하나마다 이 함수를 부른다. 같은 (feature, 필드)로 들어오는 연속 입력은
         // 한 칸으로 합치지 않으면 이름 한 번 치는 데 실행취소가 열 칸씩 쌓인다.
         perform("\(key) 입력", coalescingKey: "property:\(fid):\(key)") {
@@ -2303,12 +2310,20 @@ final class AppEnvironment: ObservableObject {
 
     func setDisplayPoint(_ p: LocalPoint, for fid: FeatureGroupID) {
         guard let doc = document, let f = features.feature(fid) else { return }
-        let box = VertexExtractor.boundingBox(of: f.memberIDs, document: doc).insetBy(dx: -2, dy: -2)
-        guard box.contains(p.cg) else {
-            notify("display point는 그룹화 범위 안에만 찍을 수 있습니다.", isError: true)
+        let kind = GeometryClassifier.classify(f, document: doc)
+        let vertices = VertexExtractor.vertices(for: f, document: doc, segmentation: segmentation,
+                                               kind: kind, borrowed: borrow.objects(borrowedBy: fid))
+        let rings = f.polygonRings.isEmpty ? [vertices] : f.polygonRings
+        var point = p
+        if kind == .lineString {
+            let candidates = zip(vertices, vertices.dropFirst()).map { Self.projection(of: p, onto: $0.0, $0.1) }
+            guard let snapped = candidates.min(by: { $0.distance(to: p) < $1.distance(to: p) }) else { return }
+            point = snapped
+        } else if kind.isAreal && !UnitCoverage.path(rings).contains(p.cg, using: .evenOdd) {
+            notify("display point는 해당 다각형 안에 지정하세요. 안쪽 구멍은 제외됩니다.", isError: true)
             return
         }
-        perform("display point 지정") { features.update(fid) { $0.displayPoint = p } }
+        perform("display point 지정") { features.update(fid) { $0.displayPoint = point } }
         mode = .idle
         notify("display point를 지정했습니다.")
     }
@@ -2501,56 +2516,11 @@ final class AppEnvironment: ObservableObject {
 
     func export() {
         if showRoutingScreen { exportRoutingGraph(); return }
-        if layers.activePropertyType == .footprint {
-            let shared = sharedFootprint
-            guard shared.isGeoreferenced else { notify("Footprint Anchor 지정에서 GPS 대응점을 먼저 설정하세요.", isError: true); return }
-            do {
-                guard let data = projectContents.imdfFiles()["footprint.geojson"] else { return }
-                guard let object = try JSONSerialization.jsonObject(with: data.data()) as? [String: Any] else {
-                    notify("Footprint GeoJSON 형식이 올바르지 않습니다.", isError: true)
-                    return
-                }
-                if let url = try GeoJSONExporter.write(object, suggestedName: "footprint.geojson") { notify("\(url.lastPathComponent) 저장 완료.") }
-            } catch { notify(error.localizedDescription, isError: true) }
-            return
-        }
-        guard let doc = document, let type = layers.activePropertyType else {
+        guard let type = layers.activePropertyType ?? metadataEditorType else {
             notify("먼저 property type 레이어를 선택하세요.", isError: true)
             return
         }
-        let validator = ExportValidator(document: doc, features: features.features,
-                                        anchors: anchors,
-                                        georeferencer: georeferencer, segmentation: segmentation, borrow: borrow)
-        let blockers = validator.validate(type: type)
-        if !blockers.isEmpty { exportBlockers = blockers; return }
-
-        var serialToUUID: [String: UUID] = [:]
-        for f in features.features where !f.isInTrash {
-            serialToUUID[f.serialNumber] = ids.id(for: f.id)
-        }
-        let exporter = GeoJSONExporter(document: doc, segmentation: segmentation,
-                                       georeferencer: georeferencer, borrow: borrow, levelID: activeLevel?.id)
-        // level_id는 지금 층(층 관리)의 UUID다. IMDF 아카이브 내보내기와 같은 값이 나온다.
-        var assigner = ids
-        let collection = exporter.buildFeatureCollection(type: type, features: features.features,
-                                                         ids: &assigner, serialToUUID: serialToUUID)
-        ids = assigner
-        do {
-            if let url = try GeoJSONExporter.write(collection, suggestedName: "\(type.rawValue).geojson") {
-                let open = openRingFeatures(type: type)
-                if open.isEmpty {
-                    notify("\(url.lastPathComponent) 저장 완료.")
-                } else {
-                    let names = open.map(\.0.serialNumber).sorted().joined(separator: ", ")
-                    notify("\(url.lastPathComponent) 저장 완료 — 다만 \(names)의 폴리곤이 닫히지 않았습니다. 도면을 고쳐 다시 내보내세요.",
-                           isError: true)
-                    // **막지 않고 알린다.** 명세 7-4의 차단 조건에 링 열림은 없고,
-                    // 내보내고 나서야 문제를 아는 것보다 파일과 함께 아는 편이 낫다.
-                    // 어느 feature인지 일련번호로 짚어 줘야 인스펙터에서 찾아갈 수 있다.
-                }
-            }
-        } catch {
-            notify("저장 실패: \(error.localizedDescription)", isError: true)
-        }
+        // A type extraction uses exactly the same IDs, common metadata and validation as the ZIP.
+        exportIMDFArchive(only: type)
     }
 }

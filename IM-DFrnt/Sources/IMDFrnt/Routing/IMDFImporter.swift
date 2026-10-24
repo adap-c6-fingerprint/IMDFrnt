@@ -47,7 +47,7 @@ enum IMDFImporter {
         var errorDescription: String? { message }
     }
 
-    private static let drawingTypes = ["level", "unit", "section", "fixture", "detail", "opening", "amenity"]
+    private static let drawingTypes = ["level", "unit", "section", "fixture", "kiosk", "detail", "opening", "amenity", "anchor"]
 
     /// Accept an archive, an unpacked directory, or one of its JSON files.
     /// ZIP entries are read to memory; nothing is extracted into the filesystem.
@@ -130,9 +130,8 @@ enum IMDFImporter {
             let name: String = localized ?? fallback ?? defaultName
             parsedLevels.append((id, ordinal, name, level))
         }
-        guard Set(parsedLevels.map { $0.0 }).count == levels.count,
-              Set(parsedLevels.map { $0.1 }).count == levels.count else {
-            throw Failure(message: "층 UUID 또는 ordinal이 중복되어 있습니다. 현재는 건물 하나의 IMDF를 불러올 수 있습니다.")
+        guard Set(parsedLevels.map { $0.0 }).count == levels.count else {
+            throw Failure(message: "층 UUID가 중복되어 있습니다.")
         }
         let levelIDs = Set(parsedLevels.map { $0.0 })
         var drawings: [UUID: [(String, [String: Any])]] = [:]

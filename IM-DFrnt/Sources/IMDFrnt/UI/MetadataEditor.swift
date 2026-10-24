@@ -6,7 +6,7 @@ struct MetadataEditor: View {
     let type: IMDFFeatureType
 
     var body: some View {
-        let items = env.features.features(ofType: type)
+        let items = env.metadataFeatures(type)
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("\(type.displayName) 정보").font(.headline)
@@ -15,11 +15,12 @@ struct MetadataEditor: View {
                     .disabled(!env.metadataAllowsMore(type))
                     .help(type == .manifest ? "manifest는 하나만 둡니다." : "빈 \(type.displayName)를 하나 더합니다.")
             }
-            Text("도형이 없는 type이라 레이어를 만들지 않고 여기서 값을 넣습니다. 지금 층(\(env.activeLevel?.info.name ?? "-"))에 저장되고, 내보낼 때 모든 층의 값을 모읍니다."
+            Text("프로젝트 전체가 공유하는 정보입니다. 층을 바꾸거나 삭제해도 유지되며, 다른 Feature는 UUID로 참조합니다."
                  + (type.note.isEmpty ? "" : " \(type.note)"))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
+            if type == .manifest { LegacyManifestChoices() }
             if items.isEmpty {
                 Text("아직 없습니다. '\(type.displayName) 추가'를 누르세요.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -36,7 +37,14 @@ struct MetadataEditor: View {
             HStack {
                 Spacer()
                 Button("닫기") { env.metadataEditorType = nil }
-                    .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(.defaultAction)
+            }
+            if !env.metadataFeatures(type, trashed: true).isEmpty {
+                DisclosureGroup("정보 휴지통") {
+                    ForEach(env.metadataFeatures(type, trashed: true)) { f in
+                        HStack { Text(f.serialNumber); Spacer(); Button("복원") { env.restore(f.id) } }
+                    }
+                }
             }
         }
         .padding(16)
@@ -49,12 +57,14 @@ struct MetadataEditor: View {
                 Text(f.serialNumber).font(.callout.weight(.semibold))
                 Spacer()
                 Button(role: .destructive) { env.trash(f.id) } label: { Image(systemName: "trash") }
+                    .disabled(type == .manifest)
                     .buttonStyle(.borderless)
                     .help("휴지통으로 보냅니다. 실행 취소로 되돌릴 수 있습니다.")
             }
-            ForEach(PropertySchema.fields(for: f.featureType)) { field in
+            ForEach(PropertySchema.fields(for: f.featureType).filter { f.featureType != .manifest || $0.key != "id" }) { field in
                 PropertySlotRow(feature: f, field: field)
             }
+            if type != .manifest { MetadataRecordEditor(type: type, id: f.id) }
         }
         .padding(10)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))

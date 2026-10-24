@@ -327,7 +327,9 @@ extension AppEnvironment {
         perform("클라이언트 층 목록 가져오기") {
             storeActiveLevel()
             for floor in floors {
-                if let existing = buildingProject.levels.first(where: { $0.id == floor.id || $0.info.ordinal == floor.ordinal }) {
+                let ordinalMatches = buildingProject.levels.filter { $0.info.ordinal == floor.ordinal }
+                let uniqueOrdinal = ordinalMatches.count == 1 && floors.filter { $0.ordinal == floor.ordinal }.count == 1
+                if let existing = buildingProject.levels.first(where: { $0.id == floor.id }) ?? (uniqueOrdinal ? ordinalMatches.first : nil) {
                     renameProjectLevelID(existing.id, to: floor.id)
                     updateProjectLevel(floor.id) { $0.ordinal = floor.ordinal; $0.name = floor.name }
                 } else { buildingProject.levels.append(ProjectLevel(info: floor)) }
@@ -369,9 +371,8 @@ enum RoutingLevelImporter {
             let name = localized?["ko"] ?? localized?["en"] ?? properties["name"] as? String ?? "층 \(ordinal)"
             return RoutingFloor(id: id, name: name, ordinal: ordinal)
         }
-        guard !floors.isEmpty, Set(floors.map(\.id)).count == floors.count,
-              Set(floors.map(\.ordinal)).count == floors.count else {
-            throw RoutingExporter.Failure(messages: ["층 목록이 비었거나 층 ID·번호가 중복됩니다. 한 건물의 층 목록을 사용하세요."])
+        guard !floors.isEmpty, Set(floors.map(\.id)).count == floors.count else {
+            throw RoutingExporter.Failure(messages: ["층 목록이 비었거나 층 ID가 중복됩니다."])
         }
         return floors.sorted { $0.ordinal < $1.ordinal }
     }

@@ -8,6 +8,8 @@ SVG 도면에서 IMDF GeoJSON을 반자동으로 추출하는 macOS 앱의 **UI 
 
 상단 **건물·층 관리**에서 공통 Level과 건물 정보를 관리한다. 전역 Footprint는 메인 화면의 `footprint` 레이어에서 그리고 편집한다. **Anchor 지정**에서 Footprint에 GPS를 설정하고 **Level · Footprint 정렬**에서 층별 대응점과 이동·회전·크기를 조정한다. [Footprint 작업 순서](../docs/projects/GLOBAL_FOOTPRINT.md), [건물과 Level 관리](../docs/projects/BUILDING_LEVELS.md).
 
+주소·건물·입주자·Manifest는 프로젝트 공통 정보다. **IMDF 아카이브 내보내기 (모든 층)**는 Apple IMDF 1.0.0의 필수 정보·참조·공간 관계를 점검한 후 ZIP으로 저장한다. 개별 GeoJSON도 같은 검증을 사용한다. 프로젝트는 v7로 저장하며, Apple Sandbox 및 실제 건물 조건의 최종 확인은 별도로 필요하다. [현재 지원 범위와 수동 검증 항목](../docs/projects/BUILDING_LEVELS.md#78--imd-67--공통-정보와-공식-imdf-내보내기).
+
 명세: `02) Projects/06) Challenge 6/02) FP-to-IMDF 자동화/00) FP-to-IMDF 새버전 (반자동화).md`
 아키텍처: 같은 폴더 `03) FTI 아키텍쳐.md`
 

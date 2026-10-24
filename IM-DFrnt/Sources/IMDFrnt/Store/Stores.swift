@@ -376,7 +376,9 @@ struct IDAssigner: Equatable, Codable {
     /// "MUST be retained across distinct deliveries" 요건이 여기서 지켜진다.
     mutating func id(for feature: FeatureGroupID) -> UUID {
         if let existing = assigned[feature] { return existing }
-        var new = UUID()
+        // New records already own a v4 UUID at creation. Reusing it makes references valid before
+        // the first export; older separately allocated UUIDs above remain untouched.
+        var new = feature
         while retired.contains(new) || assigned.values.contains(new) { new = UUID() }
         assigned[feature] = new
         return new

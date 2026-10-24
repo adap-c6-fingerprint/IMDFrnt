@@ -8,7 +8,7 @@
 
 ## 사용 순서
 
-1. 새 프로젝트를 만들고 상단 **건물·층 관리**에서 건물과 층을 추가한다. 각 층의 이름·짧은 이름·ordinal·Level UUID를 편집할 수 있다. UUID와 ordinal 중복은 차단한다.
+1. 새 프로젝트를 만들고 상단 **건물·층 관리**에서 건물과 층을 추가한다. 각 층의 이름·짧은 이름·ordinal·Level UUID를 편집할 수 있다. UUID는 고유해야 한다. 동일 ordinal의 별도 Level과 다중 건물은 허용하되 내보낼 때 같은 건물·ordinal의 Level이 면적으로 겹치면 차단한다.
 2. SVG·PNG·JPG는 현재 선택한 층에 불러온다. 첫 도면을 넣으면 첫 층을 만들며 기존 건물 정보와 저장 위치를 유지한다. 도면 교체는 해당 층에만 적용하고, 기존 태깅·좌표 기준점 초기화를 확인한다. 노드는 유지된다.
 3. 완성된 IMDF를 불러오면 기존 층과 도형, Feature UUID, geometry, properties, manifest 및 전역 정보를 프로젝트에 담는다. 이 입력은 새 프로젝트로 시작하며 빈 프로젝트에 넣을 때는 빈 프로젝트의 ID와 저장 위치를 유지한다.
 4. 상단 층 선택, 관리 화면의 층 셀, 노드 화면의 층 셀은 같은 선택을 사용한다. 다른 층의 도면·태깅·기준점·노드를 덮어쓰지 않는다.
@@ -18,17 +18,30 @@
 
 ## 저장 구조
 
-현재 형식은 버전 5다. 건물 전역 데이터와 공통 Levels를 `buildingProject`에 저장한다. 노드 편집용 RoutingGraph는 이 데이터에서 만든 호환 뷰이며 별도 원본으로 저장하지 않는다.
+현재 형식은 버전 7이다. 건물 전역 데이터와 공통 Levels를 `buildingProject`에 저장한다. 노드 편집용 RoutingGraph는 이 데이터에서 만든 호환 뷰이며 별도 원본으로 저장하지 않는다. v2~v6는 읽을 수 있지만 이전 앱은 v7을 거절해야 한다. 기존 프로젝트는 별도 백업을 권장한다.
 
 | 위치 | 저장 데이터 |
 | --- | --- |
-| 프로젝트 전역 | venue·building·address·footprint·manifest, 여러 층을 참조하는 Feature, 알 수 없는 JSON 파일과 GeoJSON collection header |
+| 프로젝트 전역 | venue·building·address·occupant·relationship·footprint·manifest, 여러 층을 참조하는 Feature, 알 수 없는 JSON 파일과 GeoJSON collection header |
 | 각 Level | 공통 층 정보, 내장 도면 원문·파일명·좌표 기준, 실제 GeoJSON Feature, 기존 SVG 태깅 상태, 노드, 층 내부 엣지 |
 | 프로젝트 연결 | 층간 엣지, 양 끝 노드 UUID 참조 |
 
 IMDF에서 만든 SVG는 표시용 캐시다. 재열기 시 실제 GeoJSON geometry에서 다시 만든다. 기존 노드를 보존하기 위해 저장된 표시 좌표 변환을 유지한다. `imdfFiles()`는 층별 Feature를 타입별 파일로 모으며 원본 Feature ID·속성·좌표와 collection의 추가 필드를 보존한다. 이 함수는 후속 IMDF 내보내기 구현의 기반이며 이번 작업에서 전체 IMDF ZIP 내보내기 UI를 추가하지 않는다. 클라이언트용 `routing-graph.geojson` 내보내기는 기존 계약을 유지한다.
 
 버전 2·3·4는 열 때 공통 Level로 이전한다. 기존 RoutingFloor UUID·노드·엣지를 유지하며, 기존 SVG 태깅은 같은 SVG를 가진 층에 연결한다. 일치하는 층이 없으면 별도 층에 보존한다. 과거 노드 전용 IMDF 프로젝트에는 원본 GeoJSON이 저장되지 않았으므로 SVG에서 원본 Feature ID·속성을 복원했다고 주장하지 않는다. 새 IMDF 가져오기부터 원본 Feature를 보존한다.
+
+## #78 / IMD-67 — 공통 정보와 공식 IMDF 내보내기
+
+- 상단 `address`, `building`, `occupant`, `relationship`, `manifest`는 현재 층이 아니라 프로젝트 공통 정보를 편집한다. 도면이 없어도 입력 가능하며 층 삭제로 지워지지 않는다. 건물·층 관리의 JSON 편집기와 같은 원본을 쓴다.
+- 주소는 여러 개 만들 수 있다. 대표 주소를 공유하고 필요한 층/호실은 별도 주소를 참조한다. Level의 주소가 없으면 Building, Building에도 없으면 Venue 주소를 따르는 공식 모델을 유지한다.
+- 기존 층별 메타데이터는 UUID·속성을 보존해 이전한다. 일련번호 참조는 해당 층을 우선하여 UUID로 바꾼다. Manifest 충돌은 복사본을 보존하고 사용할 값을 명시적으로 선택하기 전까지 내보내기를 막는다. 층 하나만 가져오는 경로도 관련 공통 정보를 함께 가져온다.
+- 공통 정보는 삭제 시 정보 휴지통으로 이동하며 복원·Undo/Redo를 지원한다. 참조 선택창은 모든 층과 공통 정보를 조회한다. 중복 이름/일련번호 대신 UUID를 저장한다.
+- `Detail`, `Kiosk`, `Relationship`을 포함한 공식 16종을 보존한다. Detail·Kiosk는 해당 레이어에서 작도하며 Relationship은 공통 정보에서 JSON Feature 참조를 입력한다. 기존 MultiLineString 및 확장 속성도 재내보내기에 보존한다. 길찾기 `routing-graph.geojson`은 공식 Relationship의 대체물이 아니다.
+- 접근성 배열·문 JSON·출입 제어·상관 ID·유효 기간·Section 부모/주소 속성을 입력할 수 있다. 한국어/영어 간편 입력 외 언어는 이름의 JSON 편집기를 사용한다. 기본 언어는 새 프로젝트에서 `ko`이고 이름 LABELS는 Manifest 언어를 포함해야 한다.
+- **파일 → IMDF 아카이브 내보내기 (모든 층)**는 타입별 GeoJSON과 Manifest를 ZIP 최상위에 저장한다. 레이어의 개별 내보내기도 같은 전체 프로젝트 검증 뒤 해당 타입을 모든 층에서 모아 저장한다. 개별 파일 하나는 완전한 IMDF 전달물이 아니다.
+- 내보내기 전 Address 최소 1개·Venue 정확히 1개, 필수 속성/카테고리, UUID v4 전역 유일성, 참조 존재·타입·배열 중복·부모 순환, 좌표/Polygon 유효성, Venue 포함·Unit–Level 빈틈/겹침·Opening 경계·Anchor와 display_point 위치를 검사한다. 초안 `.imdfrnt` 저장은 허용한다.
+- 실제 건물의 ground/aerial/subterranean 범위, 지면 출입층 ordinal 0 여부, 같은 외벽인 층의 정렬·실측 ±5m 정확도, 조건부 층간 시설/상관 ID 규칙은 현실 정보가 필요하다. 자동으로 주소·카테고리·모양을 추정하지 않는다. 복합 OSM 영업시간과 언어 태그의 IANA 등록 여부도 최종 Apple 검증이 필요하다. 현재 로컬 검증을 Apple 인증이나 전체 규칙 통과 보장으로 표현하지 않는다.
+- [Apple 공식 Reference](https://register.apple.com/resources/imdf/reference/reference), [Level](https://register.apple.com/resources/imdf/types/level), [Footprint](https://register.apple.com/resources/imdf/types/footprint). IMDF Sandbox 업로드와 실제 화면 조작은 별도 수동 검증 대상으로 남는다.
 
 ## 후속 범위
 

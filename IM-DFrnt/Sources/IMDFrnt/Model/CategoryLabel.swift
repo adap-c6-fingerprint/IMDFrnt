@@ -26,6 +26,7 @@ enum CategoryLabel {
     ]
 
     private static let names: [String: String] = [
+        "traversal": "통행 관계", "traversal.path": "통행 경로",
         // unit
         "auditorium": "강당", "brick": "벽돌", "classroom": "강의실", "column": "기둥",
         "concrete": "콘크리트", "conferenceroom": "회의실", "drywall": "석고보드", "elevator": "엘리베이터",

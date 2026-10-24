@@ -71,7 +71,7 @@ enum IMDFSelfTest {
             rejects("손상된 IMDF 거절") { _ = try IMDFImporter.decode(files: ["level.geojson": Data("{}".utf8)], sourceName: "broken.zip") }
             check("입력 오류가 기존 작업을 변경하지 않음", env.routing == beforeFailure)
             files["level.geojson"] = try data([level(ground, ordinal: 0, name: "1층"), level(UUID(), ordinal: 0, name: "중복층")])
-            rejects("중복 층 번호 차단") { _ = try IMDFImporter.decode(files: files, sourceName: "duplicate.zip") }
+            check("동일 ordinal의 별도 Level 입력 허용", try IMDFImporter.decode(files: files, sourceName: "duplicate.zip").floors.count == 2)
 
             let legacy = AppEnvironment()
             legacy.openSample()

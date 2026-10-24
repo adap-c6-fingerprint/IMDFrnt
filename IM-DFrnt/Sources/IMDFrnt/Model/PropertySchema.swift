@@ -5,11 +5,12 @@ enum FieldType: Hashable {
     case integer
     case boolean
     case localizedName
-    // {en, ko} 형태의 다국어 이름 객체
+    // Common languages have quick fields; JSON editing retains all BCP 47 language tags.
     case stringArray
     case reference(IMDFFeatureType)
     case point
     case alwaysNull
+    case json
 }
 
 struct PropertyField: Identifiable, Hashable {
@@ -30,6 +31,7 @@ enum PropertyValue: Hashable, Codable {
     case boolean(Bool)
     case localized(en: String, ko: String)
     case stringArray([String])
+    case json(ProjectJSON)
 
     var isNull: Bool { if case .null = self { return true }; return false }
 
@@ -43,6 +45,7 @@ enum PropertyValue: Hashable, Codable {
             return [en.isEmpty ? nil : "en: \(en)", ko.isEmpty ? nil : "ko: \(ko)"]
                 .compactMap { $0 }.joined(separator: " / ")
         case .stringArray(let a): return a.joined(separator: ", ")
+        case .json(let value): return value.text
         }
     }
 
@@ -58,6 +61,7 @@ enum PropertyValue: Hashable, Codable {
             if !ko.isEmpty { d["ko"] = ko }
             return d.isEmpty ? NSNull() : d
         case .stringArray(let a): return a
+        case .json(let value): return value.anyValue
         }
     }
 }
@@ -77,21 +81,21 @@ enum PropertySchema {
                 .init(key: "province", type: .string),
                 .init(key: "country", type: .string),
                 .init(key: "postal_code", type: .string),
-                .init(key: "postal_code_ext", type: .alwaysNull),
-                .init(key: "postal_code_vanity", type: .alwaysNull),
+                .init(key: "postal_code_ext", type: .string),
+                .init(key: "postal_code_vanity", type: .string),
             ]
         case .amenity:
             list = [
                 .init(key: "category", type: .string),
-                .init(key: "accessibility", type: .alwaysNull),
+                .init(key: "accessibility", type: .stringArray),
                 .init(key: "name", type: .localizedName),
-                .init(key: "alt_name", type: .alwaysNull),
-                .init(key: "hours", type: .alwaysNull),
-                .init(key: "phone", type: .alwaysNull),
-                .init(key: "website", type: .alwaysNull),
+                .init(key: "alt_name", type: .localizedName),
+                .init(key: "hours", type: .string),
+                .init(key: "phone", type: .string),
+                .init(key: "website", type: .string),
                 .init(key: "unit_ids", type: .stringArray),
                 .init(key: "address_id", type: .reference(.address)),
-                .init(key: "correlation_id", type: .alwaysNull),
+                .init(key: "correlation_id", type: .string),
                 .init(key: "display_point", type: .point, isEditable: false, isNonStandard: true,
                       note: "공식 스펙에 없음 (36블록 중 9개에만 존재)"),
                 .init(key: "level_id", type: .reference(.level), isNonStandard: true,
@@ -111,25 +115,37 @@ enum PropertySchema {
                 .init(key: "display_point", type: .point, isEditable: false),
                 .init(key: "address_id", type: .reference(.address)),
             ]
+        case .detail:
+            list = [.init(key: "level_id", type: .reference(.level))]
+        case .kiosk:
+            list = [.init(key: "name", type: .localizedName),
+                    .init(key: "alt_name", type: .localizedName),
+                    .init(key: "anchor_id", type: .reference(.anchor)),
+                    .init(key: "level_id", type: .reference(.level)),
+                    .init(key: "display_point", type: .point, isEditable: false)]
+        case .relationship:
+            list = [.init(key: "category", type: .string), .init(key: "direction", type: .string),
+                    .init(key: "origin", type: .json), .init(key: "destination", type: .json),
+                    .init(key: "intermediary", type: .json), .init(key: "hours", type: .string)]
         case .fixture:
             list = [
                 .init(key: "category", type: .string),
                 .init(key: "name", type: .localizedName),
-                .init(key: "alt_name", type: .alwaysNull),
-                .init(key: "anchor_id", type: .alwaysNull),
+                .init(key: "alt_name", type: .localizedName),
+                .init(key: "anchor_id", type: .reference(.anchor)),
                 .init(key: "display_point", type: .point, isEditable: false),
                 .init(key: "level_id", type: .reference(.level)),
             ]
         case .footprint:
             list = [
                 .init(key: "category", type: .string),
-                .init(key: "name", type: .alwaysNull),
+                .init(key: "name", type: .localizedName),
                 .init(key: "building_ids", type: .stringArray),
             ]
         case .level:
             list = [
                 .init(key: "category", type: .string),
-                .init(key: "restriction", type: .alwaysNull),
+                .init(key: "restriction", type: .string),
                 .init(key: "outdoor", type: .boolean),
                 .init(key: "ordinal", type: .integer),
                 .init(key: "name", type: .localizedName),
@@ -144,7 +160,7 @@ enum PropertySchema {
                 .init(key: "created", type: .string, isEditable: false),
                 .init(key: "generated_by", type: .string),
                 .init(key: "language", type: .string),
-                .init(key: "extensions", type: .alwaysNull),
+                .init(key: "extensions", type: .stringArray),
             ]
         case .occupant:
             list = [
@@ -154,56 +170,57 @@ enum PropertySchema {
                       note: "공식 스펙에 없음 — 스펙상 위치는 anchor_id로만 결정"),
                 .init(key: "level_id", type: .reference(.level), isNonStandard: true,
                       note: "공식 스펙에 없음 — occupant는 위치가 없는 feature이고 층은 anchor_id로 정해진다"),
-                .init(key: "correlation_id", type: .alwaysNull),
+                .init(key: "correlation_id", type: .string),
                 .init(key: "anchor_id", type: .reference(.anchor)),
                 .init(key: "hours", type: .string),
                 .init(key: "phone", type: .string),
-                .init(key: "validity", type: .alwaysNull),
+                .init(key: "validity", type: .json),
                 .init(key: "website", type: .string),
             ]
         case .opening:
             list = [
                 .init(key: "category", type: .string),
-                .init(key: "access_control", type: .alwaysNull),
-                .init(key: "door", type: .alwaysNull),
+                .init(key: "access_control", type: .stringArray),
+                .init(key: "door", type: .json),
                 .init(key: "name", type: .localizedName),
-                .init(key: "alt_name", type: .alwaysNull),
+                .init(key: "alt_name", type: .localizedName),
                 .init(key: "level_id", type: .reference(.level)),
-                .init(key: "display_point", type: .alwaysNull),
-                .init(key: "accessibility", type: .alwaysNull),
+                .init(key: "display_point", type: .point, isEditable: false),
+                .init(key: "accessibility", type: .stringArray),
             ]
         case .unit:
             list = [
                 .init(key: "category", type: .string),
                 .init(key: "name", type: .localizedName),
-                .init(key: "alt_name", type: .alwaysNull),
+                .init(key: "alt_name", type: .localizedName),
                 .init(key: "level_id", type: .reference(.level)),
-                .init(key: "restriction", type: .alwaysNull),
+                .init(key: "restriction", type: .string),
                 .init(key: "display_point", type: .point, isEditable: false),
-                .init(key: "accessibility", type: .alwaysNull),
+                .init(key: "accessibility", type: .stringArray),
             ]
         case .section:
-            // src11 3.7 — geometry Polygon. "A Section models the presence and approximate
-            // extent of a theme." properties는 category·name·alt_name·display_point "등"까지만
-            // 확인됨(전수 미대조, 확인 필요).
+            // Apple Section Property Keys, including addressing, correlation and parent references.
             list = [
                 .init(key: "category", type: .string),
                 .init(key: "name", type: .localizedName),
-                .init(key: "alt_name", type: .alwaysNull),
-                .init(key: "restriction", type: .alwaysNull),
-                .init(key: "accessibility", type: .alwaysNull),
+                .init(key: "alt_name", type: .localizedName),
+                .init(key: "restriction", type: .string),
+                .init(key: "accessibility", type: .stringArray),
                 .init(key: "level_id", type: .reference(.level)),
                 .init(key: "display_point", type: .point, isEditable: false),
+                .init(key: "address_id", type: .reference(.address)),
+                .init(key: "correlation_id", type: .string),
+                .init(key: "parents", type: .stringArray),
             ]
         case .geofence:
             // src11 3.8 — geometry POLYGONAL 필수. category가 유일한 필수 property.
             // 계층은 parent_id가 아니라 parents(GEOFENCE-ID 배열)로 표현한다.
             list = [
                 .init(key: "category", type: .string),
-                .init(key: "restriction", type: .alwaysNull),
+                .init(key: "restriction", type: .string),
                 .init(key: "name", type: .localizedName),
-                .init(key: "alt_name", type: .alwaysNull),
-                .init(key: "correlation_id", type: .alwaysNull),
+                .init(key: "alt_name", type: .localizedName),
+                .init(key: "correlation_id", type: .string),
                 .init(key: "display_point", type: .point, isEditable: false),
                 .init(key: "building_ids", type: .stringArray),
                 .init(key: "level_ids", type: .stringArray),
@@ -213,11 +230,11 @@ enum PropertySchema {
         case .venue:
             list = [
                 .init(key: "category", type: .string),
-                .init(key: "restriction", type: .alwaysNull),
+                .init(key: "restriction", type: .string),
                 .init(key: "name", type: .localizedName),
                 .init(key: "alt_name", type: .localizedName),
                 .init(key: "address_id", type: .reference(.address)),
-                .init(key: "hours", type: .alwaysNull),
+                .init(key: "hours", type: .string),
                 .init(key: "phone", type: .string),
                 .init(key: "website", type: .string),
                 .init(key: "display_point", type: .point, isEditable: false),
@@ -370,6 +387,8 @@ enum PropertySchema {
             ]
         case .occupant:
             return OccupantCategories.all
+        case .relationship:
+            return ["elevator", "escalator", "movingwalkway", "ramp", "stairs", "traversal", "traversal.path"]
             // 스펙 페이지로는 전량을 얻지 못해 자유 입력이었다. Apple 배포 범주 파일로 채웠다(2026-10-20).
         default:
             return []

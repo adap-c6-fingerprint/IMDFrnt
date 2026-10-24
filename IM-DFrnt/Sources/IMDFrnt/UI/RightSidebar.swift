@@ -470,9 +470,15 @@ struct PropertySlotRow: View {
             Text("null").font(.caption2).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.type == .point {
-            Text(feature.displayPoint == nil ? "null" : "Point")
-                .font(.caption2).foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if env.isGlobalMetadata(feature.id) {
+                JSONPropertyEditor(feature: feature, key: field.key)
+            } else {
+                Text(feature.displayPoint == nil ? "null" : "Point")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else if field.type == .json {
+            JSONPropertyEditor(feature: feature, key: field.key)
         } else if field.key == "category",
                   !PropertySchema.categoryOptions(for: feature.featureType).isEmpty {
             let type = feature.featureType
@@ -495,16 +501,12 @@ struct PropertySlotRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.type == .localizedName {
             VStack(spacing: 3) {
-                textField("en", get: { if case .localized(let en, _) = value { return en }; return "" },
-                          set: { en in
-                    let ko = { if case .localized(_, let k) = value { return k }; return "" }()
-                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
-                })
-                textField("ko", get: { if case .localized(_, let ko) = value { return ko }; return "" },
-                          set: { ko in
-                    let en = { if case .localized(let e, _) = value { return e }; return "" }()
-                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
-                })
+                ForEach(["ko", "en"], id: \.self) { language in
+                    textField(language, get: { value.projectJSON[language]?.string ?? "" }, set: {
+                        env.updateLocalizedProperty(field.key, language: language, text: $0, in: feature)
+                    })
+                }
+                DisclosureGroup("모든 언어 JSON") { JSONPropertyEditor(feature: feature, key: field.key) }
             }
         } else if field.type == .integer {
             textField("null", get: { if case .integer(let i) = value { return String(i) }; return "" },
@@ -534,11 +536,13 @@ struct PropertySlotRow: View {
             // 직접 고르지 않는다. 예전에는 이 층에 그린 level feature의 일련번호를 골랐는데,
             // 내보내기는 level feature의 id를 층 UUID로 바꾸므로 고른 값과 실제 level id가 어긋날 수 있었다.
         } else if case .reference(let refType) = field.type {
+            let choices = env.referenceChoices(refType)
+            let labels = Dictionary(choices.map { ($0.id, $0.label) }, uniquingKeysWith: { a, _ in a })
             SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
-                             options: env.features.features(ofType: refType).map(\.serialNumber)) {
+                             options: choices.map(\.id), onSelect: {
                 env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
-            }
-            .help("일련번호로 고르면 내보내기 때 해당 feature의 UUID로 치환됩니다.")
+            }, label: { labels[$0] ?? $0 })
+            .help("공통 정보와 모든 층의 Feature에서 고릅니다. 값은 UUID로 저장됩니다.")
             // 참조 칸(unit_id·anchor_id 등)도 드롭다운이었다. 일련번호가 수백 개면 찾을 수 없어 같은 검색 칸을 쓴다.
         } else {
             textField("null", get: { if case .string(let s) = value { return s }; return "" },

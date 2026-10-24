@@ -120,6 +120,8 @@ struct GeoJSONExporter {
             }
             props[field.key] = v.jsonValue
         }
+        // Keep foreign properties too; evolving the official schema must not erase imported/custom metadata.
+        for (key, value) in f.properties where key != "id" && props[key] == nil { props[key] = value.jsonValue }
 
         var feature: [String: Any] = [
             "id": uuid.uuidString.lowercased(),
@@ -135,14 +137,17 @@ struct GeoJSONExporter {
         guard kind != .none else { return nil }
 
         let rings = VertexExtractor.rings(for: f)
-        if (kind == .multiPolygon && rings.count > 1) || (kind.isAreal && f.multiPolygon == true && !rings.isEmpty) {
+        if kind.isAreal && !rings.isEmpty {
             // fixture처럼 면 여러 개가 한 feature인 경우(신기능 5-4 2번)와 우측 패널에서 MultiPolygon으로 지정한 면 feature.
             // 링마다 따로 변환한다 — 한 줄로 이으면 서로 다른 면이 하나의 링으로 뭉개진다.
             let converted = rings.compactMap { georeferencer.geoPoints(for: $0) }
             guard converted.count == rings.count else { return nil }
             let coords = converted.map { closeRing($0.map(\.geoJSONArray)) }
-            return ["type": "MultiPolygon",
-                    "coordinates": RingNesting.polygons(rings).map { [coords[$0.outer]] + $0.holes.map { coords[$0] } }]
+            let polygons = RingNesting.polygons(rings).map { [coords[$0.outer]] + $0.holes.map { coords[$0] } }
+            if kind == .polygon, f.multiPolygon != true, polygons.count == 1 {
+                return ["type": "Polygon", "coordinates": polygons[0]]
+            }
+            return ["type": "MultiPolygon", "coordinates": polygons]
             // 다른 링 안에 든 링은 바깥 다각형의 구멍(안쪽 링)으로 붙인다. 구멍 안의 링은 다시 다각형이다.
         }
 

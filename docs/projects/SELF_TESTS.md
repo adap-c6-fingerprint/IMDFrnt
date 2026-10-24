@@ -1,5 +1,13 @@
 # Self-test 재현
 
+## #78 / IMD-67 추가 검사
+
+`--imdf-compliance-selftest`는 완전한 합성 IMDF와 오류 입력을 이용해 필수 정보·참조·공간 관계, 16종 보존, Polygon 구멍, 공통 정보 이전·층 삭제·가져오기·Undo/Redo·Manifest 충돌을 검사한다. `run-self-tests.sh`는 이제 기존 6종과 Footprint·IMDF 준수 검사의 총 8종을 실행한다.
+
+개별 GeoJSON과 ZIP이 동일한 최종 데이터 검증을 사용한다. UI 저장 패널을 호출하던 과거 테스트는 직접 validator/build를 호출하도록 바꿨다. 파일 저장 대화상자, GPS 지도 클릭, 실제 IMDF Sandbox 업로드나 Apple 승인까지 검증한 것으로 해석하지 않는다.
+
+2026-10-25 로컬 Debug 실행: 8/8 모드 통과. Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, Footprint 56/56, IMDF Compliance 50/50, 전체 엔진 ALL PASS. 별도 실제 5층 프로젝트 이전·왕복 검사는 63/63이고 원본 SHA-256은 동일했다. 검증용 .app은 CLI 문서 연결 검사에 필요한 저장소 Info.plist·샘플을 함께 넣은 임시 번들이다. 실제 GUI를 실행한 결과가 아니다.
+
 관련 이슈: [#18](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/18), [#19](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/19). 통합 리뷰: [PR #23](https://github.com/adap-c6-fingerprint/IMDFrnt/pull/23).
 
 ## 실행
