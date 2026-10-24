@@ -68,7 +68,10 @@ extension RoutingGraph {
     mutating func connectElevatorGroup(_ group: UUID) -> Int {
         let members = verticalGroup(group).filter { $0.category == RoutingNodeCategory.elevator.rawValue }
         var added = 0
-        for (a, b) in zip(members, members.dropFirst()) where a.floorID != b.floorID {
+        for (a, b) in zip(members, members.dropFirst()) {
+            guard let aOrdinal = floor(a.floorID)?.ordinal,
+                  let bOrdinal = floor(b.floorID)?.ordinal,
+                  bOrdinal == aOrdinal + 1 else { continue }
             let before = edges.count
             _ = connect(a.id, b.id)
             added += edges.count - before

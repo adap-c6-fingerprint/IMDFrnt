@@ -71,6 +71,17 @@ enum VerticalReplicationSelfTest {
         _ = partial.replicateVerticalNode(base.id, to: [f3.id])
         check("일부 층 복제 후 나머지 층 추가", partial.nodes.count == 3 && partial.edges.count == 2 && partial.componentCount == 1)
 
+        // 중간 층이 빠진 상태에서는 건너뛴 층끼리 연결하지 않는다.
+        var gap = RoutingGraph()
+        gap.floors = [f1, f3]
+        let gapBase = RoutingNode(floorID: f1.id, point: local1!, category: "elevator")
+        gap.nodes = [gapBase]
+        _ = gap.replicateVerticalNode(gapBase.id)
+        check("중간 층이 없으면 건너뛴 층 사이를 연결하지 않음", gap.nodes.count == 2 && gap.edges.isEmpty)
+        gap.floors.insert(f2, at: 1)
+        _ = gap.replicateVerticalNode(gapBase.id, to: [f2.id])
+        check("중간 층 추가 후에는 이웃한 층만 연결", gap.nodes.count == 3 && gap.edges.count == 2)
+
         // 이미 같은 자리에 사람이 찍은 노드는 옮기지 않고 같은 시설로만 묶는다.
         var manual = RoutingGraph()
         manual.floors = [f1, f2]
