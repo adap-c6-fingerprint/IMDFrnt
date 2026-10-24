@@ -28,6 +28,10 @@ struct Georeferencer {
         transform?.apply(local)
     }
 
+    func localPoint(for geo: GeoPoint) -> LocalPoint? {
+        transform?.inverse(geo)
+    }
+
     func geoPoints(for locals: [LocalPoint]) -> [GeoPoint]? {
         guard let transform else { return nil }
         return locals.map(transform.apply)
