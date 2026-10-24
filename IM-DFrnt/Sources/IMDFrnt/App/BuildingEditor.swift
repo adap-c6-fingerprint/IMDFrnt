@@ -18,15 +18,10 @@ extension AppEnvironment {
         if let i = project.levels.firstIndex(where: { $0.id == routingFloorID }) {
             project.levels[i].editing = levelEditingState
             project.levels[i].info.anchors = anchors
-            let transform = project.levels[i].info.footprintRegistration?.transform ?? LevelFootprintTransform()
-            let localFootprints = features.features.filter { $0.featureType == .footprint }
+            let pending = Set(project.sharedFootprint?.pendingMigrationFeatureIDs ?? [])
+            let localFootprints = features.features.filter { $0.featureType == .footprint && !pending.contains($0.id) }
             if project.sharedFootprint != nil || !localFootprints.isEmpty {
-                var shared = project.sharedFootprint ?? SharedFootprint(sourceLevelID: routingFloorID)
-                shared.features = localFootprints.map { local in
-                    if let original = shared.features.first(where: { $0.id == local.id }),
-                       shared.projected(original, transform: transform, toLevel: true) == local { return original }
-                    return shared.projected(local, transform: transform, toLevel: false)
-                }
+                let shared = sharedFootprint
                 project.sharedFootprint = shared
                 if project.levels[i].info.footprintRegistration == nil, shared.sourceLevelID == routingFloorID {
                     project.levels[i].info.footprintRegistration = LevelFootprintRegistration()
@@ -38,6 +33,7 @@ extension AppEnvironment {
         return project
     }
 
+    /// Commit the active editor into the canonical project at command/save boundaries.
     func storeActiveLevel() { buildingProject = projectContents }
 
     func loadLevelEditor(_ id: UUID?) throws {
@@ -75,8 +71,6 @@ extension AppEnvironment {
             let transform = level?.info.footprintRegistration?.transform ?? LevelFootprintTransform()
             for feature in shared.features {
                 features.insert(shared.projected(feature, transform: transform, toLevel: true))
-                serials.reserve(feature.serialNumber)
-                ids.adopt(feature.id, id: shared.originals[feature.id.uuidString]?["id"]?.uuid ?? feature.id)
             }
         }
         anchors = level?.info.anchors ?? AnchorStore()

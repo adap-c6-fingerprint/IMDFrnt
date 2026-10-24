@@ -452,7 +452,7 @@ struct PropertySlotRow: View {
         let value = feature.value(field.key)
 
         if field.key == "id" {
-            Text(env.ids.peek(feature.id)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
+            Text(env.exportID(for: feature)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
                 .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if !field.isEditable, field.type == .string {

@@ -9,7 +9,8 @@ import Foundation
 /// 폐기 UUID 대장(`retired`)도 같은 이유로 함께 저장한다 — "MUST NOT be re-assigned".
 struct ProjectFile: Codable, Equatable {
 
-    static let currentVersion = 5
+    /// v6 owns Footprint geometry globally. Older readers must reject it instead of silently dropping edits.
+    static let currentVersion = 6
     static let fileExtension = "imdfrnt"
     /// 버전 2에서 바뀐 것은 **개체를 가리키는 방식**이다 — id를 도면 내용에서 결정적으로 뽑는다(신기능 1-2-6).
     /// 이건 형식이 아니라 **뜻**을 바꾸므로 버전 1 파일은 열지 않고 거절한다(아래 `decoded`).

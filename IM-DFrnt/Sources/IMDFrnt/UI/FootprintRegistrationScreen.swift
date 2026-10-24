@@ -20,6 +20,7 @@ struct RegistrationCanvas: View {
     @State private var pan = CGSize.zero
     @State private var lastPan = CGSize.zero
     @State private var magnet: LocalPoint?
+    @State private var snapData = RegistrationSnapData(rings: [])
 
     private var bounds: CGRect {
         let points = reference.flatMap { $0 }
@@ -58,7 +59,7 @@ struct RegistrationCanvas: View {
                 .onContinuousHover { phase in
                     if case .active(let p) = phase {
                         let local = LocalPoint((p.x - origin.x) / scale, (p.y - origin.y) / scale)
-                        magnet = RegistrationGeometry.snapped(local, rings: pickRings, tolerance: 14 / scale)
+                        magnet = onPick == nil ? nil : snapData.snapped(local, tolerance: 14 / scale)
                     } else { magnet = nil }
                 }
                 .gesture(DragGesture(minimumDistance: 0).onChanged { value in
@@ -68,7 +69,7 @@ struct RegistrationCanvas: View {
                 }.onEnded { value in
                     if abs(value.translation.width) + abs(value.translation.height) < 5 {
                         let p = LocalPoint((value.location.x - origin.x) / scale, (value.location.y - origin.y) / scale)
-                        if let snapped = RegistrationGeometry.snapped(p, rings: pickRings, tolerance: 14 / scale) { onPick?(snapped) }
+                        if let snapped = snapData.snapped(p, tolerance: 14 / scale) { onPick?(snapped) }
                     }
                     lastPan = pan
                 })
@@ -79,6 +80,10 @@ struct RegistrationCanvas: View {
                 }.buttonStyle(.bordered).padding(8)
             }
             .background(Color(nsColor: .controlBackgroundColor))
+        }
+        .onChange(of: pickRings, initial: true) { _, rings in
+            snapData = RegistrationSnapData(rings: rings)
+            magnet = nil
         }
     }
 }
@@ -93,10 +98,10 @@ struct FootprintAnchorScreen: View {
     @State private var longitude = ""
     @State private var latitude = ""
 
-    private var shared: SharedFootprint { env.sharedFootprint }
-    private var rings: [[LocalPoint]] { shared.features.filter { !$0.isInTrash }.flatMap(\.polygonRings) }
-
     var body: some View {
+        let shared = env.sharedFootprint
+        let rings = shared.features.filter { !$0.isInTrash }.flatMap(\.polygonRings)
+        let convert = shared.geographicConverter
         VStack(spacing: 0) {
             HStack {
                 Button("돌아가기") { env.exitAnchorScreen() }
@@ -131,22 +136,19 @@ struct FootprintAnchorScreen: View {
                                 }
                             }
                             ForEach(Array(rings.enumerated()), id: \.offset) { _, ring in
-                                let coordinates = ring.compactMap { shared.geoPoint($0)?.clCoordinate }
+                                let coordinates = ring.compactMap { convert($0)?.clCoordinate }
                                 if coordinates.count == ring.count, let first = coordinates.first {
                                     MapPolyline(coordinates: coordinates + [first]).stroke(.blue, lineWidth: 2)
                                 }
                             }
                         }
                         .mapStyle(.imagery)
-                        .overlay {
-                            if pickGPS, pending != nil {
-                                Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { value in
-                                    if let coordinate = proxy.convert(value.location, from: .local) {
-                                        save(GeoPoint(longitude: coordinate.longitude, latitude: coordinate.latitude))
-                                    }
-                                })
+                        .simultaneousGesture(SpatialTapGesture().onEnded { value in
+                            guard pickGPS, pending != nil else { return }
+                            if let coordinate = proxy.convert(value.location, from: .local) {
+                                save(GeoPoint(longitude: coordinate.longitude, latitude: coordinate.latitude))
                             }
-                        }
+                        }, including: pickGPS && pending != nil ? .all : .subviews)
                     }
                 }.frame(minWidth: 330)
             }
@@ -186,6 +188,7 @@ struct FootprintAnchorScreen: View {
         }
     }
 
+    /// Save a selected/shared local point against a validated map or numeric GPS location.
     private func save(_ point: GeoPoint) {
         guard let local = pending else { return }
         guard point.longitude.isFinite, point.latitude.isFinite, abs(point.longitude) <= 180, abs(point.latitude) <= 90 else {
@@ -206,8 +209,12 @@ struct LevelFootprintScreen: View {
     @State private var selectingPairs = false
     @State private var pendingLevelPoint: LocalPoint?
     @State private var replacingPair: UUID?
+    @StateObject private var geometryCache = RegistrationGeometryCache()
+    @State private var opacitySession = UUID()
+    @State private var numberSession = UUID()
+    @FocusState private var focusedNumber: String?
 
-    private var project: BuildingProject { env.projectContents }
+    private var project: BuildingProject { env.buildingProject }
     private var footprint: [[LocalPoint]] { project.sharedFootprint?.features.filter { !$0.isInTrash }.flatMap(\.polygonRings) ?? [] }
     private var selected: ProjectLevel? { project.levels.first { $0.id == selectedLevel } }
     private var registration: LevelFootprintRegistration { selected?.info.footprintRegistration ?? LevelFootprintRegistration() }
@@ -216,7 +223,7 @@ struct LevelFootprintScreen: View {
         for level in project.levels {
             let r = level.info.footprintRegistration ?? LevelFootprintRegistration()
             guard r.isVisible else { continue }
-            let rings = RegistrationGeometry.levelRings(level).map { $0.map(r.transform.apply) }
+            let rings = geometryCache.rings(for: level).map { $0.map(r.transform.apply) }
             layers.append(.init(id: level.id.uuidString, rings: rings, color: level.id == selectedLevel ? .orange : .green, opacity: r.opacity))
         }
         return layers
@@ -254,8 +261,8 @@ struct LevelFootprintScreen: View {
                                 Button("회전 +0.1°") { adjust(id, \.rotation, 0.1) }
                             }
                             HStack {
-                                Button("크기 −0.1%") { env.editLevelRegistration(id, name: "층 크기") { $0.transform.scale /= 1.001 } }
-                                Button("크기 +0.1%") { env.editLevelRegistration(id, name: "층 크기") { $0.transform.scale *= 1.001 } }
+                                Button("크기 −0.1%") { env.editLevelRegistration(id, name: "층 크기", coalescingKey: "levelScale:\(id)") { $0.transform.scale /= 1.001 } }
+                                Button("크기 +0.1%") { env.editLevelRegistration(id, name: "층 크기", coalescingKey: "levelScale:\(id)") { $0.transform.scale *= 1.001 } }
                             }
                             Divider()
                             Text("대응점 \(registration.pairs.count)쌍").font(.headline)
@@ -273,7 +280,7 @@ struct LevelFootprintScreen: View {
                     }.padding(12)
                 }.frame(minWidth: 270, idealWidth: 300, maxWidth: 340)
                 if selectingPairs, let level = selected, let id = selectedLevel {
-                    let levelRings = RegistrationGeometry.levelRings(level)
+                    let levelRings = geometryCache.rings(for: level)
                     HSplitView {
                         VStack {
                             Text("① \(level.info.name) 기준점 선택").padding(8)
@@ -303,8 +310,10 @@ struct LevelFootprintScreen: View {
             }
         }
         .onAppear { selectedLevel = env.routingFloorID ?? project.levels.first?.id }
+        .onChange(of: focusedNumber) { _, _ in numberSession = UUID() }
     }
 
+    /// Show display-only preferences separately from geographic alignment commands.
     private func levelCard(_ level: ProjectLevel) -> some View {
         let r = level.info.footprintRegistration ?? LevelFootprintRegistration()
         return VStack(alignment: .leading) {
@@ -317,22 +326,28 @@ struct LevelFootprintScreen: View {
                 })).labelsHidden()
             }
             Slider(value: Binding(get: { r.opacity }, set: { value in
-                env.editLevelRegistration(level.id, name: "층 불투명도") { $0.opacity = value }
-            }), in: 0...1)
+                env.editLevelRegistration(level.id, name: "층 불투명도", coalescingKey: "levelOpacity:\(level.id):\(opacitySession)") { $0.opacity = value }
+            }), in: 0...1, onEditingChanged: { editing in
+                if !editing { opacitySession = UUID() }
+            })
             Text("불투명도 \(Int(r.opacity * 100))% · \(r.pairs.count)쌍").font(.caption)
-            if RegistrationGeometry.levelRings(level).isEmpty { Text("level 레이어에서 층 외곽을 먼저 그리세요.").font(.caption).foregroundStyle(.orange) }
+            if geometryCache.rings(for: level).isEmpty { Text("level 레이어에서 층 외곽을 먼저 그리세요.").font(.caption).foregroundStyle(.orange) }
         }.padding(8).background(selectedLevel == level.id ? Color.orange.opacity(0.12) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
 
+    /// Coalesce typing within one focused numeric edit, not across independent edits.
     private func numberField(_ title: String, key: WritableKeyPath<LevelFootprintTransform, Double>) -> some View {
         HStack {
             Text(title).font(.caption).frame(width: 82, alignment: .leading)
             TextField(title, value: Binding(get: { registration.transform[keyPath: key] }, set: { value in
-                if let id = selectedLevel { env.editLevelRegistration(id, name: "층 \(title)") { $0.transform[keyPath: key] = value } }
+                if let id = selectedLevel { env.editLevelRegistration(id, name: "층 \(title)", coalescingKey: "levelNumber:\(id):\(title):\(numberSession)") { $0.transform[keyPath: key] = value } }
             }), format: .number).textFieldStyle(.roundedBorder)
+                .focused($focusedNumber, equals: title)
+                .onSubmit { numberSession = UUID() }
         }
     }
+    /// Group consecutive nudges of the same axis into one reversible adjustment.
     private func adjust(_ id: UUID, _ key: WritableKeyPath<LevelFootprintTransform, Double>, _ delta: Double) {
-        env.editLevelRegistration(id, name: "층 미세조정") { $0.transform[keyPath: key] += delta }
+        env.editLevelRegistration(id, name: "층 미세조정", coalescingKey: "levelNudge:\(id):\(key)") { $0.transform[keyPath: key] += delta }
     }
 }

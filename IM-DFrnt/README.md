@@ -85,6 +85,7 @@ Xcode로 빌드한 앱에도 같은 검사 스크립트를 사용할 수 있습�
 3. **Level · Footprint 정렬**에서 각 층의 Level 점과 Footprint 대응점을 2쌍 이상 지정하고 정렬합니다. 층별 표시·불투명도와 이동·회전·균일 크기를 조절합니다.
 
 [화면별 상세 사용법과 저장/내보내기 동작](../docs/projects/GLOBAL_FOOTPRINT.md). 기존 **지도 정렬** 도구는 별도로 유지합니다. property type `anchor`는 IMDF anchor Feature로, Footprint의 GPS 대응점과 구분합니다.
+
 ---
 
 ## 조작법

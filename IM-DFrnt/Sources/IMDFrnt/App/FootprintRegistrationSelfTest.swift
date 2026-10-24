@@ -2,9 +2,11 @@ import Foundation
 
 @MainActor
 enum FootprintRegistrationSelfTest {
+    /// Run both the original Footprint workflow and review-specific regression fixtures.
     static func runIfRequested() async {
         guard CommandLine.arguments.contains("--footprint-selftest") else { return }
         var failures = 0, count = 0
+        /// Count and report assertions without stopping at the first failed scenario.
         func check(_ name: String, _ value: Bool) {
             count += 1; if !value { failures += 1 }
             print("[\(value ? "PASS" : "FAIL")] \(name)")
@@ -25,6 +27,12 @@ enum FootprintRegistrationSelfTest {
             env.closePointDraft()
             let featureID = env.features.features(ofType: .footprint).first!.id
             check("GPS 없이 Footprint 저장", env.sharedFootprint.features.count == 1 && !env.sharedFootprint.isGeoreferenced)
+            do {
+                _ = try IMDFArchive.build(projectData: env.makeProjectFile()!.encoded(), documents: [:])
+                check("GPS 없는 Footprint 내보내기 차단 메시지", false)
+            } catch let blocked as IMDFArchive.Blocked {
+                check("GPS 없는 Footprint 내보내기 차단 메시지", blocked.messages.contains("전역 Footprint의 GPS Anchor를 먼저 설정하세요. 서로 일직선이 아닌 대응점 최소 3쌍이 필요합니다."))
+            } catch { check("GPS 없는 Footprint 내보내기 차단 메시지", false) }
             env.storeActiveLevel()
             check("층 편집 저장소와 전역 저장소 중복 없음", env.projectContents.levels[0].editing.features.count(ofType: .footprint) == 0)
 
@@ -35,7 +43,7 @@ enum FootprintRegistrationSelfTest {
             env.selectProjectLevel(first); await env.waitForLevelDrawing()
             check("다른 층의 편집이 전역으로 반영", env.features.feature(featureID)?.polygonRings[0][0] == LocalPoint(25, 20))
             env.enterAnchorScreen()
-            check("Anchor 지정은 전역 Footprint 기준", env.showAnchorScreen)
+            check("Anchor 지정은 전역 Footprint 기준", env.showAnchorScreen && env.mode == .anchorPicking && env.selection.isEmpty)
             env.editFootprintAnchors("GPS 기준 3쌍") { store in
                 for p in [LocalPoint(0, 0), LocalPoint(200, 0), LocalPoint(0, 200)] {
                     store.add(local: p, geo: GeoPoint(longitude: 129 + p.x / 100_000, latitude: 36 - p.y / 100_000), label: "GPS")
@@ -103,6 +111,7 @@ enum FootprintRegistrationSelfTest {
                 _ = try LevelFootprintTransform.fit([LevelFootprintPair(level: local, footprint: local), LevelFootprintPair(level: local, footprint: local)])
                 check("중복 대응점은 정렬 거부", false)
             } catch { check("중복 대응점은 정렬 거부", true) }
+            try await FootprintReviewSelfTest.run(check)
         } catch { check("테스트 실행: \(error)", false) }
         print("Footprint: \(count - failures)/\(count) passed")
         exit(failures == 0 ? 0 : 1)

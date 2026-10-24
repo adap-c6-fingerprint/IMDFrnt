@@ -109,6 +109,9 @@ extension AppEnvironment {
         assignment = file.assignment
         projectURL = url
         lastRecoveryProject = makeProjectFile()
+        if project.sharedFootprint?.pendingMigrationFeatureIDs?.isEmpty == false {
+            notify("좌표계가 다른 일부 Footprint는 이전하지 않고 원본 층에 보존했습니다. 각 층과 전역 Footprint의 GPS를 확인하세요.", isError: true)
+        }
     }
 
     /// 마지막으로 작업한 프로젝트 파일. 프로젝트 선택 창에서 '지난 작업'으로 표시한다.

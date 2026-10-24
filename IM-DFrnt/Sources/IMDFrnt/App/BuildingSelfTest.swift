@@ -3,9 +3,11 @@ import Foundation
 
 @MainActor
 enum BuildingSelfTest {
+    /// Verify building ownership, Footprint metadata, persistence and legacy-file migration.
     static func runIfRequested() async {
         guard CommandLine.arguments.contains("--building-selftest") else { return }
         var total = 0, failures = 0
+        /// Report an assertion while allowing independent scenarios to continue.
         func check(_ name: String, _ valid: Bool) {
             total += 1; if !valid { failures += 1 }
             print("[\(valid ? "PASS" : "FAIL")] \(name)")
@@ -14,6 +16,7 @@ enum BuildingSelfTest {
         let suite = "IMDFrntBuildingTest.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? FileManager.default.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
+        /// Isolate autosaves and preferences from the user's real projects.
         func environment() -> AppEnvironment {
             AppEnvironment(autosaveFolder: directory, projectDefaults: defaults)
         }
@@ -103,7 +106,7 @@ enum BuildingSelfTest {
             env.projectURL = url
             check("공통 건물·여러 층 저장", env.persist(showingBanner: false))
             let file = try ProjectFile.decoded(from: Data(contentsOf: url))
-            check("v5 파일은 Level 내부에 저장, 중복 RoutingGraph 없음", file.version == 5 && file.routing == nil && file.hasDrawing == false && file.buildingProject?.levels.count == 2)
+            check("현재 형식은 Level 내부에 저장, 중복 RoutingGraph 없음", file.version == ProjectFile.currentVersion && file.routing == nil && file.hasDrawing == false && file.buildingProject?.levels.count == 2)
             let reopened = environment()
             try reopened.adopt(file, from: url)
             check("재열기 후 모든 층·건물·Footprint·층간 연결 동일", reopened.projectContents == env.projectContents && !reopened.hasUnsavedChanges)
@@ -138,6 +141,7 @@ enum BuildingSelfTest {
                 let legacy = try ProjectFile.decoded(from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[i + 1])))
                 let actual = environment()
                 try actual.adopt(legacy, from: nil)
+                /// Normalize array order to compare identity and metadata across migrations.
                 func ordered(_ graph: RoutingGraph) -> RoutingGraph {
                     var result = graph
                     result.floors.sort { $0.id.uuidString < $1.id.uuidString }

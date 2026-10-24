@@ -547,7 +547,15 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 지오레퍼런싱
 
-    var georeferencer: Georeferencer { Georeferencer(pairs: projectContents.levels.first { $0.id == routingFloorID }?.info.footprintGeoAnchors ?? anchors.pairs) }
+    /// Read synchronized active-level anchors without rebuilding the project on every coordinate lookup.
+    var georeferencer: Georeferencer {
+        if let pairs = activeLevel?.info.footprintGeoAnchors { return Georeferencer(pairs: pairs) }
+        // A first, uncommitted Footprint has no GPS yet, even if its drawing used old anchors.
+        if buildingProject.sharedFootprint == nil, features.features.contains(where: { $0.featureType == .footprint }) {
+            return Georeferencer(pairs: [])
+        }
+        return Georeferencer(pairs: anchors.pairs)
+    }
 
     var residuals: [Double] { georeferencer.residuals(for: anchors.pairs) }
 
@@ -2173,7 +2181,7 @@ final class AppEnvironment: ObservableObject {
             return
         }
 
-        let serial = serials.next(for: type)
+        let serial = nextFeatureSerial(for: type)
         var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: owned)
         for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
         let memberTwins = type == .fixture ? freeFixtureMemberTwins(of: owned) : []
@@ -2456,6 +2464,10 @@ final class AppEnvironment: ObservableObject {
             return
         }
         selection.clear()
+        cancelPointDraft()
+        showRoutingScreen = false
+        showLevelFootprintScreen = false
+        showMapAlignScreen = false
         mode = .anchorPicking
         showAnchorScreen = true
     }
@@ -2494,7 +2506,10 @@ final class AppEnvironment: ObservableObject {
             guard shared.isGeoreferenced else { notify("Footprint Anchor 지정에서 GPS 대응점을 먼저 설정하세요.", isError: true); return }
             do {
                 guard let data = projectContents.imdfFiles()["footprint.geojson"] else { return }
-                let object = try JSONSerialization.jsonObject(with: data.data()) as! [String: Any]
+                guard let object = try JSONSerialization.jsonObject(with: data.data()) as? [String: Any] else {
+                    notify("Footprint GeoJSON 형식이 올바르지 않습니다.", isError: true)
+                    return
+                }
                 if let url = try GeoJSONExporter.write(object, suggestedName: "footprint.geojson") { notify("\(url.lastPathComponent) 저장 완료.") }
             } catch { notify(error.localizedDescription, isError: true) }
             return
