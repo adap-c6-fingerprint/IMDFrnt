@@ -21,6 +21,9 @@ struct RoutingScreen: View {
                     }
                 }
                 .pickerStyle(.segmented).frame(maxWidth: 460)
+                Button("출입구 노드 자동 배치") { env.placeEntranceNodes() }
+                    .disabled(!env.hasOpeningFeatures || env.isImportingIMDF)
+                    .help("IMDF opening 중앙에 출입구(entrance) 노드를 놓습니다. 다시 실행해도 중복되지 않습니다.")
                 Button("길찾기 내보내기…") { env.exportRoutingGraph() }
                     .buttonStyle(.borderedProminent)
             }
@@ -121,6 +124,7 @@ struct RoutingScreen: View {
                     Label("핀을 선택하면 정보를 편집할 수 있습니다.", systemImage: "mappin.and.ellipse")
                         .font(.callout).foregroundStyle(.secondary)
                 }
+                if let result = env.lastEntrancePlacement { EntrancePlacementSummary(plan: result) }
                 Divider()
                 DisclosureGroup("내보내기 설정") {
                     VStack(alignment: .leading, spacing: 10) {
@@ -419,4 +423,26 @@ final class RoutingKeyMonitor {
     }
 
     func stop() { if let token { NSEvent.removeMonitor(token) }; token = nil }
+}
+
+struct EntrancePlacementSummary: View {
+    let plan: EntrancePlacementPlan
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("출입구 자동 배치 결과", systemImage: "door.left.hand.open").font(.headline)
+            Text("opening \(plan.openingCount)곳 · 새 노드 \(plan.nodes.count) · 이미 배치 \(plan.alreadyPlaced) · 기존 노드와 겹침 \(plan.coveredByExisting) · 제외 \(plan.skipped.count)")
+                .font(.caption)
+            if !plan.skipped.isEmpty {
+                DisclosureGroup("제외된 opening \(plan.skipped.count)곳") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(plan.skipped.enumerated()), id: \.offset) { _, skip in
+                            Text("\(skip.floorName) · \(skip.openingID.prefix(8)) — \(skip.reason)")
+                                .font(.caption2).foregroundStyle(.orange).textSelection(.enabled)
+                        }
+                    }.padding(.top, 4)
+                }.font(.caption)
+            }
+        }
+    }
 }

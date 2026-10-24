@@ -50,6 +50,9 @@ struct RoutingNode: Identifiable, Equatable, Codable {
     /// 같은 수직 시설(엘리베이터·계단·에스컬레이터)의 층별 노드를 묶는 열쇠(신기능 13항).
     /// 선택 항목이라 이전 프로젝트 파일도 그대로 읽힌다.
     var verticalGroupID: UUID?
+    /// 자동 배치한 출입구 노드가 나온 IMDF opening의 id(소문자). 재실행 때 중복을 막는 열쇠(#69).
+    /// 선택 항목이라 이전 프로젝트 파일도 그대로 읽힌다.
+    var sourceOpeningID: String?
 
     var shortID: String { String(id.uuidString.prefix(8)) }
     var label: String { name.isEmpty ? "노드 \(shortID)" : name }

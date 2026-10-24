@@ -157,6 +157,8 @@ final class AppEnvironment: ObservableObject {
     @Published var routingConnectionDrag: RoutingConnectionDrag?
     @Published var routingPendingAnchor: LocalPoint?
     @Published var routingExportError: String?
+    /// 출입구 노드 자동 배치의 마지막 결과(제외 사유 표시용, #69). 저장하지 않는다.
+    @Published var lastEntrancePlacement: EntrancePlacementPlan?
     @Published var pendingDeletion: DeletionRequest?
     var routingContextMenuIsOpen = false
     @Published var isImportingIMDF = false
