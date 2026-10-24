@@ -71,6 +71,7 @@ extension RoutingGraph {
         for (a, b) in zip(members, members.dropFirst()) {
             guard let aOrdinal = floor(a.floorID)?.ordinal,
                   let bOrdinal = floor(b.floorID)?.ordinal,
+                  aOrdinal < Int.max,
                   bOrdinal == aOrdinal + 1 else { continue }
             let before = edges.count
             _ = connect(a.id, b.id)
