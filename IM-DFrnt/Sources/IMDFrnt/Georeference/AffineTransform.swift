@@ -84,6 +84,14 @@ struct GeoAffineTransform: Hashable {
                                   d: v, e: -u, f: ty)
     }
 
+    /// 위경도에서 도면 좌표로 되돌린다. 2x2 부분이 특이하면 nil.
+    func inverse(_ g: GeoPoint) -> LocalPoint? {
+        let det = a * e - b * d
+        guard abs(det) > 1e-18 else { return nil }
+        let u = g.longitude - c, v = g.latitude - f
+        return LocalPoint((e * u - b * v) / det, (a * v - d * u) / det)
+    }
+
     func apply(_ p: LocalPoint) -> GeoPoint {
         GeoPoint(longitude: a * p.x + b * p.y + c,
                  latitude: d * p.x + e * p.y + f)

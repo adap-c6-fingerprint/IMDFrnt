@@ -18,6 +18,18 @@ struct ProjectLevelInfo: Identifiable, Equatable, Codable {
         imdfCoordinates?.isValid == true || Georeferencer(pairs: anchors.pairs).isConfigured
     }
 
+    /// 같은 실제 좌표가 이 층 도면에서 놓이는 자리. 층마다 도면 좌표계가 달라 위경도를 거쳐 옮긴다.
+    func localPoint(for geo: GeoPoint) -> LocalPoint? {
+        let point: LocalPoint?
+        if let coordinates = imdfCoordinates {
+            point = coordinates.isValid ? coordinates.localPoint(longitude: geo.longitude, latitude: geo.latitude) : nil
+        } else {
+            point = Georeferencer(pairs: anchors.pairs).localPoint(for: geo)
+        }
+        guard let point, point.x.isFinite, point.y.isFinite else { return nil }
+        return point
+    }
+
     func geoPoint(for point: LocalPoint) -> GeoPoint? {
         if let coordinates = imdfCoordinates {
             return coordinates.isValid ? coordinates.geoPoint(for: point) : nil
@@ -35,6 +47,9 @@ struct RoutingNode: Identifiable, Equatable, Codable {
     var name: String = ""
     var category: String = "waypoint"
     var metadataJSON: String = "{}"
+    /// 같은 수직 시설(엘리베이터·계단·에스컬레이터)의 층별 노드를 묶는 열쇠(신기능 13항).
+    /// 선택 항목이라 이전 프로젝트 파일도 그대로 읽힌다.
+    var verticalGroupID: UUID?
     /// 자동 배치한 출입구 노드가 나온 IMDF opening의 id(소문자). 재실행 때 중복을 막는 열쇠(#69).
     /// 선택 항목이라 이전 프로젝트 파일도 그대로 읽힌다.
     var sourceOpeningID: String?

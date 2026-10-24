@@ -234,6 +234,9 @@ private struct RoutingNodeEditor: View {
                 Text(String(format: "경도 %.7f · 위도 %.7f", geo.longitude, geo.latitude))
                     .font(.caption2.monospacedDigit()).textSelection(.enabled)
             }
+            if RoutingNodeCategory(rawValue: node.category)?.isVertical == true {
+                VerticalReplicationSection(node: node)
+            }
             Text("메타데이터 (JSON)").font(.subheadline.weight(.semibold))
             TextEditor(text: $metadata).font(.system(.caption, design: .monospaced))
                 .frame(height: 110).border(Color.secondary.opacity(0.25))
@@ -272,6 +275,38 @@ private struct RoutingNodeEditor: View {
         }
         .onAppear { metadata = node.metadataJSON }
         .onChange(of: node.metadataJSON) { _, value in metadata = value }
+    }
+}
+
+/// 기준 층에서 찍은 계단·엘리베이터·에스컬레이터를 다른 층에 같은 실제 좌표로 복제한다(신기능 13항).
+private struct VerticalReplicationSection: View {
+    @EnvironmentObject var env: AppEnvironment
+    let node: RoutingNode
+    @State private var excluded = Set<UUID>()
+
+    var body: some View {
+        let others = env.routing.floors.filter { $0.id != node.floorID }.sorted { $0.ordinal > $1.ordinal }
+        let isElevator = node.category == RoutingNodeCategory.elevator.rawValue
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            Text("층별 복제").font(.subheadline.weight(.semibold))
+            if let group = node.verticalGroupID {
+                Text("같은 시설 노드 \(env.routing.verticalGroup(group).count)개 (\(group.uuidString.prefix(8)))")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            ForEach(others) { floor in
+                Toggle(floor.name, isOn: Binding(get: { !excluded.contains(floor.id) }, set: { on in
+                    if on { excluded.remove(floor.id) } else { excluded.insert(floor.id) }
+                })).font(.caption)
+            }
+            Button("선택한 층에 같은 좌표로 복제") {
+                env.replicateVerticalNode(node.id, to: others.map(\.id).filter { !excluded.contains($0) })
+            }
+            .disabled(others.allSatisfy { excluded.contains($0.id) })
+            Text(isElevator ? "같은 시설의 이웃한 층 엘리베이터 노드는 자동으로 연결합니다. 이미 있는 노드는 옮기지 않습니다."
+                 : "노드만 복제하고 층간 연결은 만들지 않습니다. 이미 있는 노드는 옮기지 않습니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
     }
 }
 

@@ -68,11 +68,13 @@ enum RoutingExporter {
         var features: [[String: Any]] = []
         for node in graph.nodes.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
             guard let geo = coordinates[node.id], let floor = graph.floor(node.floorID) else { continue }
+            var properties: [String: Any] = ["role": "node", "level": floor.ordinal,
+                               "level_id": floor.id.uuidString.lowercased(), "name": node.name,
+                               "category": node.category, "metadata": try metadata(node.metadataJSON)]
+            if let group = node.verticalGroupID { properties["vertical_group_id"] = group.uuidString.lowercased() }
             features.append([
                 "type": "Feature", "id": node.id.uuidString.lowercased(),
-                "properties": ["role": "node", "level": floor.ordinal,
-                               "level_id": floor.id.uuidString.lowercased(), "name": node.name,
-                               "category": node.category, "metadata": try metadata(node.metadataJSON)],
+                "properties": properties,
                 "geometry": ["type": "Point", "coordinates": geo.geoJSONArray]
             ])
         }
