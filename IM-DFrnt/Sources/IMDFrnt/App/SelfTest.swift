@@ -424,10 +424,10 @@ enum SelfTest {
               env.exportBlockers.first?.message ?? "")
         env.exportBlockers = []
 
-        // Anchor 지정 화면 진입 → 선택 잠금
+        // GPS 설정은 먼저 전역 Footprint를 그린 뒤 진행한다.
         env.enterAnchorScreen()
-        check("앱: Anchor 화면 진입 시 선택 잠금",
-              env.showAnchorScreen && env.mode == .anchorPicking && !env.isSelectModeActive)
+        check("앱: Footprint가 없으면 Anchor 화면 대신 작도 안내",
+              !env.showAnchorScreen && env.banner?.text.contains("footprint") == true)
 
         // 도면 클릭 → 지도 클릭(위경도 입력)의 2단계 흐름
         env.pendingAnchorLocal = pairs[0].local
@@ -3733,10 +3733,16 @@ enum SelfTest {
         let slLeft = sl.features.features(ofType: .unit).first { $0.serialNumber == "unit-901" }
         check("실오라기 방지: T자 접점의 꼭짓점은 이웃 unit의 변에도 함께 들어간다",
               slLeft.map { $0.polygonRings[0].contains(LocalPoint(100, 20)) && $0.polygonRings[0].contains(LocalPoint(100, 80)) } == true)
-        check("실오라기 방지: 그렇게 그린 이웃끼리는 겹침이 없다",
-              sl.features.features(ofType: .unit).count == 2 && sl.unitCoverage.overlaps.isEmpty
-              && abs(sl.unitCoverage.gaps.map { abs(UnitCoverage.area($0)) }.reduce(0, +) - (30_000 - 10_000 - 6_000)) < 1e-3,
-              "unit \(sl.features.features(ofType: .unit).map { "\($0.serialNumber) \($0.polygonRings)" }) 겹침 \(sl.unitCoverage.overlaps.count) 빈틈 \(sl.unitCoverage.gaps.map { abs(UnitCoverage.area($0)) })")
+        let slUnits = sl.features.features(ofType: .unit)
+        let slCoverage = sl.unitCoverage
+        let slGapAreas: [Double] = slCoverage.gaps.map { abs(UnitCoverage.area($0)) }
+        let slTotalGapArea: Double = slGapAreas.reduce(0.0, +)
+        let slExpectedGapArea: Double = 30_000 - 10_000 - 6_000
+        let slHasExpectedCoverage = slUnits.count == 2 && slCoverage.overlaps.isEmpty
+            && abs(slTotalGapArea - slExpectedGapArea) < 1e-3
+        let slUnitDetails: [String] = slUnits.map { "\($0.serialNumber) \($0.polygonRings)" }
+        let slCoverageDetails = "unit \(slUnitDetails) 겹침 \(slCoverage.overlaps.count) 빈틈 \(slGapAreas)"
+        check("실오라기 방지: 그렇게 그린 이웃끼리는 겹침이 없다", slHasExpectedCoverage, slCoverageDetails)
         let raw = [[LocalPoint(100.05, 30), LocalPoint(150, 30), LocalPoint(150, 60), LocalPoint(100.05, 60)]]
         let fixed = sl.alignRings(raw, type: .unit, excluding: nil)
         check("실오라기 방지: 저장 직전에도 링을 이웃에 맞춘다(면 단위 저장 등)",

@@ -124,8 +124,10 @@ enum IMDFImporter {
                 throw Failure(message: "level.geojson: 층 UUID와 정수 ordinal이 필요합니다.")
             }
             let names = properties["name"] as? [String: String]
-            let name = names?["ko"] ?? names?["en"] ?? names?.sorted(by: { $0.key < $1.key }).first?.value
-                ?? (properties["name"] as? String) ?? (ordinal < 0 ? "지하 \(-ordinal)층" : "\(ordinal + 1)층")
+            let localized: String? = names?["ko"] ?? names?["en"]
+            let fallback: String? = names?.sorted(by: { $0.key < $1.key }).first?.value ?? (properties["name"] as? String)
+            let defaultName: String = ordinal < 0 ? "지하 \(-ordinal)층" : "\(ordinal + 1)층"
+            let name: String = localized ?? fallback ?? defaultName
             parsedLevels.append((id, ordinal, name, level))
         }
         guard Set(parsedLevels.map { $0.0 }).count == levels.count,

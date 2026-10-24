@@ -39,6 +39,9 @@ enum IMDFArchive {
         let levels = project.levels.sorted { $0.info.ordinal < $1.info.ordinal }
         let imported = project.imdfFiles()
         var blockers: [String] = []
+        if let shared = project.sharedFootprint, shared.geographicFeatures().count != shared.features.filter({ !$0.isInTrash }).count {
+            blockers.append("전역 Footprint의 GPS Anchor를 먼저 설정하세요. 서로 일직선이 아닌 대응점 최소 3쌍이 필요합니다.")
+        }
         var warnings: [String] = []
 
         // 1. 층별 준비 — 도면(구성원 개체를 쓰는 예전 feature만 필요), 좌표 변환, 살아 있는 feature.
@@ -64,7 +67,7 @@ enum IMDFArchive {
                 // 점으로 그린 feature는 좌표를 스스로 갖고 있어 도면을 읽지 않아도 된다.
             }
             prepared.append(Prepared(level: level, features: live, document: document,
-                                     georeferencer: Georeferencer(pairs: level.info.anchors.pairs), ids: level.editing.ids))
+                                     georeferencer: Georeferencer(pairs: level.info.footprintGeoAnchors ?? level.info.anchors.pairs), ids: level.editing.ids))
         }
 
         // 2. 막는 조건 — 층 이름을 붙여 어느 층을 고쳐야 하는지 알린다.

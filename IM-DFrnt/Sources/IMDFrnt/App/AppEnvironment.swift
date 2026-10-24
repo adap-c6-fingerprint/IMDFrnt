@@ -516,6 +516,7 @@ final class AppEnvironment: ObservableObject {
     @Published var clientDatasetBlockers: [String] = []
     @Published var banner: Banner?
     @Published var showAnchorScreen = false
+    @Published var showLevelFootprintScreen = false
     /// 지도 정렬 화면(신기능 11항, #31). Anchor 화면과 같은 전체 화면 전환이다.
     @Published var showMapAlignScreen = false
     /// 지도에 그릴 층별 선 묶음. 화면 상태가 아니라 계산 캐시라 `@Published`가 아니다.
@@ -546,7 +547,7 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 지오레퍼런싱
 
-    var georeferencer: Georeferencer { Georeferencer(pairs: anchors.pairs) }
+    var georeferencer: Georeferencer { Georeferencer(pairs: projectContents.levels.first { $0.id == routingFloorID }?.info.footprintGeoAnchors ?? anchors.pairs) }
 
     var residuals: [Double] { georeferencer.residuals(for: anchors.pairs) }
 
@@ -631,6 +632,7 @@ final class AppEnvironment: ObservableObject {
         doorDraftPoints = []
         showRoutingScreen = false
         showAnchorScreen = false
+        showLevelFootprintScreen = false
         showMapAlignScreen = false
         mapAlignPathCache = [:]
         mapAlignPrepareTask?.cancel(); mapAlignPrepareTask = nil
@@ -1628,8 +1630,6 @@ final class AppEnvironment: ObservableObject {
     @Published var layerEditMode: LayerEditMode = .point
     /// 작성 중인 도형. 실행취소 대상이다(점 추가·삭제·이동을 cmd+z로 되돌린다).
     @Published var pointDraft = PointDraft()
-    /// 캔버스에서 찍은 점을 WGS84 전역 footprint로 저장하는 전용 작도 상태.
-    @Published var isDrawingGlobalFootprint = false
     /// 우측 패널에서 MultiPolygon으로 지정해 새 다각형을 받고 있는 feature. 화면 상태라 저장하지 않는다.
     @Published var multiPolygonTargetID: FeatureGroupID?
     /// 면 단위에서 면을 둘러싸는 경계를 지금 레이어로 볼지 모든 레이어로 볼지.
@@ -2089,7 +2089,7 @@ final class AppEnvironment: ObservableObject {
             return
             // 도형이 없는 type은 캔버스에서 할 일이 없다. 레이어 대신 정보 입력 창을 연다.
         }
-        guard type == .opening || openingGate.allowsOtherTypes else {
+        guard type == .opening || type == .footprint || openingGate.allowsOtherTypes else {
             notify("opening을 먼저 태깅해야 합니다. 문을 먼저 확정해야 방 폴리곤을 닫을 수 있습니다.",
                    isError: true)
             // 명세 10-1-2의 안내 문구 그대로.
@@ -2450,6 +2450,11 @@ final class AppEnvironment: ObservableObject {
 
     /// Anchor 지정 화면에 들어가면 개체 선택·이동·그룹화가 잠긴다.
     func enterAnchorScreen() {
+        storeActiveLevel()
+        guard buildingProject.sharedFootprint?.features.contains(where: { !$0.isInTrash }) == true else {
+            notify("먼저 메인 화면의 footprint 레이어에서 건물 외곽을 그리세요.", isError: true)
+            return
+        }
         selection.clear()
         mode = .anchorPicking
         showAnchorScreen = true
@@ -2471,6 +2476,11 @@ final class AppEnvironment: ObservableObject {
                                               borrowed: borrow.objects(borrowedBy: fid))
         // 내보내기와 **같은 인자**로 뽑는다. 화면의 좌표 표와 파일에 실리는 좌표가 갈라지면
         // 사용자가 표를 보고 확인한 것이 파일에서는 다른 값이 된다.
+        if f.featureType == .footprint {
+            let transform = activeLevel?.info.footprintRegistration?.transform ?? LevelFootprintTransform()
+            let shared = sharedFootprint
+            return locals.map { ($0, shared.geoPoint(transform.apply($0))) }
+        }
         let g = georeferencer
         return locals.map { ($0, g.geoPoint(for: $0)) }
     }
@@ -2479,6 +2489,16 @@ final class AppEnvironment: ObservableObject {
 
     func export() {
         if showRoutingScreen { exportRoutingGraph(); return }
+        if layers.activePropertyType == .footprint {
+            let shared = sharedFootprint
+            guard shared.isGeoreferenced else { notify("Footprint Anchor 지정에서 GPS 대응점을 먼저 설정하세요.", isError: true); return }
+            do {
+                guard let data = projectContents.imdfFiles()["footprint.geojson"] else { return }
+                let object = try JSONSerialization.jsonObject(with: data.data()) as! [String: Any]
+                if let url = try GeoJSONExporter.write(object, suggestedName: "footprint.geojson") { notify("\(url.lastPathComponent) 저장 완료.") }
+            } catch { notify(error.localizedDescription, isError: true) }
+            return
+        }
         guard let doc = document, let type = layers.activePropertyType else {
             notify("먼저 property type 레이어를 선택하세요.", isError: true)
             return

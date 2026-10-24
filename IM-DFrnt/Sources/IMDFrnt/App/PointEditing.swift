@@ -482,10 +482,6 @@ extension AppEnvironment {
             return
             // 보조 선분·자르기는 닫을 다각형이 없다. Return은 자르기 도구에서만 '자르기'다.
         }
-        if isDrawingGlobalFootprint {
-            closeGlobalFootprintDraft()
-            return
-        }
         guard let type = layers.activePropertyType, type.requiredGeometry.isAreal else { return }
         guard pointDraft.edit == nil, pointDraft.breaks.isEmpty else {
             notify("선분이 끊겨 있어 닫을 수 없습니다. Control을 누른 채 끊긴 뒤쪽 점을 두 번 누르거나 새 점으로 이으세요.",
@@ -535,73 +531,16 @@ extension AppEnvironment {
     /// ESC. 작성 중인 도형을 버린다. 실행취소로 되살릴 수 있다.
     func escapePointDraft() {
         if vertexDrag != nil { vertexDrag = nil; return }
-        guard !pointDraft.isEmpty || isDrawingGlobalFootprint else { return }
-        perform("작성 중인 도형 취소") {
-            pointDraft = PointDraft()
-            isDrawingGlobalFootprint = false
-        }
+        guard !pointDraft.isEmpty else { return }
+        perform("작성 중인 도형 취소") { pointDraft = PointDraft() }
     }
 
     /// 레이어 전환 등에서 조용히 비운다. 실행취소 칸을 쌓지 않는다.
     func cancelPointDraft() {
         pointDraft = PointDraft()
         vertexDrag = nil
-        isDrawingGlobalFootprint = false
     }
 
-    private func closeGlobalFootprintDraft() {
-        guard pointDraft.edit == nil, pointDraft.breaks.isEmpty else {
-            notify("전역 Footprint는 끊기지 않은 하나의 다각형으로 닫아야 합니다.", isError: true)
-            return
-        }
-        let ring = VertexExtractor.dedup(pointDraft.points, epsilon: SnapPointExtractor.mergeTolerance)
-        guard ring.count >= 3 else {
-            notify("꼭짓점이 3개 이상이어야 Footprint를 저장할 수 있습니다.", isError: true)
-            return
-        }
-        if PolygonValidity.selfIntersects(ring) {
-            notify("Footprint의 변끼리 가로지릅니다. 점을 지우거나 옮겨 꼬임을 풀어야 합니다.", isError: true)
-            return
-        }
-        if PolygonValidity.isDegenerate(ring) {
-            notify("Footprint가 면적이 있는 다각형이 아닙니다.", isError: true)
-            return
-        }
-        guard let floor = currentRoutingFloor else { return }
-        let geoRing = ring.compactMap(floor.geoPoint(for:))
-        guard geoRing.count == ring.count else {
-            notify("현재 층의 좌표 변환 범위 밖에 있는 점이 있습니다. Anchor 또는 층 좌표를 확인하세요.", isError: true)
-            return
-        }
-        let geoCoordinates = geoRing.map { point in
-            ProjectJSON.array([.number(Decimal(point.longitude)), .number(Decimal(point.latitude))])
-        }
-        let closedCoordinates = geoCoordinates + [geoCoordinates[0]]
-        let coordinates = ProjectJSON.array([.array(closedCoordinates)])
-        let geometry: ProjectJSON = .object([
-            "type": .string("Polygon"),
-            "coordinates": coordinates
-        ])
-        let props: [String: ProjectJSON] = [
-            "name": .null,
-            "building_ids": .array(globalFeatures("building").compactMap { $0["id"] }),
-            "category": .string("ground")
-        ]
-        let feature: ProjectJSON = .object([
-            "type": .string("Feature"),
-            "feature_type": .string("footprint"),
-            "id": .string(UUID().uuidString.lowercased()),
-            "properties": .object(props),
-            "geometry": geometry
-        ])
-        perform("전역 Footprint 저장") {
-            buildingProject.globalGeoJSON["footprint.geojson", default: []].append(feature)
-            pointDraft = PointDraft()
-            isDrawingGlobalFootprint = false
-        }
-        hasCreatedProject = true
-        notify("전역 Footprint를 GPS 좌표로 저장했습니다.")
-    }
 
     func removeLastDraftPoint() {
         guard !pointDraft.isEmpty else { return }

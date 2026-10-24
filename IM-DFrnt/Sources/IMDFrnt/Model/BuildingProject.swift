@@ -97,6 +97,7 @@ struct BuildingProject: Equatable, Codable {
     var levelDisplayOrder: [UUID]?
     /// 좌측 Feature Type 목록의 사용자 지정 순서(type 이름). 없으면 기본 순서다.
     var featureTypeOrder: [String]?
+    var sharedFootprint: SharedFootprint?
 
     /// Older projects stored footprint features under each level.  Footprints
     /// are building-wide IMDF features, so normalize that legacy shape at the
@@ -168,8 +169,16 @@ struct BuildingProject: Equatable, Codable {
         let types = Set(collectionHeaders.keys).union(globalGeoJSON.keys).union(levels.flatMap { $0.geoJSON.keys })
         for type in types {
             var header = collectionHeaders[type] ?? .object(["type": .string("FeatureCollection")])
-            header["features"] = .array((globalGeoJSON[type] ?? []) + levels.flatMap { $0.geoJSON[type] ?? [] })
+            let levelFeatures = levels.flatMap { level in (level.geoJSON[type] ?? []).map(level.registeredFeatureForExport) }
+            header["features"] = .array((globalGeoJSON[type] ?? []) + levelFeatures)
             files[type] = header
+        }
+        if let shared = sharedFootprint {
+            var header = collectionHeaders["footprint.geojson"] ?? .object(["type": .string("FeatureCollection")])
+            let known = Set(shared.originals.values.compactMap { $0["id"]?.string?.lowercased() })
+            let untouched = (globalGeoJSON["footprint.geojson"] ?? []).filter { !known.contains($0["id"]?.string?.lowercased() ?? "") }
+            header["features"] = .array(untouched + shared.geographicFeatures())
+            files["footprint.geojson"] = header
         }
         return files
     }

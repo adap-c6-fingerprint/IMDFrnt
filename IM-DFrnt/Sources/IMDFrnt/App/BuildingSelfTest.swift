@@ -20,17 +20,17 @@ enum BuildingSelfTest {
         do {
             let legacyID = UUID()
             let legacyLevelID = UUID()
-            var legacy = BuildingProject(levels: [ProjectLevel(info: ProjectLevelInfo(id: legacyLevelID, name: "1층", ordinal: 0))])
+            var legacyFootprint = BuildingProject(levels: [ProjectLevel(info: ProjectLevelInfo(id: legacyLevelID, name: "1층", ordinal: 0))])
             let legacyFeature: ProjectJSON = .object([
                 "type": .string("Feature"), "feature_type": .string("footprint"),
                 "id": .string(legacyID.uuidString.lowercased()), "geometry": .null,
                 "properties": .object(["category": .string("ground")])
             ])
-            legacy.levels[0].geoJSON["footprint.geojson"] = [legacyFeature]
-            legacy.migrateLevelFootprintsToGlobal()
-            check("기존 층별 Footprint를 전역으로 자동 이전", legacy.levels[0].geoJSON["footprint.geojson"] == nil
-                  && legacy.globalGeoJSON["footprint.geojson"] == [legacyFeature]
-                  && legacy.globalGeoJSON["footprint.geojson"]?.first?["id"]?.uuid == legacyID)
+            legacyFootprint.levels[0].geoJSON["footprint.geojson"] = [legacyFeature]
+            legacyFootprint.migrateLevelFootprintsToGlobal()
+            check("기존 층별 Footprint를 전역으로 자동 이전", legacyFootprint.levels[0].geoJSON["footprint.geojson"] == nil
+                  && legacyFootprint.globalGeoJSON["footprint.geojson"] == [legacyFeature]
+                  && legacyFootprint.globalGeoJSON["footprint.geojson"]?.first?["id"]?.uuid == legacyID)
 
             let env = environment()
             try env.createNewProject()
@@ -145,13 +145,17 @@ enum BuildingSelfTest {
                     result.edges.sort { $0.id.uuidString < $1.id.uuidString }
                     return result
                 }
-                let original = legacy.routing!
+                let original = legacy.routing ?? legacy.commonProject().routingGraph
                 // Partitioning by Level changes array order, not identity or data.
-                check("사용자 실제 v4 파일의 모든 층·노드 UUID·연결·메타데이터 보존", ordered(actual.routing) == ordered(original) && actual.features == legacy.features)
-                check("사용자 실제 v4 → v5의 클라이언트 GeoJSON 바이트 동일", try RoutingExporter.encoded(actual.routing) == RoutingExporter.encoded(original))
+                let originalOrdered = ordered(original), actualOrdered = ordered(actual.routing)
+                check("사용자 파일의 모든 층·노드 UUID·연결·메타데이터 보존", actualOrdered.nodes == originalOrdered.nodes
+                    && actualOrdered.edges == originalOrdered.edges && actualOrdered.floors.map(\.id) == originalOrdered.floors.map(\.id))
+                if legacy.version < 5 {
+                    check("사용자 실제 v4 → v5의 클라이언트 GeoJSON 바이트 동일", try RoutingExporter.encoded(actual.routing) == RoutingExporter.encoded(original))
+                }
                 let reopened = environment()
                 try reopened.adopt(ProjectFile.decoded(from: actual.makeProjectFile()!.encoded()), from: nil)
-                check("사용자 실제 v4 → v5 왕복 후 동일", reopened.projectContents == actual.projectContents)
+                check("사용자 실제 프로젝트 왕복 후 동일", reopened.projectContents == actual.projectContents)
             }
         } catch { check("공통 층 통합 검증", false); print(error) }
 

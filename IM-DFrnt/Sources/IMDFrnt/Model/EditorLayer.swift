@@ -32,7 +32,7 @@ struct EditorLayer: Identifiable, Hashable {
         case .baseTop: return "상위 기본 레이어"
         case .baseGhost: return "하위 기본 레이어 (원위치)"
         case .attributeFilter(_, let label): return "속성 필터 — \(label)"
-        case .propertyType(let t): return "\(t.displayName) 레이어"
+        case .propertyType(let t): return t == .footprint ? "\(t.displayName) 레이어 · 전역" : "\(t.displayName) 레이어"
         }
     }
 

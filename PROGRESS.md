@@ -1,5 +1,13 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-24 — #74 / IMD-64 전역 Footprint와 층 정렬
+
+- Footprint는 메인 화면의 기존 레이어·점 작도·꼭짓점 편집 UI를 사용하며 건물 전역의 한 저장소를 공유한다. GPS 없이도 작도한다. 기존 층별 편집/GeoJSON Footprint를 ID·원본 속성과 함께 이전한다.
+- Anchor 지정은 Footprint와 실제 지도의 대응점을 지정하는 화면으로 연결했다. Level 정렬 화면에서는 Footprint와 층 외곽만 표시하고 층별 대응점, 표시·불투명도, 이동·회전·균일 크기를 조절한다.
+- 층 → Footprint → GPS 변환을 태깅·가져온 IMDF·길찾기 내보내기에 반영한다. 원본 도면 좌표를 덮어쓰지 않으며 저장·Undo/Redo를 지원한다.
+- CLI 검증: Footprint 17/17, Building 61/61, Project 24/24, Routing 164/164, 전체 SelfTest ALL PASS. 검증용 앱에서 메인 레이어 열기, Footprint Anchor 화면·GPS 수치 수정, Level 정렬 화면·회전·층 숨김·대응점 화면 배치를 확인했다. 지도 타일 로딩/실제 지도 클릭까지 검증한 것은 아니다.
+- 상세 사용자 흐름: [전역 Footprint 사용법](docs/projects/GLOBAL_FOOTPRINT.md).
+
 ## 2026-10-24 — 신기능 13항(B안): 수직 이동 노드의 층별 복제
 
 - 구현 방식은 **B안(수동 기준 노드의 층별 복제)**으로 정했다. A안(엘리베이터 전면 자동 계산)은 이번 범위에 넣지 않았다.

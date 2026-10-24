@@ -9,6 +9,7 @@ enum IMDFrntMain {
         if AppEnvironment.isRunningSelfTests {
             print("== CLI self-test: before AppKit application startup ==")
             Task {
+                await FootprintRegistrationSelfTest.runIfRequested()
                 await DrawingLoadingSelfTest.runIfRequested()
                 await DocumentOpeningSelfTest.runIfRequested()
                 await BuildingSelfTest.runIfRequested()

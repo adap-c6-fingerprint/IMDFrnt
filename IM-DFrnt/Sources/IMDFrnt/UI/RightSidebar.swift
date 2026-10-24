@@ -86,7 +86,7 @@ struct RightSidebar: View {
             }
             Spacer()
             Button { env.enterAnchorScreen() } label: {
-                Label("Anchor \(env.anchors.pairs.count)", systemImage: "scope")
+                Label("Footprint GPS \(env.sharedFootprint.anchors.pairs.count)", systemImage: "scope")
             }
             .controlSize(.small)
             Button {

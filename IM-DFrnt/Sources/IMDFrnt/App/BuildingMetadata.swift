@@ -31,30 +31,6 @@ extension AppEnvironment {
         hasCreatedProject = true
     }
 
-    /// 현재 층 도면에서 전역 Footprint를 그린다. 층의 IMDF 좌표 또는
-    /// Anchor 변환이 없으면 도면 좌표를 위경도로 바꿀 수 없으므로 시작하지 않는다.
-    func beginGlobalFootprintDrawing() {
-        guard let floor = currentRoutingFloor, floor.hasGeographicCoordinates else {
-            notify("현재 층에 IMDF 좌표 또는 3개 이상의 Anchor가 있어야 전역 Footprint를 그릴 수 있습니다.", isError: true)
-            return
-        }
-        guard document != nil else {
-            notify("현재 층 도면이 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.", isError: true)
-            return
-        }
-        perform("전역 Footprint 작도 시작") {
-            layers.addPropertyTypeLayer(.footprint)
-            layers.isolatedFeature = nil
-            layers.excludedFeature = nil
-            selection.clear()
-            layerEditMode = .point
-            polygonWorkMode = .include
-            faceSelection = []
-            pointDraft = PointDraft()
-            isDrawingGlobalFootprint = true
-        }
-        notify("현재 층 도면에 Footprint 꼭짓점을 찍으세요. 닫고 저장하면 GPS 전역 Footprint로 변환됩니다.")
-    }
 
     /// Save a Footprint geometry while retaining the Feature identity and
     /// properties. Canvas authoring and map re-picking both use this path.
