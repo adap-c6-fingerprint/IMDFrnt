@@ -309,7 +309,10 @@ extension ProjectFile {
 
     /// Migrate once at the application boundary, retaining every old editor store.
     func commonProject() -> BuildingProject {
-        if let buildingProject { return buildingProject }
+        if var buildingProject {
+            buildingProject.migrateLevelFootprintsToGlobal()
+            return buildingProject
+        }
         var project = BuildingProject()
         project.applyRouting(routing ?? RoutingGraph())
         if hasDrawing != false {
@@ -326,6 +329,7 @@ extension ProjectFile {
                     sourceName: sourceName, svg: svg, anchors: anchors), editing: editing))
             }
         }
+        project.migrateLevelFootprintsToGlobal()
         return project
     }
 }

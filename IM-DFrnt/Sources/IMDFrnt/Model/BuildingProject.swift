@@ -98,6 +98,26 @@ struct BuildingProject: Equatable, Codable {
     /// 좌측 Feature Type 목록의 사용자 지정 순서(type 이름). 없으면 기본 순서다.
     var featureTypeOrder: [String]?
 
+    /// Older projects stored footprint features under each level.  Footprints
+    /// are building-wide IMDF features, so normalize that legacy shape at the
+    /// project boundary before the editor/exporter sees it.
+    mutating func migrateLevelFootprintsToGlobal() {
+        let key = "footprint.geojson"
+        var shared = globalGeoJSON[key] ?? []
+        var knownIDs = Set(shared.compactMap { $0["id"]?.string?.lowercased() })
+
+        for index in levels.indices {
+            let legacy = levels[index].geoJSON.removeValue(forKey: key) ?? []
+            for feature in legacy {
+                let id = feature["id"]?.string?.lowercased()
+                if let id, knownIDs.contains(id) { continue }
+                shared.append(feature)
+                if let id { knownIDs.insert(id) }
+            }
+        }
+        if !shared.isEmpty { globalGeoJSON[key] = shared }
+    }
+
     func validate() throws {
         guard Set(levels.map(\.id)).count == levels.count,
               Set(levels.map { $0.info.ordinal }).count == levels.count else {

@@ -1,3 +1,5 @@
+import CoreLocation
+import MapKit
 import SwiftUI
 
 struct BuildingManager: View {
@@ -118,6 +120,7 @@ private struct ManifestEditor: View {
 
 private struct FootprintEditor: View {
     @EnvironmentObject var env: AppEnvironment
+    @Environment(\.dismiss) private var dismiss
     @State private var selectedID: UUID?
     @State private var category = "ground"
     @State private var geometry = ""
@@ -139,6 +142,13 @@ private struct FootprintEditor: View {
             }
             HStack {
                 Button("새 Footprint") { selectedID = nil; geometry = ""; error = nil }
+                Button {
+                    env.beginGlobalFootprintDrawing()
+                    if env.isDrawingGlobalFootprint { dismiss() }
+                } label: {
+                    Label("현재 층에서 그리기", systemImage: "pencil.and.outline")
+                }
+                .disabled(env.currentRoutingFloor?.hasGeographicCoordinates != true || env.document == nil)
                 Button("현재 층 윤곽 가져오기") {
                     geometry = env.activeLevel?.geoJSON["level.geojson"]?.first?["geometry"]?.text ?? ""
                 }.disabled(env.activeLevel?.geoJSON["level.geojson"]?.first?["geometry"] == nil)
@@ -148,6 +158,22 @@ private struct FootprintEditor: View {
             }
             Text("실제 경도·위도의 Polygon/MultiPolygon geometry를 입력합니다. 좌표를 적용하면 저장되는 도형 자체가 바뀝니다.")
                 .font(.caption).foregroundStyle(.secondary)
+            if let value = try? ProjectJSON.parse(Data(geometry.utf8)),
+               let rings = try? FootprintGeometry.rings(value), value["type"]?.string == "Polygon" {
+                FootprintMapEditor(rings: rings) { updated in
+                    do {
+                        let ringJSON = updated.map { point in
+                            ProjectJSON.array([.number(Decimal(point.longitude)), .number(Decimal(point.latitude))])
+                        }
+                        let coordinates = ProjectJSON.array([.array([.array(ringJSON)])])
+                        let value: ProjectJSON = .object(["type": .string("Polygon"), "coordinates": coordinates])
+                        geometry = value.text
+                        selectedID = try env.saveFootprint(id: selectedID, geometryText: geometry, category: category)
+                        error = nil
+                    } catch let saveError { error = saveError.localizedDescription }
+                }
+                .frame(height: 270)
+            }
             JSONTextEditor(text: $geometry, height: 200)
             if let value = try? ProjectJSON.parse(Data(geometry.utf8)),
                let rings = try? FootprintGeometry.rings(value) {
@@ -174,6 +200,86 @@ private struct FootprintEditor: View {
         category = feature["properties"]?["category"]?.string ?? "ground"
         geometry = feature["geometry"]?.text ?? ""
         error = nil
+    }
+}
+
+/// WGS84 Footprint의 꼭짓점을 지도에서 다시 찍는 간단한 편집기.
+/// 기존 Feature의 ID와 나머지 properties는 saveFootprint가 그대로 보존한다.
+private struct FootprintMapEditor: View {
+    let rings: [[[Double]]]
+    let apply: ([GeoPoint]) -> Void
+    @State private var points: [GeoPoint] = []
+    @State private var isPicking = false
+    @State private var camera: MapCameraPosition = .automatic
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("GPS 꼭짓점 다시 찍기").font(.caption.weight(.semibold))
+                Spacer()
+                Button(isPicking ? "찍기 완료" : "GPS 점 다시 찍기") {
+                    if isPicking { isPicking = false }
+                    else { points = []; isPicking = true }
+                }
+                .buttonStyle(.bordered)
+                Button("GPS 좌표 적용") { apply(points) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(points.count < 3)
+            }
+            Text(isPicking ? "지도를 클릭해 꼭짓점을 순서대로 찍으세요. 기존 점은 초기화됩니다." : "현재 Footprint를 지도에서 확인하고, 필요하면 GPS 점을 다시 찍어 적용합니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+            MapReader { proxy in
+                Map(position: $camera) {
+                    if points.count >= 2 {
+                        MapPolyline(coordinates: points.map(\.clCoordinate) + [points[0].clCoordinate])
+                            .stroke(.blue, lineWidth: 3)
+                    }
+                    ForEach(Array(points.enumerated()), id: \.offset) { index, point in
+                        Annotation("GPS \(index + 1)", coordinate: point.clCoordinate) {
+                            Text("\(index + 1)")
+                                .font(.caption2.weight(.bold))
+                                .padding(4)
+                                .background(.blue, in: Circle())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    if !isPicking {
+                        ForEach(Array(Array(rings.first ?? []).dropLast().enumerated()), id: \.offset) { index, value in
+                            if value.count >= 2 {
+                                Annotation("기존 GPS \(index + 1)", coordinate: CLLocationCoordinate2D(latitude: value[1], longitude: value[0])) {
+                                    Image(systemName: "circle.fill").foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                    }
+                }
+                .overlay {
+                    if isPicking {
+                        Color.white.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .gesture(SpatialTapGesture().onEnded { value in
+                                guard let coordinate = proxy.convert(value.location, from: .local) else { return }
+                                points.append(GeoPoint(longitude: coordinate.longitude, latitude: coordinate.latitude))
+                            })
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
+        }
+        .onAppear {
+            points = rings.first?.dropLast().compactMap { value in
+                guard value.count >= 2 else { return nil }
+                return GeoPoint(longitude: value[0], latitude: value[1])
+            } ?? []
+        }
+        .onChange(of: rings) { _, value in
+            points = value.first?.dropLast().compactMap { point in
+                guard point.count >= 2 else { return nil }
+                return GeoPoint(longitude: point[0], latitude: point[1])
+            } ?? []
+            isPicking = false
+        }
     }
 }
 

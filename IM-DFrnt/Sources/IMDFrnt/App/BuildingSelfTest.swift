@@ -18,6 +18,20 @@ enum BuildingSelfTest {
             AppEnvironment(autosaveFolder: directory, projectDefaults: defaults)
         }
         do {
+            let legacyID = UUID()
+            let legacyLevelID = UUID()
+            var legacy = BuildingProject(levels: [ProjectLevel(info: ProjectLevelInfo(id: legacyLevelID, name: "1층", ordinal: 0))])
+            let legacyFeature: ProjectJSON = .object([
+                "type": .string("Feature"), "feature_type": .string("footprint"),
+                "id": .string(legacyID.uuidString.lowercased()), "geometry": .null,
+                "properties": .object(["category": .string("ground")])
+            ])
+            legacy.levels[0].geoJSON["footprint.geojson"] = [legacyFeature]
+            legacy.migrateLevelFootprintsToGlobal()
+            check("기존 층별 Footprint를 전역으로 자동 이전", legacy.levels[0].geoJSON["footprint.geojson"] == nil
+                  && legacy.globalGeoJSON["footprint.geojson"] == [legacyFeature]
+                  && legacy.globalGeoJSON["footprint.geojson"]?.first?["id"]?.uuid == legacyID)
+
             let env = environment()
             try env.createNewProject()
             env.createBuilding()

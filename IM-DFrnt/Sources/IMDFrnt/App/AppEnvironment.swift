@@ -1628,6 +1628,8 @@ final class AppEnvironment: ObservableObject {
     @Published var layerEditMode: LayerEditMode = .point
     /// 작성 중인 도형. 실행취소 대상이다(점 추가·삭제·이동을 cmd+z로 되돌린다).
     @Published var pointDraft = PointDraft()
+    /// 캔버스에서 찍은 점을 WGS84 전역 footprint로 저장하는 전용 작도 상태.
+    @Published var isDrawingGlobalFootprint = false
     /// 우측 패널에서 MultiPolygon으로 지정해 새 다각형을 받고 있는 feature. 화면 상태라 저장하지 않는다.
     @Published var multiPolygonTargetID: FeatureGroupID?
     /// 면 단위에서 면을 둘러싸는 경계를 지금 레이어로 볼지 모든 레이어로 볼지.
