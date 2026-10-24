@@ -18,10 +18,22 @@ extension AppEnvironment {
         if let i = project.levels.firstIndex(where: { $0.id == routingFloorID }) {
             project.levels[i].editing = levelEditingState
             project.levels[i].info.anchors = anchors
+            let pending = Set(project.sharedFootprint?.pendingMigrationFeatureIDs ?? [])
+            let localFootprints = features.features.filter { $0.featureType == .footprint && !pending.contains($0.id) }
+            if project.sharedFootprint != nil || !localFootprints.isEmpty {
+                let shared = sharedFootprint
+                project.sharedFootprint = shared
+                if project.levels[i].info.footprintRegistration == nil, shared.sourceLevelID == routingFloorID {
+                    project.levels[i].info.footprintRegistration = LevelFootprintRegistration()
+                }
+                for feature in localFootprints { project.levels[i].editing.features.remove(feature.id) }
+            }
         }
+        project.synchronizeFootprintCoordinates()
         return project
     }
 
+    /// Commit the active editor into the canonical project at command/save boundaries.
     func storeActiveLevel() { buildingProject = projectContents }
 
     func loadLevelEditor(_ id: UUID?) throws {
@@ -55,6 +67,12 @@ extension AppEnvironment {
         segmentation = editing.segmentation; auxiliary = editing.auxiliary
         openingGate = editing.openingGate; borrow = editing.borrow
         doorClosures = editing.doorClosures; serials = editing.serials; ids = editing.ids
+        if let shared = buildingProject.sharedFootprint {
+            let transform = level?.info.footprintRegistration?.transform ?? LevelFootprintTransform()
+            for feature in shared.features {
+                features.insert(shared.projected(feature, transform: transform, toLevel: true))
+            }
+        }
         anchors = level?.info.anchors ?? AnchorStore()
         layers = LayerStore(); layers.bootstrap()
         categoryFilters = [:]
@@ -309,7 +327,11 @@ extension ProjectFile {
 
     /// Migrate once at the application boundary, retaining every old editor store.
     func commonProject() -> BuildingProject {
-        if let buildingProject { return buildingProject }
+        if var buildingProject {
+            buildingProject.migrateLevelFootprintsToGlobal()
+            buildingProject.migrateSharedFootprint()
+            return buildingProject
+        }
         var project = BuildingProject()
         project.applyRouting(routing ?? RoutingGraph())
         if hasDrawing != false {
@@ -326,6 +348,8 @@ extension ProjectFile {
                     sourceName: sourceName, svg: svg, anchors: anchors), editing: editing))
             }
         }
+        project.migrateLevelFootprintsToGlobal()
+        project.migrateSharedFootprint()
         return project
     }
 }

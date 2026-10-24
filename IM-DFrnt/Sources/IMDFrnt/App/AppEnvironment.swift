@@ -516,6 +516,7 @@ final class AppEnvironment: ObservableObject {
     @Published var clientDatasetBlockers: [String] = []
     @Published var banner: Banner?
     @Published var showAnchorScreen = false
+    @Published var showLevelFootprintScreen = false
     /// 지도 정렬 화면(신기능 11항, #31). Anchor 화면과 같은 전체 화면 전환이다.
     @Published var showMapAlignScreen = false
     /// 지도에 그릴 층별 선 묶음. 화면 상태가 아니라 계산 캐시라 `@Published`가 아니다.
@@ -546,7 +547,15 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 지오레퍼런싱
 
-    var georeferencer: Georeferencer { Georeferencer(pairs: anchors.pairs) }
+    /// Read synchronized active-level anchors without rebuilding the project on every coordinate lookup.
+    var georeferencer: Georeferencer {
+        if let pairs = activeLevel?.info.footprintGeoAnchors { return Georeferencer(pairs: pairs) }
+        // A first, uncommitted Footprint has no GPS yet, even if its drawing used old anchors.
+        if buildingProject.sharedFootprint == nil, features.features.contains(where: { $0.featureType == .footprint }) {
+            return Georeferencer(pairs: [])
+        }
+        return Georeferencer(pairs: anchors.pairs)
+    }
 
     var residuals: [Double] { georeferencer.residuals(for: anchors.pairs) }
 
@@ -631,6 +640,7 @@ final class AppEnvironment: ObservableObject {
         doorDraftPoints = []
         showRoutingScreen = false
         showAnchorScreen = false
+        showLevelFootprintScreen = false
         showMapAlignScreen = false
         mapAlignPathCache = [:]
         mapAlignPrepareTask?.cancel(); mapAlignPrepareTask = nil
@@ -2087,7 +2097,7 @@ final class AppEnvironment: ObservableObject {
             return
             // 도형이 없는 type은 캔버스에서 할 일이 없다. 레이어 대신 정보 입력 창을 연다.
         }
-        guard type == .opening || openingGate.allowsOtherTypes else {
+        guard type == .opening || type == .footprint || openingGate.allowsOtherTypes else {
             notify("opening을 먼저 태깅해야 합니다. 문을 먼저 확정해야 방 폴리곤을 닫을 수 있습니다.",
                    isError: true)
             // 명세 10-1-2의 안내 문구 그대로.
@@ -2171,7 +2181,7 @@ final class AppEnvironment: ObservableObject {
             return
         }
 
-        let serial = serials.next(for: type)
+        let serial = nextFeatureSerial(for: type)
         var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: owned)
         for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
         let memberTwins = type == .fixture ? freeFixtureMemberTwins(of: owned) : []
@@ -2448,7 +2458,16 @@ final class AppEnvironment: ObservableObject {
 
     /// Anchor 지정 화면에 들어가면 개체 선택·이동·그룹화가 잠긴다.
     func enterAnchorScreen() {
+        storeActiveLevel()
+        guard buildingProject.sharedFootprint?.features.contains(where: { !$0.isInTrash }) == true else {
+            notify("먼저 메인 화면의 footprint 레이어에서 건물 외곽을 그리세요.", isError: true)
+            return
+        }
         selection.clear()
+        cancelPointDraft()
+        showRoutingScreen = false
+        showLevelFootprintScreen = false
+        showMapAlignScreen = false
         mode = .anchorPicking
         showAnchorScreen = true
     }
@@ -2469,6 +2488,11 @@ final class AppEnvironment: ObservableObject {
                                               borrowed: borrow.objects(borrowedBy: fid))
         // 내보내기와 **같은 인자**로 뽑는다. 화면의 좌표 표와 파일에 실리는 좌표가 갈라지면
         // 사용자가 표를 보고 확인한 것이 파일에서는 다른 값이 된다.
+        if f.featureType == .footprint {
+            let transform = activeLevel?.info.footprintRegistration?.transform ?? LevelFootprintTransform()
+            let shared = sharedFootprint
+            return locals.map { ($0, shared.geoPoint(transform.apply($0))) }
+        }
         let g = georeferencer
         return locals.map { ($0, g.geoPoint(for: $0)) }
     }
@@ -2477,6 +2501,19 @@ final class AppEnvironment: ObservableObject {
 
     func export() {
         if showRoutingScreen { exportRoutingGraph(); return }
+        if layers.activePropertyType == .footprint {
+            let shared = sharedFootprint
+            guard shared.isGeoreferenced else { notify("Footprint Anchor 지정에서 GPS 대응점을 먼저 설정하세요.", isError: true); return }
+            do {
+                guard let data = projectContents.imdfFiles()["footprint.geojson"] else { return }
+                guard let object = try JSONSerialization.jsonObject(with: data.data()) as? [String: Any] else {
+                    notify("Footprint GeoJSON 형식이 올바르지 않습니다.", isError: true)
+                    return
+                }
+                if let url = try GeoJSONExporter.write(object, suggestedName: "footprint.geojson") { notify("\(url.lastPathComponent) 저장 완료.") }
+            } catch { notify(error.localizedDescription, isError: true) }
+            return
+        }
         guard let doc = document, let type = layers.activePropertyType else {
             notify("먼저 property type 레이어를 선택하세요.", isError: true)
             return

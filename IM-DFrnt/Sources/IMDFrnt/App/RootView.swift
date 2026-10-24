@@ -21,15 +21,17 @@ struct RootView: View {
         .navigationSubtitle(env.projectSaveStatus)
     }
 
-    private var editorContent: some View {
+    private var editorScreen: some View {
         Group {
             if env.showRoutingScreen {
                 RoutingScreen()
+            } else if env.showLevelFootprintScreen {
+                LevelFootprintScreen()
             } else if env.showMapAlignScreen {
                 MapAlignScreen()
                 // 신기능 11항(#31). 지도를 넓게 써야 하는 작업이라 Anchor 화면처럼 전체 화면 전환이다.
             } else if env.showAnchorScreen {
-                AnchorScreen()
+                FootprintAnchorScreen()
                 // 명세 9항: Anchor 지정은 시트가 아니라 전체 화면 전환이다.
             } else if env.showDoorClosureScreen {
                 DoorClosureScreen()
@@ -62,6 +64,10 @@ struct RootView: View {
                 .overlay(alignment: .topTrailing) { sidebarToggle(.trailing) }
             }
         }
+    }
+
+    private var editorPresentation: some View {
+        editorScreen
         .disabled(env.isProjectBusy)
         .overlay {
             if let task = env.longTask, task.isVisible { LongTaskOverlay(task: task) }
@@ -75,6 +81,10 @@ struct RootView: View {
         .overlay { if env.closedPolygonNotice != nil { polygonNotice } }
         .onAppear { startMonitor() }
         .onDisappear { monitor?.stop() }
+    }
+
+    private var editorInteractionAlerts: some View {
+        editorPresentation
         .alert(env.pendingDeletion?.title ?? "삭제할까요?", isPresented: Binding(
             get: { env.pendingDeletion != nil && !env.showBuildingManager },
             set: { if !$0 { env.cancelDeletion() } }
@@ -105,6 +115,10 @@ struct RootView: View {
         }
         // 신기능 1-2-5. 합치기는 남의 작업을 내 작업에 섞는 일이라, 무엇이 들어오고
         // 무엇이 막혔는지 반드시 보여준다. 조용히 건너뛰면 내보내기 단계에서야 드러난다.
+    }
+
+    private var editorExportAlerts: some View {
+        editorInteractionAlerts
         .alert("배정본 합치기 결과", isPresented: Binding(
             get: { env.mergeReportMessage != nil },
             set: { if !$0 { env.mergeReportMessage = nil } }
@@ -129,6 +143,10 @@ struct RootView: View {
         } message: {
             Text(env.archiveExportBlockers.joined(separator: "\n\n"))
         }
+    }
+
+    private var editorContent: some View {
+        editorExportAlerts
         .alert("클라이언트용 묶음을 만들 수 없습니다", isPresented: Binding(
             get: { !env.clientDatasetBlockers.isEmpty },
             set: { if !$0 { env.clientDatasetBlockers = [] } }

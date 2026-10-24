@@ -39,6 +39,12 @@ enum IMDFArchive {
         let levels = project.levels.sorted { $0.info.ordinal < $1.info.ordinal }
         let imported = project.imdfFiles()
         var blockers: [String] = []
+        if project.sharedFootprint?.pendingMigrationFeatureIDs?.isEmpty == false {
+            blockers.append("이전하지 못한 층별 Footprint가 있습니다. 원본은 보존되어 있습니다. 각 층과 전역 Footprint의 GPS를 설정한 뒤 다시 여세요.")
+        }
+        if let shared = project.sharedFootprint, shared.geographicFeatures().count != shared.features.filter({ !$0.isInTrash }).count {
+            blockers.append("전역 Footprint의 GPS Anchor를 먼저 설정하세요. 서로 일직선이 아닌 대응점 최소 3쌍이 필요합니다.")
+        }
         var warnings: [String] = []
 
         // 1. 층별 준비 — 도면(구성원 개체를 쓰는 예전 feature만 필요), 좌표 변환, 살아 있는 feature.
@@ -64,7 +70,7 @@ enum IMDFArchive {
                 // 점으로 그린 feature는 좌표를 스스로 갖고 있어 도면을 읽지 않아도 된다.
             }
             prepared.append(Prepared(level: level, features: live, document: document,
-                                     georeferencer: Georeferencer(pairs: level.info.anchors.pairs), ids: level.editing.ids))
+                                     georeferencer: Georeferencer(pairs: level.info.footprintGeoAnchors ?? level.info.anchors.pairs), ids: level.editing.ids))
         }
 
         // 2. 막는 조건 — 층 이름을 붙여 어느 층을 고쳐야 하는지 알린다.
@@ -124,7 +130,17 @@ enum IMDFArchive {
         var collections: [String: [Any]] = [:]
         for name in featureTypes.map({ $0.rawValue + ".geojson" }) {
             if let features = imported[name]?["features"]?.array, !features.isEmpty {
-                collections[name] = features.map(\.anyValue)
+                collections[name] = features.map { source in
+                    var feature = source
+                    let current = feature["properties"]?["building_ids"]
+                    if name == "footprint.geojson", buildingIDs.count == 1,
+                       current == nil || current == .null || current?.array.isEmpty == true {
+                        var properties = feature["properties"] ?? .object([:])
+                        properties["building_ids"] = .array([.string(buildingIDs[0].uuidString.lowercased())])
+                        feature["properties"] = properties
+                    }
+                    return feature.anyValue
+                }
                 // 가져온 IMDF의 feature는 id·속성을 바꾸지 않고 그대로 싣는다.
             }
         }

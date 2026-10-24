@@ -20,7 +20,7 @@ struct LeftSidebar: View {
                     SidebarSection(id: .leftMode, title: "보기 모드") { modeSection }
                     Divider()
                     SidebarSection(id: .leftAnchor, title: "Anchor 지정",
-                                   badge: "\(env.anchors.pairs.count)쌍") { anchorEntry }
+                                   badge: "\(env.sharedFootprint.anchors.pairs.count)쌍") { anchorEntry }
                     Divider()
                     SidebarSection(id: .leftGate, title: "Opening 게이트") { openingGateBar }
                     // property type 목록 **바로 위**에 둔다. 잠긴 이유를 목록 옆에서 즉시 읽어야
@@ -317,6 +317,8 @@ struct LeftSidebar: View {
 
     private var anchorEntry: some View {
         VStack(alignment: .leading, spacing: 6) {
+            Button("Level · Footprint 정렬") { env.enterLevelFootprintScreen() }
+                .buttonStyle(.bordered)
             Button {
                 env.enterAnchorScreen()
             } label: {
@@ -324,7 +326,7 @@ struct LeftSidebar: View {
                     Image(systemName: "scope").frame(width: 15)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Anchor 지정").font(.callout.weight(.medium))
-                        Text("\(env.anchors.pairs.count) / \(AnchorStore.minimumPairs)쌍")
+                        Text("Footprint GPS · \(env.sharedFootprint.anchors.pairs.count) / \(AnchorStore.minimumPairs)쌍")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -334,7 +336,7 @@ struct LeftSidebar: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, 7).padding(.horizontal, 8)
-            .background(env.anchors.isConfigured
+            .background(env.sharedFootprint.isGeoreferenced
                         ? Color.green.opacity(0.14) : Color.orange.opacity(0.14),
                         in: RoundedRectangle(cornerRadius: 6))
             .disabled(env.document == nil)
@@ -361,9 +363,9 @@ struct LeftSidebar: View {
             .help("도면을 위성사진 위에 직접 맞추고, 맞춘 도면에서 Anchor를 찍습니다(신기능 11항). ⌘⇧K")
             // 기존 'Anchor 지정'(1:1 찍기)은 그대로 둔다(사용자 결정, 2026-10-15).
 
-            Text(env.anchors.isConfigured
-                 ? "좌표 변환이 가능합니다."
-                 : "3쌍 이상 지정해야 위경도 좌표와 내보내기가 열립니다.")
+            Text(env.sharedFootprint.isGeoreferenced
+                 ? "Footprint의 GPS가 설정되었습니다. 층별 정렬을 진행하세요."
+                 : "Footprint를 그린 뒤 Anchor 3쌍 이상으로 GPS를 설정하세요.")
                 .font(.caption2).foregroundStyle(.tertiary)
         }
     }

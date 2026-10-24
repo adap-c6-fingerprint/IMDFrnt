@@ -68,6 +68,7 @@ struct IMDFrntApp: App {
                 // 같은 단축키를 두고 다투게 된다(명세 디버깅 8번).
             }
             CommandMenu("도구") {
+                Button("Level · Footprint 정렬") { env.enterLevelFootprintScreen() }
                 Button("길찾기 노드 편집") { env.enterRoutingScreen() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("길찾기 GeoJSON 내보내기…") { env.exportRoutingGraph() }

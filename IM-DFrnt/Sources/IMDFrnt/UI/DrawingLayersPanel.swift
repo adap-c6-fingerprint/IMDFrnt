@@ -20,11 +20,8 @@ struct DrawingLayersPanel: View {
                     Button("참고 도면 불러오기…") { env.importRoutingDrawing() }
                     Text("참고 도면은 도면 영역에 맞춰 표시됩니다.").font(.caption2).foregroundStyle(.secondary)
                 }
-                Divider()
-                controls("건물 Footprint", kind: "footprint", value: env.footprintPresentation)
-                if !level.info.hasGeographicCoordinates {
-                    Text("좌표 기준점을 설정하면 건물 외곽이 표시됩니다.").font(.caption2).foregroundStyle(.secondary)
-                }
+                Text("전역 Footprint의 표시·편집은 메인 화면의 footprint 레이어에서 관리합니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
             } else {
                 Text("먼저 층을 추가하세요.").foregroundStyle(.secondary)
             }

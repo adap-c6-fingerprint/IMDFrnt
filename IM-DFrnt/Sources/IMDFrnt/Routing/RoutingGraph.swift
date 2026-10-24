@@ -13,13 +13,17 @@ struct ProjectLevelInfo: Identifiable, Equatable, Codable {
     var mapAlignment: MapAlignment?
     /// IMDF already contains WGS 84 geometry; no manual calibration is needed.
     var imdfCoordinates: IMDFCoordinateSpace?
+    var footprintRegistration: LevelFootprintRegistration?
+    var footprintGeoAnchors: [AnchorPair]?
 
     var hasGeographicCoordinates: Bool {
-        imdfCoordinates?.isValid == true || Georeferencer(pairs: anchors.pairs).isConfigured
+        if let footprintGeoAnchors { return Georeferencer(pairs: footprintGeoAnchors).isConfigured }
+        return imdfCoordinates?.isValid == true || Georeferencer(pairs: anchors.pairs).isConfigured
     }
 
     /// 같은 실제 좌표가 이 층 도면에서 놓이는 자리. 층마다 도면 좌표계가 달라 위경도를 거쳐 옮긴다.
     func localPoint(for geo: GeoPoint) -> LocalPoint? {
+        if let footprintGeoAnchors { return Georeferencer(pairs: footprintGeoAnchors).localPoint(for: geo) }
         let point: LocalPoint?
         if let coordinates = imdfCoordinates {
             point = coordinates.isValid ? coordinates.localPoint(longitude: geo.longitude, latitude: geo.latitude) : nil
@@ -31,6 +35,7 @@ struct ProjectLevelInfo: Identifiable, Equatable, Codable {
     }
 
     func geoPoint(for point: LocalPoint) -> GeoPoint? {
+        if let footprintGeoAnchors { return Georeferencer(pairs: footprintGeoAnchors).geoPoint(for: point) }
         if let coordinates = imdfCoordinates {
             return coordinates.isValid ? coordinates.geoPoint(for: point) : nil
         }

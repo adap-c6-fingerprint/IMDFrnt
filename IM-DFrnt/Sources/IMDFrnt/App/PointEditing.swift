@@ -541,6 +541,7 @@ extension AppEnvironment {
         vertexDrag = nil
     }
 
+
     func removeLastDraftPoint() {
         guard !pointDraft.isEmpty else { return }
         perform("점 삭제") {
@@ -549,6 +550,7 @@ extension AppEnvironment {
         }
     }
 
+    /// Save point/line geometry with a serial reserved at the actual creation boundary.
     private func savePointDrawnFeature(type: IMDFFeatureType, vertices: [LocalPoint]) {
         if type.requiredGeometry == .lineString,
            vertices.count >= 2, vertices[0].distance(to: vertices[1]) <= SnapPointExtractor.mergeTolerance {
@@ -556,7 +558,7 @@ extension AppEnvironment {
             return
             // 길이 0인 LineString은 GeoJSON으로 나가면 그대로 깨진 opening이 된다.
         }
-        let serial = serials.next(for: type)
+        let serial = nextFeatureSerial(for: type)
         var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: [])
         for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
         f.drawnVertices = vertices
@@ -573,8 +575,9 @@ extension AppEnvironment {
         // 이름표를 누른 것과 같게 그 feature를 고른 상태로 둔다 — 창은 고른 feature에만 뜬다.
     }
 
+    /// Save a local ring; shared Footprint serials are reserved without mutating other floors.
     private func savePolygonDrawnFeature(type: IMDFFeatureType, ring: [LocalPoint]) {
-        let serial = serials.next(for: type)
+        let serial = nextFeatureSerial(for: type)
         var f = FeatureGroup(featureType: type, serialNumber: serial, memberIDs: [])
         for field in PropertySchema.fields(for: type) { f.properties[field.key] = .null }
         let (aligned, moved) = alignRings([ring], type: type, excluding: nil)

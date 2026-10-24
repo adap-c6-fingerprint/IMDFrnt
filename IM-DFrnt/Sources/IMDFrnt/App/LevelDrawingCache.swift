@@ -131,9 +131,11 @@ final class LevelDrawingCache {
     }
 
     private func cost(_ value: PreparedLevelDrawing) -> Int {
-        value.input.svg.utf8.count + value.renderEntries.count * 512
-            + value.renderEntries.values.reduce(0) { $0 + $1.segments.count * 96 }
-            + (value.document?.rasterImages.reduce(0) { $0 + $1.image.width * $1.image.height * 4 } ?? 0)
+        let sourceBytes: Int = value.input.svg.utf8.count
+        let entryBytes: Int = value.renderEntries.count * 512
+        let segmentBytes: Int = value.renderEntries.values.reduce(0) { $0 + $1.segments.count * 96 }
+        let imageBytes: Int = value.document?.rasterImages.reduce(0) { $0 + $1.image.width * $1.image.height * 4 } ?? 0
+        return sourceBytes + entryBytes + segmentBytes + imageBytes
     }
 
     private func touch(_ id: UUID) {

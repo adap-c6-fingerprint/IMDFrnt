@@ -57,7 +57,6 @@ struct BuildingManager: View {
                                 }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
                             }
                         }
-                        GroupBox("건물 Footprint") { FootprintEditor().padding(6) }
                         GroupBox("도면 레이어") { DrawingLayersPanel().padding(6) }
                         GroupBox("Manifest") { ManifestEditor().padding(6) }
                     }.padding()
@@ -116,95 +115,6 @@ private struct ManifestEditor: View {
     }
 }
 
-private struct FootprintEditor: View {
-    @EnvironmentObject var env: AppEnvironment
-    @State private var selectedID: UUID?
-    @State private var category = "ground"
-    @State private var geometry = ""
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(env.globalFeatures("footprint"), id: \.featureID) { feature in
-                if let id = feature["id"]?.uuid {
-                    HStack {
-                        Button { select(feature) } label: {
-                            Label("\(feature["properties"]?["category"]?.string ?? "Footprint") · \(id.uuidString.prefix(8))",
-                                  systemImage: selectedID == id ? "checkmark.circle.fill" : "circle")
-                        }
-                        Spacer()
-                        Button(role: .destructive) { env.requestFootprintDeletion(id) } label: { Text("삭제").foregroundStyle(.red) }
-                    }
-                }
-            }
-            HStack {
-                Button("새 Footprint") { selectedID = nil; geometry = ""; error = nil }
-                Button("현재 층 윤곽 가져오기") {
-                    geometry = env.activeLevel?.geoJSON["level.geojson"]?.first?["geometry"]?.text ?? ""
-                }.disabled(env.activeLevel?.geoJSON["level.geojson"]?.first?["geometry"] == nil)
-                Picker("분류", selection: $category) {
-                    Text("지상").tag("ground"); Text("상부").tag("aerial"); Text("지하").tag("subterranean")
-                }.frame(width: 160)
-            }
-            Text("실제 경도·위도의 Polygon/MultiPolygon geometry를 입력합니다. 좌표를 적용하면 저장되는 도형 자체가 바뀝니다.")
-                .font(.caption).foregroundStyle(.secondary)
-            JSONTextEditor(text: $geometry, height: 200)
-            if let value = try? ProjectJSON.parse(Data(geometry.utf8)),
-               let rings = try? FootprintGeometry.rings(value) {
-                FootprintPreview(rings: rings).frame(height: 140)
-            }
-            if let error { Text(error).font(.caption).foregroundStyle(.red) }
-            Button(selectedID == nil ? "Footprint 생성" : "Footprint 좌표 적용") {
-                do {
-                    selectedID = try env.saveFootprint(id: selectedID, geometryText: geometry, category: category)
-                    error = nil
-                } catch { self.error = error.localizedDescription }
-            }.disabled(geometry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: env.globalFeatures("footprint")) { _, features in
-                if let id = selectedID {
-                    if let feature = features.first(where: { $0["id"]?.uuid == id }) { select(feature) }
-                    else { selectedID = nil; geometry = "" }
-                }
-            }
-    }
-
-    private func select(_ feature: ProjectJSON) {
-        selectedID = feature["id"]?.uuid
-        category = feature["properties"]?["category"]?.string ?? "ground"
-        geometry = feature["geometry"]?.text ?? ""
-        error = nil
-    }
-}
-
-/// Preview the entered WGS84 geometry, including holes, before applying it.
-private struct FootprintPreview: View {
-    let rings: [[[Double]]]
-    var body: some View {
-        Canvas { context, size in
-            let points = rings.flatMap { $0 }.filter { $0.count >= 2 && $0[0].isFinite && $0[1].isFinite }
-            guard let west = points.map({ $0[0] }).min(), let east = points.map({ $0[0] }).max(),
-                  let south = points.map({ $0[1] }).min(), let north = points.map({ $0[1] }).max(),
-                  east > west, north > south else { return }
-            let longitudeScale = max(0.001, cos((south + north) / 2 * .pi / 180))
-            let width = (east - west) * longitudeScale, height = north - south
-            let scale = min((size.width - 20) / width, (size.height - 20) / height)
-            let x = (size.width - width * scale) / 2, y = (size.height - height * scale) / 2
-            var path = Path()
-            for ring in rings {
-                for (i, point) in ring.enumerated() where point.count >= 2 {
-                    let p = CGPoint(x: x + (point[0] - west) * longitudeScale * scale,
-                                    y: y + (north - point[1]) * scale)
-                    if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
-                }
-                path.closeSubpath()
-            }
-            context.fill(path, with: .color(.blue.opacity(0.15)), style: FillStyle(eoFill: true))
-            context.stroke(path, with: .color(.blue), lineWidth: 1)
-        }.background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
-            .accessibilityLabel("Footprint 위경도 도형 미리보기")
-    }
-}
 
 private struct JSONTextEditor: View {
     @Binding var text: String

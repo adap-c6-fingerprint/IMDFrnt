@@ -57,7 +57,7 @@ extension AppEnvironment {
     var referenceInput: CanvasReferenceInput? {
         guard let level = activeLevel else { return nil }
         return CanvasReferenceInput(levelID: level.id, svg: level.referenceDrawing?.svg ?? "",
-            sourceName: level.referenceDrawing?.sourceName ?? "", footprints: globalFeatures("footprint"),
+            sourceName: level.referenceDrawing?.sourceName ?? "", footprints: buildingProject.sharedFootprint == nil ? globalFeatures("footprint") : [],
             coordinates: level.info.imdfCoordinates, anchors: anchors.pairs)
     }
 
