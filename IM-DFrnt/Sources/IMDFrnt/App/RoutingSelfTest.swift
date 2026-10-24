@@ -192,6 +192,7 @@ enum RoutingSelfTest {
         DeletionSelfTest.run(check: check)
         IMDFSelfTest.run(check: check)
         ClientDatasetSelfTest.run(check: check)
+        VerticalReplicationSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }
