@@ -1,6 +1,13 @@
 # Self-test 재현
 
-## 현재 검증 결과 — PR #80 리뷰 1~6번 후속
+## 현재 검증 결과 — PR #80 추가 리뷰 7건 후속 (2026-10-26)
+
+- Debug·Release 빌드 및 ad-hoc 서명 검증 성공. 별도 앱 `IM-DFrnt/.build/AIMP-review-safety/IM-DFrnt.app`으로 전체 CLI 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, **Footprint 93/93, IMDF Compliance 113/113**.
+- 새 회귀 검사는 운영시간 중간/마지막/중복 삭제·지연 입력·재로딩·시간 값 비교/문자열 보존, 지역 태그 이름 표시, 꼭짓점 이동 차단과 정상 이동 유지, 점 Feature 범위 거부 시 상태 보존 및 선형 투영 유지, 반복 Manifest 충돌/해결 상태/새 충돌/Undo/Redo/저장 왕복, IMDF 준수 검사의 PASS/FAIL 요약을 확인한다.
+- 로그: `imdfrnt-self-tests.VZ7JRY`(로컬 임시 폴더). 실패 요약은 `summary(total: 3, failures: 1)`의 `2/3 FAIL` 및 정상 `3/3 PASS`를 직접 검사했다. 사용자 프로젝트와 기존 앱은 수정하지 않았다.
+- 실제 GUI 조작·Apple Sandbox/AIMP 제출·사람 코드리뷰/승인은 별도다. 안정 ID와 지연 입력의 모델 경계 검사를 GUI 수동 재현으로 표현하지 않는다. 성능 캐시·주석 커버리지는 계속 제외한다.
+
+## PR #80 리뷰 1~6번 검증 기록
 
 - Debug·Release 빌드 및 ad-hoc 서명 검증 성공. 별도 앱 `IM-DFrnt/.build/AIMP-coderabbit-fixes/IM-DFrnt.app`으로 전체 CLI 8/8 모드 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, **Footprint 93/93, IMDF Compliance 83/83**.
 - IMDF Compliance에는 층 복사 시 내부/export UUID 재발급·참조/소유권/대여 갱신·저장 왕복·Undo/Redo·같은 층 교체 시 identity 유지·원본 GeoJSON 및 종속 Occupant 이전·최종 내보내기 중복 검사, 지역 언어 태그와 추가 언어 보존, 면 선택 모드의 표시점/Anchor 우선 입력 회귀 검사를 포함한다.

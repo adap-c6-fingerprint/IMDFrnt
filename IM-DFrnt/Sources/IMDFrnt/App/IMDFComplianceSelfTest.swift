@@ -81,6 +81,9 @@ enum IMDFTestFixtures {
 
 @MainActor
 enum IMDFComplianceSelfTest {
+    static func summary(total: Int, failures: Int) -> String {
+        "== IMDF Compliance: \(total - failures)/\(total) \(failures == 0 ? "PASS" : "FAIL") =="
+    }
     static func runIfRequested() async {
         guard CommandLine.arguments.contains("--imdf-compliance-selftest") else { return }
         var total = 0, failures = 0
@@ -305,8 +308,9 @@ enum IMDFComplianceSelfTest {
             catch let b as IMDFArchive.Blocked { check("미해결 Manifest 충돌 내보내기 차단", b.messages.contains { $0.contains("Manifest 값이") }) }
             check("구버전이 v7 새 속성을 조용히 삭제하지 않도록 형식 상향", ProjectFile.currentVersion == 7)
             try await ReviewFollowupSelfTest.run(check)
+            try await ReviewSafetySelfTest.run(check)
         } catch { check("IMDF 준수 테스트 실행", false); print(error) }
-        print("== IMDF Compliance: \(total - failures)/\(total) PASS ==")
+        print(summary(total: total, failures: failures))
         exit(failures == 0 ? 0 : 1)
     }
 }

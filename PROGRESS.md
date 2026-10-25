@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-26 — #79 / IMD-68 / PR #80 추가 리뷰 7건
+
+- 운영시간 구간은 안정 ID로 조회·편집·삭제하며 삭제 후 지연 입력은 무시한다. 동일 시간 재로딩은 ID를 유지하고 시간 값 비교와 hours 문자열 형식은 그대로다.
+- 표시점/Anchor 입력 중 꼭짓점 드래그를 시작하지 않으며, 점형 Feature에만 기존 범위 검사를 연결한다. 선형 투영·면형 검사·일반 꼭짓점 이동은 유지한다. 캔버스 이름은 기본 태그 우선 및 지역 태그 fallback을 적용한다.
+- 동일 Manifest 충돌을 다시 보관하거나 해결 상태를 해제하지 않는다. 새로운 충돌만 재확인하며 이전 사본·Undo/Redo를 보존한다.
+- IMDF 준수 검사 요약은 실제 실패 수에 따라 PASS/FAIL을 출력한다. 길찾기 저장 문서의 v7 저장·v2~v6 읽기·buildingProject 공통 구조를 갱신했다.
+- Debug·Release 빌드·서명 및 CLI 전체 8/8 통과: Footprint 93/93, IMDF Compliance 113/113. 새 검사 30건은 안정 ID/삭제/지연 입력, 이름 표시, 우선 입력, 점 범위, 반복 충돌, 저장/Undo/Redo와 요약을 포함한다. 앱은 `.build/AIMP-review-safety/IM-DFrnt.app`이며 기존 앱·프로젝트는 보존한다.
+- 성능 캐시·주석 커버리지와 무관한 기존 파일 권한 변경은 제외한다. 누적 영향도 L이며 GUI/AIMP 수동 검증·사람 코드리뷰/승인은 별도다. 사용자 요청에 따라 커밋·push 후 `@coderabbitai review`를 요청한다.
+
 ## #79 / IMD-68 / PR #80 — CodeRabbit 리뷰 1~6번 후속
 
 - 충돌하는 복사 도형의 내부 ID와 export UUID를 새로 발급하고 속성 참조·소유권·대여·GeoJSON·출입구 노드 및 종속 Occupant/Relationship 참조를 함께 갱신한다. 같은 층 교체 시 충돌하지 않는 ID는 유지한다.
