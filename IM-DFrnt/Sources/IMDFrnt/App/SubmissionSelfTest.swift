@@ -59,13 +59,29 @@ enum SubmissionSelfTest {
         level.properties["short_name"] = .localized(en: "", ko: "1")
         env.features.insert(level)
         check("#79 ordinal 0 외곽 맞추기 사용 가능", env.groundFootprintUnavailableReason == nil)
+        env.updateProjectLevel(env.routingFloorID!) { $0.ordinal = 1 }
+        env.updateProperty("ordinal", value: .integer(0), in: level.id)
+        check("#79 층 관리 1·Level 속성 0도 내보내기 기준으로 활성화", env.groundFootprintUnavailableReason == nil)
+        let liveGround = try env.groundFootprintRings()
+        check("#79 미저장 ordinal 0 변경도 외곽 복사에 즉시 반영", liveGround == level.polygonRings)
         env.matchFootprintToGroundLevel(footprint.id)
         check("#79 기준층 외곽·구멍·MultiPolygon으로 Footprint 교체", env.features.feature(footprint.id)?.polygonRings == level.polygonRings
             && env.features.feature(footprint.id)?.multiPolygon == true)
         env.undo()
         check("#79 외곽 맞추기 Undo", env.features.feature(footprint.id)?.polygonRings == [outer])
         env.updateProjectLevel(env.routingFloorID!) { $0.ordinal = 1 }
+        env.updateProperty("ordinal", value: .integer(1), in: level.id)
         check("#79 ordinal 0이 없으면 비활성화 사유", env.groundFootprintUnavailableReason?.contains("ordinal 0") == true)
+        env.updateProjectLevel(env.routingFloorID!) { $0.ordinal = 0 }
+        check("#79 층 관리 0이어도 명시한 Level ordinal 1을 기준층으로 오인하지 않음", env.groundFootprintUnavailableReason != nil)
+        env.updateProperty("ordinal", value: .null, in: level.id)
+        check("#79 Level ordinal 미설정이면 층 관리 0으로 fallback", env.groundFootprintUnavailableReason == nil)
+        var importedGround = ProjectLevel(info: ProjectLevelInfo(name: "가져온 1층", ordinal: 1))
+        importedGround.geoJSON["level.geojson"] = [IMDFTestFixtures.feature("level", properties: ["ordinal": .number(0)])]
+        check("#79 가져온 GeoJSON의 ordinal도 동일하게 검색", importedGround.exportsLevelOrdinal(0))
+        importedGround.info.ordinal = 0
+        importedGround.geoJSON["level.geojson"]![0]["properties"]?["ordinal"] = nil
+        check("#79 가져온 원본에 없는 ordinal을 층 관리 값으로 추측하지 않음", !importedGround.exportsLevelOrdinal(0))
 
         let hours = "Mo-Fr 09:00-12:00,13:00-18:00; Sa 22:00-02:00; Su off"
         var weekly = WeeklyOpeningHours.parse("Mo-Fr 09:00-12:00,13:00-18:00; Sa off; Su off")
@@ -151,6 +167,11 @@ enum SubmissionSelfTest {
             check("#79 실제 v7 프로젝트 앱 열기 및 metadata·trash·legacy 보존", reopened.globalGeoJSON == project.globalGeoJSON
                 && reopened.metadataTrash == project.metadataTrash && reopened.legacyMetadataGroups == project.legacyMetadataGroups
                 && reopened.levels.count == project.levels.count)
+            let grounds = reopened.levels.filter { $0.exportsLevelOrdinal(0) }
+            check("#79 실제 프로젝트의 Level 속성 ordinal 0 탐색", grounds.count == 1 && grounds.first?.info.name == "1층")
+            check("#79 실제 프로젝트 Footprint 일치 버튼 활성화", env.groundFootprintUnavailableReason == nil)
+            let rings = try env.groundFootprintRings()
+            check("#79 실제 프로젝트 기준층 외곽 복사 계산", !rings.isEmpty && rings.allSatisfy { $0.count >= 3 })
             check("#79 실제 프로젝트 원본 바이트 불변", try Data(contentsOf: url) == original)
         }
     }

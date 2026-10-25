@@ -22,7 +22,13 @@ extension AppEnvironment {
 
     /// 버튼 표시에는 SVG를 파싱하지 않는다. 실제 geometry 검증은 명령 실행 시 한다.
     var groundFootprintUnavailableReason: String? {
-        let ground = buildingProject.levels.filter { $0.info.ordinal == 0 }
+        // 활성 층의 아직 저장하지 않은 Level 속성도 내보내기와 같은 기준으로 읽는다.
+        let ground = buildingProject.levels.compactMap { stored -> ProjectLevel? in
+            var level = stored
+            if level.id == routingFloorID { level.editing.features = features }
+            return level.exportsLevelOrdinal(0) ? level : nil
+        }
+        if ground.count > 1 { return "IMDF ordinal이 0인 층이 여러 개입니다. 기준층 하나를 정하세요." }
         guard ground.count == 1, let level = ground.first else { return "ordinal 0인 Level이 하나 있어야 합니다." }
         let editor = level.id == routingFloorID ? features : level.editing.features
         let localLevels = editor.features(ofType: .level)
@@ -31,9 +37,6 @@ extension AppEnvironment {
             return "ordinal 0 층에 Level 외곽선을 먼저 그리세요."
         }
         guard localLevels.count + importedLevels.count == 1 else { return "기준층의 Level 외곽선이 여러 개입니다. 하나로 정리하세요." }
-        if let local = localLevels.first, case .integer(let ordinal) = local.value("ordinal"), ordinal != 0 {
-            return "기준층의 Level 속성 ordinal도 0으로 맞추세요."
-        }
         guard let shared = buildingProject.sharedFootprint else { return "전역 Footprint를 먼저 만드세요." }
         if level.id != shared.sourceLevelID && level.info.footprintRegistration?.isAligned != true
             && (!shared.isGeoreferenced || !level.info.hasGeographicCoordinates) {
@@ -46,7 +49,7 @@ extension AppEnvironment {
     func groundFootprintRings() throws -> [[LocalPoint]] {
         if let reason = groundFootprintUnavailableReason { throw IMDFImporter.Failure(message: reason) }
         let project = projectContents
-        let candidates = project.levels.filter { $0.info.ordinal == 0 }
+        let candidates = project.levels.filter { $0.exportsLevelOrdinal(0) }
         guard candidates.count == 1, let level = candidates.first else {
             throw IMDFImporter.Failure(message: "ordinal 0인 Level이 하나 있어야 합니다. 건물·층 관리에서 확인하세요.")
         }

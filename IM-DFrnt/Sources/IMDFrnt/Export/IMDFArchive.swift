@@ -159,7 +159,9 @@ enum IMDFArchive {
                 let levelID = p.level.id.uuidString.lowercased()
                 if f.featureType == .level {
                     feature["id"] = levelID
-                    if props["ordinal"] is NSNull || props["ordinal"] == nil { props["ordinal"] = p.level.info.ordinal }
+                    if props["ordinal"] is NSNull || props["ordinal"] == nil {
+                        props["ordinal"] = p.level.ordinalForExport(nil).anyValue
+                    }
                     if props["name"] is NSNull || props["name"] == nil { props["name"] = ["ko": p.level.info.name] }
                     if props["short_name"] is NSNull, let short = p.level.info.shortName, !short.isEmpty {
                         props["short_name"] = ["ko": short]
