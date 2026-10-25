@@ -3,7 +3,8 @@ import SwiftUI
 /// IMDF HOURS는 OSM opening_hours 문자열이다. 요일 UI로 표현할 수 없는 규칙도 원문을 보존한다.
 struct WeeklyOpeningHours: Equatable {
     static let days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
-    struct Interval: Equatable {
+    struct Interval: Equatable, Identifiable {
+        let id = UUID()
         var startHour = 9
         var startMinute = 0
         var endHour = 18
@@ -15,11 +16,22 @@ struct WeeklyOpeningHours: Equatable {
                 && startHour * 60 + startMinute != endHour * 60 + endMinute
         }
         var text: String { String(format: "%02d:%02d-%02d:%02d", startHour, startMinute, endHour, endMinute) }
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.startHour == rhs.startHour && lhs.startMinute == rhs.startMinute
+                && lhs.endHour == rhs.endHour && lhs.endMinute == rhs.endMinute
+        }
     }
     enum Mode: String, CaseIterable { case closed = "휴무", allDay = "24시간", intervals = "시간 지정" }
     struct Day: Equatable {
         var mode: Mode = .closed
         var intervals = [Interval()]
+
+        func interval(_ id: UUID) -> Interval? { intervals.first { $0.id == id } }
+        mutating func updateInterval(_ value: Interval) {
+            guard let index = intervals.firstIndex(where: { $0.id == value.id }) else { return }
+            intervals[index] = value
+        }
+        mutating func removeInterval(_ id: UUID) { intervals.removeAll { $0.id == id } }
     }
     var days = Array(repeating: Day(), count: 7)
     var valid: Bool { days.allSatisfy { $0.mode != .intervals || (!$0.intervals.isEmpty && $0.intervals.allSatisfy(\.valid)) } }
@@ -109,7 +121,10 @@ struct OpeningHoursEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle("고급 OSM 규칙 입력", isOn: Binding(get: { advanced }, set: { next in
                 if next { raw = weekly.text; advanced = true }
-                else if let parsed = WeeklyOpeningHours.parse(raw) { weekly = parsed; advanced = false; error = nil }
+                else if let parsed = WeeklyOpeningHours.parse(raw) {
+                    if weekly != parsed { weekly = parsed }
+                    advanced = false; error = nil
+                }
                 else { error = "요일별 입력으로 변환할 수 없는 규칙입니다. 원문을 고급 입력에서 유지하세요." }
             }))
             if advanced {
@@ -126,12 +141,13 @@ struct OpeningHoursEditor: View {
                             }.labelsHidden()
                         }
                         if weekly.days[index].mode == .intervals {
-                            ForEach(weekly.days[index].intervals.indices, id: \.self) { slot in
+                            ForEach(weekly.days[index].intervals) { interval in
+                                let binding = intervalBinding(day: index, fallback: interval)
                                 HStack(spacing: 2) {
-                                    clock(hour: $weekly.days[index].intervals[slot].startHour, minute: $weekly.days[index].intervals[slot].startMinute)
+                                    clock(hour: binding.startHour, minute: binding.startMinute)
                                     Text("–")
-                                    clock(hour: $weekly.days[index].intervals[slot].endHour, minute: $weekly.days[index].intervals[slot].endMinute)
-                                    Button { weekly.days[index].intervals.remove(at: slot) } label: { Image(systemName: "minus.circle") }
+                                    clock(hour: binding.endHour, minute: binding.endMinute)
+                                    Button { weekly.days[index].removeInterval(interval.id) } label: { Image(systemName: "minus.circle") }
                                 }
                             }
                             Button("시간 구간 추가") { weekly.days[index].intervals.append(.init()) }
@@ -155,6 +171,13 @@ struct OpeningHoursEditor: View {
             .onChange(of: value) { _, next in load(next) }
     }
 
+    private func intervalBinding(day: Int, fallback: WeeklyOpeningHours.Interval) -> Binding<WeeklyOpeningHours.Interval> {
+        Binding(get: { weekly.days[day].interval(fallback.id) ?? fallback }, set: {
+            // SwiftUI can finish an edit after deletion/load. Removed IDs must not index or resurrect a row.
+            weekly.days[day].updateInterval($0)
+        })
+    }
+
     private func clock(hour: Binding<Int>, minute: Binding<Int>) -> some View {
         HStack(spacing: 1) {
             TextField("시", value: hour, format: .number).frame(minWidth: 25)
@@ -164,7 +187,10 @@ struct OpeningHoursEditor: View {
     }
     private func load(_ text: String) {
         raw = text
-        if let parsed = WeeklyOpeningHours.parse(text) { weekly = parsed; advanced = false }
+        if let parsed = WeeklyOpeningHours.parse(text) {
+            if weekly != parsed { weekly = parsed }
+            advanced = false
+        }
         else { advanced = true }
         error = nil
     }
