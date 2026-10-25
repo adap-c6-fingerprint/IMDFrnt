@@ -62,7 +62,7 @@ swift build && ./.build/debug/IMDFrnt
 ```
 
 파싱·기하·변환·직렬화·상호작용 계층을 점검하고 결과를 출력한 뒤 종료합니다.
-UI를 눌러보지 않고 회귀를 확인하는 용도입니다. CLI 검사는 SwiftUI/NSApplication 초기화 전에 실행됩니다. 스크립트는 6종 검사의 종료 코드와 전체 로그를 남깁니다. [Self-test 재현 및 검증 범위](../docs/projects/SELF_TESTS.md)를 참고하세요.
+UI를 눌러보지 않고 회귀를 확인하는 용도입니다. CLI 검사는 SwiftUI/NSApplication 초기화 전에 실행됩니다. 스크립트는 Footprint·IMDF 준수를 포함한 8종 검사의 종료 코드와 전체 로그를 남깁니다. [Self-test 재현 및 검증 범위](../docs/projects/SELF_TESTS.md)를 참고하세요.
 
 Xcode로 빌드한 앱에도 같은 검사 스크립트를 사용할 수 있습니다. Xcode의 Products → `IM-DFrnt.app` → Show in Finder에서 앱 경로를 확인해 전달합니다.
 

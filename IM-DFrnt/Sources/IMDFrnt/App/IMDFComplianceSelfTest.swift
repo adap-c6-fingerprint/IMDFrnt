@@ -304,6 +304,7 @@ enum IMDFComplianceSelfTest {
             do { _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:]); check("미해결 Manifest 충돌 내보내기 차단", false) }
             catch let b as IMDFArchive.Blocked { check("미해결 Manifest 충돌 내보내기 차단", b.messages.contains { $0.contains("Manifest 값이") }) }
             check("구버전이 v7 새 속성을 조용히 삭제하지 않도록 형식 상향", ProjectFile.currentVersion == 7)
+            try await ReviewFollowupSelfTest.run(check)
         } catch { check("IMDF 준수 테스트 실행", false); print(error) }
         print("== IMDF Compliance: \(total - failures)/\(total) PASS ==")
         exit(failures == 0 ? 0 : 1)

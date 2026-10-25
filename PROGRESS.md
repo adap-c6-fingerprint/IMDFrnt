@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## #79 / IMD-68 / PR #80 — CodeRabbit 리뷰 1~6번 후속
+
+- 충돌하는 복사 도형의 내부 ID와 export UUID를 새로 발급하고 속성 참조·소유권·대여·GeoJSON·출입구 노드 및 종속 Occupant/Relationship 참조를 함께 갱신한다. 같은 층 교체 시 충돌하지 않는 ID는 유지한다.
+- Manifest 기본 언어 태그를 이름 간편 입력과 자동 Level 이름에 적용한다. 출력에는 일반 언어 라벨에서 정확한 기본 태그를 보완하고 기존 언어를 유지하며 엄격한 검증은 완화하지 않는다.
+- 표시점/Anchor 클릭을 이름표·면·점 선택보다 우선 처리한다. Footprint 테스트 요약은 실패 수에 따라 PASS/FAIL을 표시한다.
+- 검사 문서·README의 현재 모드 수/목록/결과와 길찾기 level_id/ordinal 계약을 갱신했다. 이전 시점의 검사 기록은 역사로 구분해 보존한다.
+- Debug·Release 빌드와 서명, 전체 CLI 8/8 통과(Footprint 93/93, IMDF Compliance 83/83). 별도 앱 `.build/AIMP-coderabbit-fixes/IM-DFrnt.app`이며 기존 앱·프로젝트는 수정하지 않았다. 누적 영향도 L, 실제 GUI/AIMP와 사람 리뷰/승인은 별도다.
+- 사용자 지시로 성능 개선·주석 커버리지(7·8번)는 제외한다. 기존 파일 권한 변경을 제외하고 로컬 커밋만 진행한다.
+
 ## 2026-10-25 — #79 / IMD-68 자체 리뷰 후속: Building 표시점
 
 - Building 표시점을 지정할 때 `building_ids`로 해당 Building을 참조하는 Footprint만 검사한다. 다른 건물 또는 연결되지 않은 Footprint에서는 기존 표시점을 바꾸지 않는다. UUID 대소문자를 구분하지 않는다.

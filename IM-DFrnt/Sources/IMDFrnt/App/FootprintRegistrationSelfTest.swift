@@ -114,7 +114,7 @@ enum FootprintRegistrationSelfTest {
             try await FootprintReviewSelfTest.run(check)
             try SubmissionSelfTest.run(check)
         } catch { check("테스트 실행: \(error)", false) }
-        print("== Footprint: \(count - failures)/\(count) PASS ==")
+        print("== Footprint: \(count - failures)/\(count) \(failures == 0 ? "PASS" : "FAIL") ==")
         exit(failures == 0 ? 0 : 1)
     }
 }

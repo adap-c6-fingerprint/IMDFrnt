@@ -1,6 +1,14 @@
 # Self-test 재현
 
-## #78 / IMD-67 추가 검사
+## 현재 검증 결과 — PR #80 리뷰 1~6번 후속
+
+- Debug·Release 빌드 및 ad-hoc 서명 검증 성공. 별도 앱 `IM-DFrnt/.build/AIMP-coderabbit-fixes/IM-DFrnt.app`으로 전체 CLI 8/8 모드 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, **Footprint 93/93, IMDF Compliance 83/83**.
+- IMDF Compliance에는 층 복사 시 내부/export UUID 재발급·참조/소유권/대여 갱신·저장 왕복·Undo/Redo·같은 층 교체 시 identity 유지·원본 GeoJSON 및 종속 Occupant 이전·최종 내보내기 중복 검사, 지역 언어 태그와 추가 언어 보존, 면 선택 모드의 표시점/Anchor 우선 입력 회귀 검사를 포함한다.
+- 로그: `imdfrnt-self-tests.eKKzMA`(실행 환경의 임시 폴더). 이후 재실행은 새 로그 폴더를 만든다. 아래 날짜별 수치는 각 시점의 과거 실행 기록이며 최신 결과와 구분한다.
+- 실패 요약의 별도 음성 검사: 존재하지 않는 `--submission-test-project` 경로를 지정한 Footprint 검사는 의도대로 종료 코드 1과 `93/94 FAIL`을 출력했다. 정상 8/8 검사와 별도의 오류 입력 검사다.
+- 실제 GUI 클릭·Apple Sandbox/AIMP 제출·사람 코드리뷰/승인은 별도 확인 대상이다. 성능 캐시와 문서 주석 커버리지는 사용자 지시로 변경하지 않았다.
+
+## #78 / IMD-67 초기 검증 기록
 
 `--imdf-compliance-selftest`는 완전한 합성 IMDF와 오류 입력을 이용해 필수 정보·참조·공간 관계, 16종 보존, Polygon 구멍, 공통 정보 이전·층 삭제·가져오기·Undo/Redo·Manifest 충돌을 검사한다. `run-self-tests.sh`는 이제 기존 6종과 Footprint·IMDF 준수 검사의 총 8종을 실행한다.
 
@@ -18,7 +26,7 @@ cd IM-DFrnt
 ./run-self-tests.sh /private/tmp/IM-DFrntReviewFollowup.app
 ```
 
-스크립트는 도면 로딩 검사를 포함한 6개 모드를 별도 프로세스로 실행한다. 각 종료 코드, 전체 stdout/stderr, macOS 버전·아키텍처·검사한 실행 파일의 SHA-256을 출력된 로그 폴더에 기록한다. 검사 진입 표시와 PASS 요약이 없거나 실패가 있으면 스크립트도 실패한다. 파일은 보존되므로 리뷰어가 원문 로그를 확인할 수 있다.
+스크립트는 도면 로딩·Footprint·IMDF 준수 검사를 포함한 8개 모드를 별도 프로세스로 실행한다. 각 종료 코드, 전체 stdout/stderr, macOS 버전·아키텍처·검사한 실행 파일의 SHA-256을 출력된 로그 폴더에 기록한다. 검사 진입 표시와 PASS 요약이 없거나 실패가 있으면 스크립트도 실패한다. 파일은 보존되므로 리뷰어가 원문 로그를 확인할 수 있다.
 
 개별 실행도 가능하다. `open --args` 대신 번들 안의 실행 파일을 직접 호출해야 종료 코드와 stdout/stderr를 확인할 수 있다. 문서 타입 검사는 빌드된 앱의 Info.plist를 읽으므로 `.app` 실행 파일을 사용한다.
 
@@ -29,6 +37,8 @@ cd IM-DFrnt
 /private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --document-open-selftest
 /private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --routing-selftest
 /private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --drawing-loading-selftest
+/private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --footprint-selftest
+/private/tmp/IM-DFrntReviewFollowup.app/Contents/MacOS/IM-DFrnt --imdf-compliance-selftest
 ```
 
 실제 입력에 대한 추가 검사는 선택 사항이다. 지정한 원본은 읽기 전용이며 이전한 내용은 검사 전용 임시 경로에 쓴다.
