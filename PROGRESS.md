@@ -1,5 +1,11 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-25 — #79 / IMD-68 자체 리뷰 후속: 공통 UUID 충돌
+
+- 층 가져오기 전에 관련 공통 정보를 병합할 수 있는지 검사한다. 동일 UUID·동일 내용은 재사용하고, 내용 충돌이나 UUID 누락은 안내 후 전체 가져오기를 중단한다. UUID의 대소문자는 구분하지 않는다.
+- Address·Building·Occupant·Relationship 충돌과 부분 반영 방지, 층·도면·편집 상태·Undo/Redo 보존, 동일 레코드 재사용 회귀 검사를 추가했다. Debug 빌드 및 IMDF Compliance 64/64 PASS.
+- 기존 파일 권한 변경은 이번 수정에 포함하지 않는다. PR·push 없이 기존 #79 브랜치에서 로컬 커밋한다.
+
 ## 2026-10-25 — #78 / IMD-67 Apple IMDF 공통 정보·내보내기
 
 - Linear IMD-67 / GitHub #78에 공식 문서 대조와 재현된 10개 수정 항목을 먼저 기록하고, develop 2179869에서 `feat/#78-imdf-standard-export`를 만들었다. Push·PR 생성은 하지 않는다.

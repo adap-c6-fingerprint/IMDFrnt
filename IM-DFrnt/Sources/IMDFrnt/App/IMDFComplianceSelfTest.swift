@@ -255,6 +255,39 @@ enum IMDFComplianceSelfTest {
             await env.waitForLevelDrawing()
             check("층 단위 가져오기도 공통 주소를 함께 보존", env.importLevel(migration.levels[0], into: target, metadata: migration)
                 && env.globalFeatures("address").contains { $0["id"]?.uuid == oldID })
+            let beforeRepeat = env.globalFeatures("address")
+            check("동일 UUID·내용의 공통 정보는 재사용", env.importLevel(migration.levels[0], into: target, metadata: migration)
+                && env.globalFeatures("address") == beforeRepeat)
+            var uppercase = migration
+            uppercase.globalGeoJSON["address.geojson"]![0]["id"] = .string(oldID.uuidString.uppercased())
+            check("UUID 대소문자만 다른 공통 정보도 재사용", env.importLevel(uppercase.levels[0], into: target, metadata: uppercase)
+                && env.globalFeatures("address") == beforeRepeat)
+            for type in ["address", "building", "occupant", "relationship"] {
+                let recordID = UUID()
+                let original = IMDFTestFixtures.feature(type, id: recordID, properties: ["custom": .string("현재 값")])
+                env.buildingProject.globalGeoJSON[type + ".geojson", default: []].append(original)
+                var incoming = migration
+                var changed = original
+                changed["properties"]?["custom"] = .string("사본의 다른 값")
+                incoming.globalGeoJSON[type + ".geojson", default: []].append(changed)
+                // A preceding new record must not leak into the target when a later conflict aborts.
+                incoming.globalGeoJSON["address.geojson", default: []].insert(
+                    IMDFTestFixtures.feature("address", properties: ["address": .string("부분 반영 금지")]), at: 0)
+                var changedFloor = incoming.levels[0]
+                changedFloor.info.svg = "충돌 시 교체하면 안 되는 도면"
+                let beforeConflict = env.projectContents
+                let documentBefore = env.document?.fingerprint
+                let snapshotBefore = env.snapshot
+                let undoBefore = env.undoStack.undoEntries, redoBefore = env.undoStack.redoEntries
+                let modeBefore = env.mode
+                check("\(type) 동일 UUID 내용 충돌은 가져오기 중단", !env.importLevel(changedFloor, into: target, metadata: incoming))
+                check("\(type) 충돌 시 층·공통 정보·도면·모드 보존", env.projectContents == beforeConflict
+                    && env.document?.fingerprint == documentBefore && env.mode == modeBefore
+                    && env.snapshot == snapshotBefore && env.undoStack.undoEntries == undoBefore
+                    && env.undoStack.redoEntries == redoBefore)
+                check("\(type) 충돌 UUID 안내", env.banner?.text.contains(recordID.uuidString.lowercased()) == true)
+                env.buildingProject.globalGeoJSON[type + ".geojson"]?.removeAll { $0["id"]?.uuid == recordID }
+            }
             env.updateProperty("language", value: .string("en"), in: env.manifestEditorID)
             check("Manifest 입력 경로 단일화", env.buildingProject.manifest["language"]?.string == "en")
             check("공통 주소를 모든 층의 참조 선택창에서 조회", env.referenceChoices(.address).contains { $0.id == addressID.uuidString.lowercased() })

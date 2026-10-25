@@ -77,6 +77,13 @@ extension AppEnvironment {
     func importLevel(_ source: ProjectLevel, into targetID: UUID, drawing: PreparedLevelDrawing? = nil,
                      metadata: BuildingProject? = nil) -> Bool {
         guard let i = buildingProject.levels.firstIndex(where: { $0.id == targetID }) else { return false }
+        // Validate the complete metadata merge before touching the floor, undo stack or drawing cache.
+        let mergedRecords: [String: [ProjectJSON]]?
+        do { mergedRecords = try metadata.map { try prepareLevelMetadata($0, source: source, targetID: targetID) } }
+        catch {
+            notify("층을 가져오지 않았습니다: \(error.localizedDescription)", isError: true)
+            return false
+        }
         let existingNodes = Set(projectContents.levels.flatMap(\.nodes).map(\.id))
         let existingEdges = Set(projectContents.levels.flatMap(\.edges).map(\.id) + buildingProject.crossLevelEdges.map(\.id))
         let collides = source.nodes.contains { existingNodes.contains($0.id) } || source.edges.contains { existingEdges.contains($0.id) }
@@ -108,7 +115,9 @@ extension AppEnvironment {
             }
             // IMDF에서 온 층은 GeoJSON이 원래 층 ID를 가리킨다. 지금 층 ID로 바꿔야 내보낼 때 어긋나지 않는다.
             buildingProject.levels[i] = level
-            if let metadata { mergeLevelMetadata(metadata, source: source, targetID: targetID) }
+            if let metadata, let mergedRecords {
+                mergeLevelMetadata(metadata, source: source, targetID: targetID, records: mergedRecords)
+            }
             levelDrawingCache.invalidate(targetID)
             if let drawing { levelDrawingCache.insert(drawing) }
             if routingFloorID == targetID { beginLevelDrawingLoad(targetID) }
@@ -122,7 +131,13 @@ extension AppEnvironment {
 
     /// A single-floor import must bring the common records that its old floor-owned metadata now
     /// references. Do not guess that equal names/addresses mean equal IDs or overwrite the target Venue.
-    private func mergeLevelMetadata(_ project: BuildingProject, source: ProjectLevel, targetID: UUID) {
+    private func prepareLevelMetadata(_ project: BuildingProject, source: ProjectLevel,
+                                      targetID: UUID) throws -> [String: [ProjectJSON]] {
+        var merged = buildingProject.globalGeoJSON
+        var known: [UUID: ProjectJSON] = [:]
+        for record in merged.values.flatMap({ $0 }) {
+            if let id = record["id"]?.uuid { known[id] = record }
+        }
         var importedIDs = Set(source.geoJSON.values.flatMap { $0 }.compactMap { $0["id"]?.string?.lowercased() })
         for f in source.editing.features.features { importedIDs.insert((source.editing.ids.peek(f.id) ?? f.id).uuidString.lowercased()) }
         for name in ["address.geojson", "building.geojson", "occupant.geojson", "relationship.geojson"] {
@@ -136,9 +151,29 @@ extension AppEnvironment {
                     if !references.allSatisfy({ $0 == .null || importedIDs.contains($0["id"]?.string?.lowercased() ?? "") }) { continue }
                 }
                 let value = rewriteLevelID(original, old: source.id, new: targetID)
-                if !(buildingProject.globalGeoJSON[name] ?? []).contains(value) { buildingProject.globalGeoJSON[name, default: []].append(value) }
+                guard let id = value["id"]?.uuid else {
+                    throw IMDFImporter.Failure(message: "\(name): 공통 정보에 유효한 UUID가 없습니다.")
+                }
+                if var existing = known[id] {
+                    // UUID spelling is case-insensitive, while all other content must agree.
+                    var candidate = value
+                    existing["id"] = .string(id.uuidString.lowercased())
+                    candidate["id"] = existing["id"]
+                    guard existing == candidate else {
+                        throw IMDFImporter.Failure(message: "\(name) · \(id.uuidString.lowercased()): 같은 UUID의 공통 정보 내용이 다릅니다. 두 프로젝트의 값을 일치시킨 뒤 다시 가져오세요.")
+                    }
+                    continue
+                }
+                known[id] = value
+                merged[name, default: []].append(value)
             }
         }
+        return merged
+    }
+
+    private func mergeLevelMetadata(_ project: BuildingProject, source: ProjectLevel, targetID: UUID,
+                                    records: [String: [ProjectJSON]]) {
+        buildingProject.globalGeoJSON = records
         if buildingProject.globalGeoJSON["venue.geojson"]?.isEmpty != false,
            !buildingProject.levels.contains(where: { !$0.editing.features.features(ofType: .venue).isEmpty }) {
             buildingProject.globalGeoJSON["venue.geojson"] = project.globalGeoJSON["venue.geojson"]

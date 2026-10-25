@@ -35,6 +35,7 @@ IMDF에서 만든 SVG는 표시용 캐시다. 재열기 시 실제 GeoJSON geome
 - 상단 `address`, `building`, `occupant`, `relationship`, `manifest`는 현재 층이 아니라 프로젝트 공통 정보를 편집한다. 도면이 없어도 입력 가능하며 층 삭제로 지워지지 않는다. 건물·층 관리의 JSON 편집기와 같은 원본을 쓴다.
 - 주소는 여러 개 만들 수 있다. 대표 주소를 공유하고 필요한 층/호실은 별도 주소를 참조한다. Level의 주소가 없으면 Building, Building에도 없으면 Venue 주소를 따르는 공식 모델을 유지한다.
 - 기존 층별 메타데이터는 UUID·속성을 보존해 이전한다. 일련번호 참조는 해당 층을 우선하여 UUID로 바꾼다. Manifest 충돌은 복사본을 보존하고 사용할 값을 명시적으로 선택하기 전까지 내보내기를 막는다. 층 하나만 가져오는 경로도 관련 공통 정보를 함께 가져온다.
+- 층 가져오기에서 Address·Building·Occupant·Relationship의 UUID와 내용이 같으면 기존 정보를 재사용한다. 동일 UUID의 내용이 다르면 파일명과 UUID를 안내하고 가져오기 전체를 중단한다. 층·도면·공통 정보·Undo/Redo 기록은 유지되며, 두 프로젝트의 값을 일치시킨 뒤 다시 가져와야 한다(#79 / IMD-68 자체 리뷰 후속 수정).
 - 공통 정보는 삭제 시 정보 휴지통으로 이동하며 복원·Undo/Redo를 지원한다. 참조 선택창은 모든 층과 공통 정보를 조회한다. 중복 이름/일련번호 대신 UUID를 저장한다.
 - `Detail`, `Kiosk`, `Relationship`을 포함한 공식 16종을 보존한다. Detail·Kiosk는 해당 레이어에서 작도하며 Relationship은 공통 정보에서 JSON Feature 참조를 입력한다. 기존 MultiLineString 및 확장 속성도 재내보내기에 보존한다. 길찾기 `routing-graph.geojson`은 공식 Relationship의 대체물이 아니다.
 - 접근성 배열·문 JSON·출입 제어·상관 ID·유효 기간·Section 부모/주소 속성을 입력할 수 있다. 한국어/영어 간편 입력 외 언어는 이름의 JSON 편집기를 사용한다. 기본 언어는 새 프로젝트에서 `ko`이고 이름 LABELS는 Manifest 언어를 포함해야 한다.
