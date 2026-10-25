@@ -117,8 +117,17 @@ extension AppEnvironment {
 
     func updateLocalizedProperty(_ key: String, language: String, text: String, in feature: FeatureGroup) {
         var labels = feature.value(key).projectJSON.object
-        labels[language] = text.isEmpty ? nil : .string(text)
+        let tag = labels.keys.first { $0.lowercased() == language.lowercased() } ?? language
+        labels[tag] = text.isEmpty ? nil : .string(text)
         updateProperty(key, value: labels.isEmpty ? .null : .json(.object(labels)), in: feature.id)
+    }
+
+    var nameEditingLanguages: [String] {
+        let language = buildingProject.manifest["language"]?.string ?? "ko"
+        let base = language.split(separator: "-").first.map(String.init)?.lowercased()
+        var tags = ["ko", "en"].map { $0 == base ? language : $0 }
+        if !tags.contains(where: { $0.lowercased() == language.lowercased() }) { tags.append(language) }
+        return tags
     }
 
     /// Advanced geometry/foreign-member editing retains identity; final delivery validation remains common.

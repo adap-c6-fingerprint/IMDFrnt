@@ -38,6 +38,7 @@ enum IMDFArchive {
         let project = file.commonProject()
         let levels = project.levels.sorted { $0.info.ordinal < $1.info.ordinal }
         let imported = project.imdfFiles()
+        let defaultLanguage = project.manifest["language"]?.string ?? "ko"
         var blockers: [String] = []
         if project.legacyManifests?.isEmpty == false && project.manifestConflictsResolved != true {
             blockers.append("이전 층별 Manifest 값이 서로 다릅니다. 상단 manifest 또는 건물·층 관리에서 사용할 값을 선택하세요.")
@@ -162,9 +163,9 @@ enum IMDFArchive {
                     if props["ordinal"] is NSNull || props["ordinal"] == nil {
                         props["ordinal"] = p.level.ordinalForExport(nil).anyValue
                     }
-                    if props["name"] is NSNull || props["name"] == nil { props["name"] = ["ko": p.level.info.name] }
+                    if props["name"] is NSNull || props["name"] == nil { props["name"] = [defaultLanguage: p.level.info.name] }
                     if props["short_name"] is NSNull, let short = p.level.info.shortName, !short.isEmpty {
-                        props["short_name"] = ["ko": short]
+                        props["short_name"] = [defaultLanguage: short]
                     }
                     // 층 이름·순서는 건물·층 관리에서 이미 정했다. 비어 있으면 그 값을 쓴다.
                 }
@@ -188,6 +189,15 @@ enum IMDFArchive {
         var files: [String: Data] = [:]
         var counts: [String: Int] = [:]
         for name in Set(collections.keys).union(requiredFiles) {
+            if let type = IMDFFeatureType(rawValue: String(name.dropLast(".geojson".count))) {
+                collections[name] = try (collections[name] ?? []).map { raw in
+                    var feature = try ProjectJSON.parse(JSONSerialization.data(withJSONObject: raw))
+                    if let props = feature["properties"] {
+                        feature["properties"] = IMDFLabels.properties(props, type: type, language: defaultLanguage)
+                    }
+                    return feature.anyValue
+                }
+            }
             var header = imported[name]?.anyValue as? [String: Any] ?? [:]
             header["type"] = "FeatureCollection"
             header["features"] = collections[name] ?? []

@@ -507,8 +507,13 @@ struct PropertySlotRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.type == .localizedName {
             VStack(spacing: 3) {
-                ForEach(["ko", "en"], id: \.self) { language in
-                    textField(language, get: { value.projectJSON[language]?.string ?? "" }, set: {
+                ForEach(env.nameEditingLanguages, id: \.self) { language in
+                    textField(language, get: {
+                        let labels = value.projectJSON.object
+                        let base = language.split(separator: "-").first.map(String.init) ?? language
+                        return labels.first { $0.key.lowercased() == language.lowercased() }?.value.string
+                            ?? labels.first { $0.key.lowercased() == base.lowercased() }?.value.string ?? ""
+                    }, set: {
                         env.updateLocalizedProperty(field.key, language: language, text: $0, in: feature)
                     })
                 }
