@@ -199,8 +199,11 @@ extension AppEnvironment {
         }
         if !conflicts.isEmpty {
             conflicts["imdfrnt_source_level"] = .string(source.info.name)
-            buildingProject.legacyManifests = (buildingProject.legacyManifests ?? []) + [.object(conflicts)]
-            buildingProject.manifestConflictsResolved = false
+            let copy = ProjectJSON.object(conflicts)
+            if !(buildingProject.legacyManifests ?? []).contains(copy) {
+                buildingProject.legacyManifests = (buildingProject.legacyManifests ?? []) + [copy]
+                buildingProject.manifestConflictsResolved = false
+            }
         }
     }
 }
