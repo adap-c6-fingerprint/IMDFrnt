@@ -1167,7 +1167,7 @@ struct CanvasView: View {
                     dragIsVertex = false
                     let onTag = labelHitBoxes.boxes.contains { $0.1.contains(value.startLocation) }
                     // 이름표는 도형 왼쪽 위 꼭짓점 바로 위에 붙는다. 꼭짓점 끌기를 먼저 잡으면 이름표를 누를 수 없다.
-                    if env.isPointWorkMode, env.isVertexMoveEnabled, !NSEvent.modifierFlags.contains(.control), !onTag,
+                    if env.allowsCanvasVertexDrag, !NSEvent.modifierFlags.contains(.control), !onTag,
                        let target = env.vertexHit(at: toLocal(value.startLocation),
                                                   tolerance: 6 / Double(effectiveScale)) {
                         dragIsVertex = true

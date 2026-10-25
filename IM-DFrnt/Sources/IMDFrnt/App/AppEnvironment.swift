@@ -1678,6 +1678,7 @@ final class AppEnvironment: ObservableObject {
     }
     /// '꼭짓점 이동' 모드. 꺼져 있으면(고정) 드래그는 화면 이동이다.
     @Published var isVertexMoveEnabled = false
+    var allowsCanvasVertexDrag: Bool { isPointWorkMode && isVertexMoveEnabled && !mode.blocksSelection }
     /// 꼭짓점을 끄는 중이면 그 대상과 지금 위치. 놓을 때 한 번만 실행취소 칸을 쌓는다.
     @Published var vertexDrag: VertexDrag?
     /// 자체점검에서는 파생 기하를 그 자리에서 계산한다 — 결과를 바로 확인해야 하기 때문이다.
@@ -2330,6 +2331,10 @@ final class AppEnvironment: ObservableObject {
     func setDisplayPoint(_ p: LocalPoint, for fid: FeatureGroupID) {
         if setGlobalDisplayPoint(p, for: fid) { return }
         guard let doc = document, let f = features.feature(fid), !f.isInTrash else { return }
+        guard f.featureType.requiredGeometry != .point || permitsDisplayPoint(p, for: f) else {
+            notify("점 Feature의 display point는 원래 점 범위 안에 지정하세요.", isError: true)
+            return
+        }
         let kind = GeometryClassifier.classify(f, document: doc)
         let vertices = VertexExtractor.vertices(for: f, document: doc, segmentation: segmentation,
                                                kind: kind, borrowed: borrow.objects(borrowedBy: fid))
