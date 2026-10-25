@@ -33,6 +33,10 @@ struct OwnershipRegistry: Equatable, Codable {
     mutating func releaseAll(of feature: FeatureGroupID) {
         owner = owner.filter { $0.value != feature }
     }
+
+    mutating func remapImportedFeatures(_ ids: [UUID: UUID]) {
+        owner = owner.mapValues { ids[$0] ?? $0 }
+    }
 }
 
 // MARK: - FeatureStore
@@ -50,6 +54,11 @@ struct FeatureStore: Equatable, Codable {
     private var indexByID: [FeatureGroupID: Int] = [:]
 
     init() {}
+
+    mutating func replaceImportedFeatures(_ values: [FeatureGroup]) {
+        features = values
+        rebuildIndex()
+    }
 
     enum CodingKeys: String, CodingKey { case features, guides }
     // 색인은 저장하지 않는다 — 배열에서 언제든 다시 만들 수 있고,
@@ -386,6 +395,12 @@ struct IDAssigner: Equatable, Codable {
 
     func peek(_ feature: FeatureGroupID) -> UUID? { assigned[feature] }
 
+    mutating func remapImportedFeatures(_ ids: [UUID: UUID], exports: [UUID: UUID]) {
+        assigned = Dictionary(uniqueKeysWithValues: assigned.map {
+            (ids[$0.key] ?? $0.key, exports[$0.value] ?? $0.value)
+        })
+    }
+
     /// 남이 이미 발급받은 id를 그대로 물려받는다(신기능 1-2-5, 배정본 합치기).
     /// 여기서 새로 뽑으면 담당자 몫의 feature만 id가 갈려, IMDF 스펙의
     /// "distinct deliveries 사이에 같은 id를 유지" 요건이 조용히 깨진다.
@@ -443,6 +458,10 @@ struct OpeningGateStore: Equatable, Codable {
 struct BorrowRegistry: Equatable, Codable {
 
     private var borrowed: [FeatureGroupID: Set<VectorObjectID>] = [:]
+
+    mutating func remapImportedFeatures(_ ids: [UUID: UUID]) {
+        borrowed = Dictionary(uniqueKeysWithValues: borrowed.map { (ids[$0.key] ?? $0.key, $0.value) })
+    }
     // feature → 그 feature가 빌린 opening 개체들. 반대 방향은 두지 않는다(명세 10-2-6, 단방향).
 
     func objects(borrowedBy feature: FeatureGroupID) -> Set<VectorObjectID> {

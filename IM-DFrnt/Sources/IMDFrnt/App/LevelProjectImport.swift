@@ -74,12 +74,19 @@ extension AppEnvironment {
     /// 층 내용을 `targetID` 층에 옮긴다. 층 ID·이름·층 번호는 지금 층 것을 유지한다.
     /// 다른 층과 잇는 연결은 이 건물에 그 층이 없으니 가져오지 않는다.
     @discardableResult
-    func importLevel(_ source: ProjectLevel, into targetID: UUID, drawing: PreparedLevelDrawing? = nil,
-                     metadata: BuildingProject? = nil) -> Bool {
+    func importLevel(_ original: ProjectLevel, into targetID: UUID, drawing: PreparedLevelDrawing? = nil,
+                     metadata originalMetadata: BuildingProject? = nil) -> Bool {
         guard let i = buildingProject.levels.firstIndex(where: { $0.id == targetID }) else { return false }
         // Validate the complete metadata merge before touching the floor, undo stack or drawing cache.
+        let source: ProjectLevel
+        let metadata: BuildingProject?
         let mergedRecords: [String: [ProjectJSON]]?
-        do { mergedRecords = try metadata.map { try prepareLevelMetadata($0, source: source, targetID: targetID) } }
+        do {
+            let prepared = try LevelImportIdentity.prepare(original, targetID: targetID,
+                project: projectContents, metadata: originalMetadata)
+            source = prepared.level; metadata = prepared.metadata
+            mergedRecords = try metadata.map { try prepareLevelMetadata($0, source: source, targetID: targetID) }
+        }
         catch {
             notify("층을 가져오지 않았습니다: \(error.localizedDescription)", isError: true)
             return false
@@ -139,7 +146,9 @@ extension AppEnvironment {
             if let id = record["id"]?.uuid { known[id] = record }
         }
         var importedIDs = Set(source.geoJSON.values.flatMap { $0 }.compactMap { $0["id"]?.string?.lowercased() })
-        for f in source.editing.features.features { importedIDs.insert((source.editing.ids.peek(f.id) ?? f.id).uuidString.lowercased()) }
+        for f in source.editing.features.features {
+            importedIDs.insert((f.featureType == .level ? targetID : source.editing.ids.peek(f.id) ?? f.id).uuidString.lowercased())
+        }
         for name in ["address.geojson", "building.geojson", "occupant.geojson", "relationship.geojson"] {
             for original in project.globalGeoJSON[name] ?? [] {
                 if name == "occupant.geojson", project.levels.count > 1,
