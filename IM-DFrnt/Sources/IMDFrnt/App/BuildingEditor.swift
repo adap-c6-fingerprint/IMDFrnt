@@ -241,9 +241,6 @@ extension AppEnvironment {
         var info = routing.floor(id)!
         change(&info)
         guard info.id == id else { notify("층 ID는 ID 적용 버튼으로 변경하세요.", isError: true); return }
-        guard !buildingProject.levels.contains(where: { $0.id != id && $0.info.ordinal == info.ordinal }) else {
-            notify("이미 다른 층에서 사용하는 층 번호입니다.", isError: true); return
-        }
         perform("층 정보 편집", coalescingKey: field.map { "level:\(id):\($0)" }) {
             storeActiveLevel()
             let previous = buildingProject.levels[i].info
@@ -328,6 +325,7 @@ extension ProjectFile {
     /// Migrate once at the application boundary, retaining every old editor store.
     func commonProject() -> BuildingProject {
         if var buildingProject {
+            buildingProject.migrateGlobalMetadata()
             buildingProject.migrateLevelFootprintsToGlobal()
             buildingProject.migrateSharedFootprint()
             return buildingProject
@@ -348,6 +346,7 @@ extension ProjectFile {
                     sourceName: sourceName, svg: svg, anchors: anchors), editing: editing))
             }
         }
+        project.migrateGlobalMetadata()
         project.migrateLevelFootprintsToGlobal()
         project.migrateSharedFootprint()
         return project

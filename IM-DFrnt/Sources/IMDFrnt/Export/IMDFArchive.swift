@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 ///
 /// 규격(OGC 20-094 Archives·Manifest 절, 위키 src18)과 C5 예제를 따른다.
 /// - ZIP 최상위에 `manifest.json`과 `{type}.geojson`을 둔다. 하위 폴더를 만들지 않는다(C5 예제와 같다).
-/// - `manifest.json`·`address.geojson`·`venue.geojson`은 필수 파일이라 feature가 없어도 빈 FeatureCollection으로 넣는다.
+/// - 필수 파일과 레코드·속성·참조·공간 관계는 최종 바이트로 검증한다. 초안 저장과 공식 내보내기는 구분한다.
 /// - 각 층의 level feature는 **그 층의 UUID를 id로 쓴다.** 같은 층의 다른 feature의 `level_id`가 비어 있으면 이 값으로 채운다.
 enum IMDFArchive {
 
@@ -39,6 +39,9 @@ enum IMDFArchive {
         let levels = project.levels.sorted { $0.info.ordinal < $1.info.ordinal }
         let imported = project.imdfFiles()
         var blockers: [String] = []
+        if project.legacyManifests?.isEmpty == false && project.manifestConflictsResolved != true {
+            blockers.append("이전 층별 Manifest 값이 서로 다릅니다. 상단 manifest 또는 건물·층 관리에서 사용할 값을 선택하세요.")
+        }
         if project.sharedFootprint?.pendingMigrationFeatureIDs?.isEmpty == false {
             blockers.append("이전하지 못한 층별 Footprint가 있습니다. 원본은 보존되어 있습니다. 각 층과 전역 Footprint의 GPS를 설정한 뒤 다시 여세요.")
         }
@@ -70,7 +73,7 @@ enum IMDFArchive {
                 // 점으로 그린 feature는 좌표를 스스로 갖고 있어 도면을 읽지 않아도 된다.
             }
             prepared.append(Prepared(level: level, features: live, document: document,
-                                     georeferencer: Georeferencer(pairs: level.info.footprintGeoAnchors ?? level.info.anchors.pairs), ids: level.editing.ids))
+                                     georeferencer: level.info.exportGeoreferencer, ids: level.editing.ids))
         }
 
         // 2. 막는 조건 — 층 이름을 붙여 어느 층을 고쳐야 하는지 알린다.
@@ -92,15 +95,6 @@ enum IMDFArchive {
                 blockers.append("\(name): level 다각형이 \(levelFeatures.count)개입니다. 층 하나에 level은 하나여야 합니다.")
             } else if levelFeatures.isEmpty && importedLevels == 0 {
                 blockers.append("\(name): level 다각형이 없습니다. level 레이어에서 층의 외곽을 그려야 다른 개체가 이 층을 가리킬 수 있습니다.")
-            }
-        }
-        for p in prepared {
-            let metadata = p.level.editing.features.features.filter { !$0.isInTrash && $0.featureType.isMetadataOnly }
-            for f in metadata {
-                for (key, problem) in PropertyRules.problems(in: f) {
-                    let message = "\(p.level.info.name): \(f.serialNumber) \(key) — \(problem.message)"
-                    if problem.severity == .violation { blockers.append(message) } else { warnings.append(message) }
-                }
             }
         }
         // 정보 type 칸 점검(2026-10-20). Apple 검증의 Violation은 받아 주지 않으니 내보내기를 막고, Warning은 알리기만 한다.
@@ -128,7 +122,11 @@ enum IMDFArchive {
 
         // 4. 직렬화 — type별로 모든 층의 feature를 한 목록에 모은다.
         var collections: [String: [Any]] = [:]
-        for name in featureTypes.map({ $0.rawValue + ".geojson" }) {
+        for name in imported.keys.sorted() where name.hasSuffix(".geojson") {
+            guard imported[name]?["type"]?.string == "FeatureCollection", imported[name]?["features"]?.isArray == true else {
+                throw Blocked(messages: ["\(name): 원본 GeoJSON이 FeatureCollection 형식이 아닙니다. 원본을 조용히 누락하지 않고 내보내기를 중단합니다."])
+            }
+            collections[name] = []
             if let features = imported[name]?["features"]?.array, !features.isEmpty {
                 collections[name] = features.map { source in
                     var feature = source
@@ -194,16 +192,14 @@ enum IMDFArchive {
             files[name] = try encode(header)
             counts[name] = collections[name]?.count ?? 0
         }
-        for name in requiredFiles where counts[name] == 0 {
-            warnings.append("\(name)에 feature가 없어 빈 파일로 넣었습니다(필수 파일).")
-        }
-        let manifestFeature = prepared.lazy.flatMap { p in p.level.editing.features.features }
-            .first { $0.featureType == .manifest && !$0.isInTrash }
-        files["manifest.json"] = try encode(manifest(imported: imported["manifest.json"], feature: manifestFeature, now: now))
+        files["manifest.json"] = try encode(manifest(imported: imported["manifest.json"], feature: nil, now: now))
         for (name, value) in imported where files[name] == nil && !name.hasSuffix(".geojson") && name != "manifest.json" {
             files[name] = try encode(value.anyValue)
             // 가져온 아카이브에 있던 다른 파일(LICENSE 등)도 버리지 않는다.
         }
+        let validation = IMDFValidation.check(files: files)
+        guard validation.errors.isEmpty else { throw Blocked(messages: validation.errors) }
+        warnings += validation.warnings
         reporter?.report(1, "완료")
         return Output(files: files, ids: Dictionary(uniqueKeysWithValues: prepared.map { ($0.level.id, $0.ids) }),
                       featureCounts: counts, warnings: warnings)
@@ -223,7 +219,7 @@ enum IMDFArchive {
         m["version"] = "1.0.0"
         m["created"] = formatter.string(from: now)
         if (m["generated_by"] as? String ?? "").isEmpty { m["generated_by"] = "IM-DFrnt" }
-        if (m["language"] as? String ?? "").isEmpty { m["language"] = "ko-KR" }
+        if m["language"] == nil || m["language"] is NSNull { m["language"] = "ko" }
         return m
     }
 
@@ -277,12 +273,8 @@ extension ProjectJSON {
 extension AppEnvironment {
 
     /// 모든 층을 합쳐 IMDF 아카이브로 내보낸다. 층 도면을 읽어야 할 수 있어 백그라운드에서 진행률과 함께 만든다.
-    func exportIMDFArchive() {
+    func exportIMDFArchive(only type: IMDFFeatureType? = nil) {
         guard !isProjectBusy else { return }
-        guard !buildingProject.levels.isEmpty else {
-            notify("층이 없습니다. 건물·층 관리에서 층을 만든 뒤 내보내세요.", isError: true)
-            return
-        }
         guard var file = makeProjectFile() else { return }
         file.buildingProject = projectContents
         let projectData: Data
@@ -319,14 +311,20 @@ extension AppEnvironment {
             // 새로 발급한 id를 프로젝트에 남긴다. 다음 내보내기에서 같은 feature가 같은 id를 갖는다(IMDF 요건).
 
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = "\(projectDisplayName).zip"
-            panel.allowedContentTypes = [.zip]
+            let filename = type.map { $0 == .manifest ? "manifest.json" : $0.rawValue + ".geojson" }
+            if let filename, output.files[filename] == nil {
+                notify("\(filename)에 내보낼 Feature가 없습니다.", isError: true); return
+            }
+            panel.nameFieldStringValue = filename ?? "\(projectDisplayName).zip"
+            panel.allowedContentTypes = filename == nil ? [.zip] : [.json, UTType(filenameExtension: "geojson") ?? .json]
             panel.canCreateDirectories = true
             panel.title = "IMDF 아카이브 저장"
-            panel.message = "IMDF 규격은 ZIP(.zip)으로 전달하도록 정합니다."
+            panel.message = filename == nil ? "IMDF 규격은 ZIP(.zip)으로 전달하도록 정합니다."
+                : "전체 프로젝트를 검증한 뒤 모든 층의 이 타입을 한 파일로 저장합니다. 이 파일 하나는 완전한 IMDF 아카이브가 아닙니다."
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do {
-                try IMDFArchive.writeZip(output.files, to: url)
+                if let filename { try output.files[filename]!.write(to: url, options: .atomic) }
+                else { try IMDFArchive.writeZip(output.files, to: url) }
                 let total = output.featureCounts.values.reduce(0, +)
                 let summary = "\(url.lastPathComponent) 저장 완료 — feature \(total)개, 파일 \(output.files.count)개"
                 notify(output.warnings.isEmpty ? summary : summary + " · " + output.warnings.joined(separator: " "),

@@ -14,6 +14,8 @@ enum SubmissionSelfTest {
         let island = outer.map { LocalPoint($0.x + 200, $0.y) }
         var venue = FeatureGroup(featureType: .venue, serialNumber: "venue-001", memberIDs: [])
         venue.polygonRings = [outer, hole, island]; venue.multiPolygon = true
+        venue.properties["category"] = .string("university")
+        venue.properties["name"] = .localized(en: "", ko: "검증용 도서관")
         env.features.insert(venue)
         env.setDisplayPoint(LocalPoint(50, 50), for: venue.id)
         check("#79 Venue 구멍 안 display point 거부", env.features.feature(venue.id)?.displayPoint == nil)
@@ -35,15 +37,26 @@ enum SubmissionSelfTest {
             && duplicate.polygonRings == footprint.polygonRings && duplicate.properties == footprint.properties)
         env.updateProperty("category", value: .string("aerial"), in: duplicateID)
         check("#79 aerial 복제 수정은 ground 속성 보존", env.features.feature(footprint.id)?.value("category") == .string("ground"))
+        var anchors = AnchorStore()
+        for p in [LocalPoint(0, 0), LocalPoint(100, 0), LocalPoint(0, 100)] {
+            anchors.add(local: p, geo: GeoPoint(longitude: 129 + p.x / 100_000, latitude: 36 - p.y / 100_000), label: "검증")
+        }
+        env.editFootprintAnchors("검증 GPS") { $0 = anchors }
         let buildingID = env.addMetadataFeature(.building)!
         env.updateProperty("category", value: .string("unspecified"), in: buildingID)
         env.setDisplayPoint(LocalPoint(20, 20), for: buildingID)
-        check("#79 겹친 ground/aerial 안 Building display point 허용", env.features.feature(buildingID)?.displayPoint == LocalPoint(20, 20))
+        let buildingPoint = env.globalFeatures("building")[0]["properties"]?["display_point"]
+        check("#79 겹친 ground/aerial 안 Building display point 허용", buildingPoint?["type"]?.string == "Point")
         env.setDisplayPoint(LocalPoint(150, 150), for: buildingID)
-        check("#79 Building 외곽 밖 거부 및 이전 점 보존", env.features.feature(buildingID)?.displayPoint == LocalPoint(20, 20))
+        check("#79 Building 외곽 밖 거부 및 이전 점 보존", env.globalFeatures("building")[0]["properties"]?["display_point"] == buildingPoint)
+        env.clearDisplayPoint(buildingID)
+        check("#79 전역 Building 표시점 삭제", env.globalFeatures("building")[0]["properties"]?["display_point"] == .null)
 
         var level = FeatureGroup(featureType: .level, serialNumber: "level-001", memberIDs: [])
         level.polygonRings = [outer, hole, island]; level.multiPolygon = true
+        level.properties["category"] = .string("unspecified")
+        level.properties["outdoor"] = .boolean(false)
+        level.properties["short_name"] = .localized(en: "", ko: "1")
         env.features.insert(level)
         check("#79 ordinal 0 외곽 맞추기 사용 가능", env.groundFootprintUnavailableReason == nil)
         env.matchFootprintToGroundLevel(footprint.id)
@@ -69,10 +82,6 @@ enum SubmissionSelfTest {
         let saved = try ProjectFile.decoded(from: env.makeProjectFile()!.encoded()).commonProject()
         let restored = saved.levels.first(where: { $0.id == env.routingFloorID })!.editing.features.feature(venue.id)!
         check("#79 Venue 시간·display point 저장 왕복", restored.value("hours") == .string(hours) && restored.displayPoint == LocalPoint(220, 20))
-        var anchors = AnchorStore()
-        for p in [LocalPoint(0, 0), LocalPoint(100, 0), LocalPoint(0, 100)] {
-            anchors.add(local: p, geo: GeoPoint(longitude: 129 + p.x / 100_000, latitude: 36 - p.y / 100_000), label: "검증")
-        }
         let exporter = GeoJSONExporter(document: env.document!, segmentation: env.segmentation,
             georeferencer: Georeferencer(pairs: anchors.pairs), borrow: env.borrow, levelID: env.routingFloorID)
         var ids = IDAssigner()
@@ -102,7 +111,24 @@ enum SubmissionSelfTest {
         let matched = env.projectContents.sharedFootprint!.features.first(where: { $0.id == footprint.id })!.polygonRings
         check("#79 다른 층에서 외곽 맞추기도 공유 좌표계 유지", zip(matched.flatMap { $0 }, level.polygonRings.flatMap { $0 }).allSatisfy { $0.distance(to: $1) < 1e-8 }
             && matched.count == level.polygonRings.count)
-        let snapshot = env.makeProjectFile()!
+        var snapshot = env.makeProjectFile()!
+        snapshot.buildingProject = IMDFTestFixtures.metadata(env.projectContents)
+        // #78은 추측한 참조나 불완전한 기하를 내보내지 않는다. 합성 fixture도
+        // 실제 제출에 필요한 Building 참조·Unit coverage·Venue 범위를 갖춘다.
+        let buildingReference = PropertyValue.stringArray([buildingID.uuidString.lowercased()])
+        for i in snapshot.buildingProject!.sharedFootprint!.features.indices {
+            snapshot.buildingProject!.sharedFootprint!.features[i].properties["building_ids"] = buildingReference
+        }
+        let sourceIndex = snapshot.buildingProject!.levels.firstIndex(where: { $0.id == sourceID })!
+        snapshot.buildingProject!.levels[sourceIndex].editing.features.update(level.id) { $0.properties["building_ids"] = buildingReference }
+        snapshot.buildingProject!.levels[sourceIndex].editing.features.update(venue.id) {
+            $0.polygonRings = [[LocalPoint(-10, -10), LocalPoint(400, -10), LocalPoint(400, 110), LocalPoint(-10, 110)]]
+            $0.multiPolygon = false
+        }
+        var coverage = FeatureGroup(featureType: .unit, serialNumber: "unit-001", memberIDs: [])
+        coverage.polygonRings = level.polygonRings; coverage.multiPolygon = true
+        coverage.properties["category"] = .string("nonpublic")
+        snapshot.buildingProject!.levels[sourceIndex].editing.features.insert(coverage)
         let archive = try IMDFArchive.build(projectData: snapshot.encoded(), documents: [:])
         let levelJSON = try ProjectJSON.parse(archive.files["level.geojson"]!).arrayFeatures.first { $0["id"]?.uuid == sourceID }!
         let footprints = try ProjectJSON.parse(archive.files["footprint.geojson"]!).arrayFeatures
@@ -111,6 +137,22 @@ enum SubmissionSelfTest {
         let groundCoords = try FootprintGeometry.rings(groundJSON["geometry"]!).flatMap { $0 }
         check("#79 IMDF 내보낸 기준층과 ground Footprint 좌표 일치", levelCoords.count == groundCoords.count
             && zip(levelCoords, groundCoords).allSatisfy { abs($0[0] - $1[0]) < 1e-10 && abs($0[1] - $1[1]) < 1e-10 })
+
+        if let flag = CommandLine.arguments.firstIndex(of: "--submission-test-project"), CommandLine.arguments.indices.contains(flag + 1) {
+            let url = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+            let original = try Data(contentsOf: url)
+            let file = try ProjectFile.decoded(from: original)
+            let roundTrip = try ProjectFile.decoded(from: file.encoded())
+            check("#79 실제 v7 프로젝트 전체 모델 왕복 보존", file == roundTrip && file.version == 7)
+            let project = file.commonProject()
+            try project.validate()
+            try env.adopt(file, from: nil)
+            let reopened = env.makeProjectFile()!.commonProject()
+            check("#79 실제 v7 프로젝트 앱 열기 및 metadata·trash·legacy 보존", reopened.globalGeoJSON == project.globalGeoJSON
+                && reopened.metadataTrash == project.metadataTrash && reopened.legacyMetadataGroups == project.legacyMetadataGroups
+                && reopened.levels.count == project.levels.count)
+            check("#79 실제 프로젝트 원본 바이트 불변", try Data(contentsOf: url) == original)
+        }
     }
 }
 

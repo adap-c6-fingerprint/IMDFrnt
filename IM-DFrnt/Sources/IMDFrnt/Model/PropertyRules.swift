@@ -25,7 +25,7 @@ enum PropertyRules {
         case (.address, "postal_code"): "권장. 우편번호. 예: 37673"
         case (.address, "postal_code_ext"), (.address, "postal_code_vanity"): "한국 주소에는 쓰지 않습니다"
         case (_, "name") where [.building, .occupant].contains(type):
-            type == .occupant ? "필수. 상호(브랜드명) 그대로. ko 칸(기본 언어)을 채웁니다" : "권장. 공식 건물 이름. ko 칸(기본 언어)을 채웁니다"
+            type == .occupant ? "필수. 상호(브랜드명). Manifest 기본 언어의 이름을 포함하세요" : "선택. 공식 건물 이름. 입력하면 Manifest 기본 언어를 포함하세요"
         case (.building, "alt_name"): "선택. 흔히 부르는 다른 이름. 쓰려면 name도 있어야 합니다"
         case (.building, "category"): "필수. 주차 건물은 parking, 그 밖은 대개 unspecified"
         case (.building, "restriction"): "선택. 일반인 출입이 안 되는 건물이면 employeesonly 또는 restricted"
@@ -40,7 +40,7 @@ enum PropertyRules {
         case (.manifest, "version"): "1.0.0으로 고정됩니다(지원되는 유일한 버전)"
         case (.manifest, "created"): "내보낼 때 그 시각으로 자동 기록됩니다"
         case (.manifest, "generated_by"): "선택. 만든 프로그램. 비우면 IM-DFrnt"
-        case (.manifest, "language"): "필수. 기본 언어 태그. 비우면 ko-KR. 예: ko-KR, en-US"
+        case (.manifest, "language"): "필수. LABELS와 같은 기본 언어 태그. 새 프로젝트 기본값 ko. 예: ko, en-US"
         case (.manifest, "extensions"): "IMDF 확장을 쓰지 않으면 null입니다"
         default: nil
         }
@@ -90,15 +90,11 @@ enum PropertyRules {
             guard let text else { return nil }
             return restrictionOptions.contains(text) ? nil : violation("employeesonly 또는 restricted만 쓸 수 있습니다.")
         case (.building, "name"), (.occupant, "name"):
-            if case .localized(_, let ko) = value {
-                return ko.trimmingCharacters(in: .whitespaces).isEmpty
-                    ? violation("기본 언어(ko) 이름이 없습니다. ko 칸을 채우세요.") : nil
-            }
-            return type == .occupant ? violation("비어 있습니다. 상호를 ko 칸에 넣으세요.")
+            if !value.projectJSON.object.isEmpty { return nil }
+            return type == .occupant ? violation("비어 있습니다. 기본 언어의 상호를 넣으세요.")
                 : warning("건물 이름이 없으면 Apple 검증이 경고합니다.")
         case (.building, "alt_name"):
-            guard case .localized(_, let ko) = value else { return nil }
-            if ko.trimmingCharacters(in: .whitespaces).isEmpty { return violation("기본 언어(ko) 이름이 없습니다. ko 칸을 채우세요.") }
+            guard !value.isNull else { return nil }
             return f.value("name").isNull ? warning("alt_name만 있고 name이 없습니다. name을 먼저 넣으세요.") : nil
         case (.building, "address_id"):
             return value.isNull ? warning("주소를 고르지 않으면 Apple 검증이 경고합니다(venue 주소를 따릅니다).") : nil
@@ -107,7 +103,7 @@ enum PropertyRules {
         case (.occupant, "hours"):
             guard let text else { return warning("영업시간이 없으면 Apple 검증이 경고합니다.") }
             return isOpeningHours(text) ? nil
-                : violation("OSM opening_hours 형식이 아닙니다. 요일 Mo~Su, 시각 24시간제로 쓰세요. 예: Mo-Fr 09:00-18:00; Sa off")
+                : warning("복합 OSM opening_hours 표현은 Apple Sandbox에서 확인하세요. 예: Mo-Fr 09:00-18:00; Sa off")
         case (.occupant, "phone"):
             guard let text else { return warning("전화번호가 없으면 Apple 검증이 경고합니다.") }
             return text.range(of: #"^\+[1-9][0-9]{6,14}(;ext=[0-9]+)?$"#, options: .regularExpression) != nil ? nil
@@ -120,7 +116,7 @@ enum PropertyRules {
             return nil
         case (.manifest, "language"):
             guard let text else { return nil }
-            return text.range(of: #"^[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$"#, options: .regularExpression) != nil ? nil
+            return IMDFValidation.validLanguageTag(text) ? nil
                 : violation("언어 태그 형식이 아닙니다. 언어 소문자-지역 대문자로 쓰세요. 예: ko-KR")
         default:
             return nil

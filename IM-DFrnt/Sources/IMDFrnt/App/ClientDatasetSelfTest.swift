@@ -19,7 +19,7 @@ enum ClientDatasetSelfTest {
                 add(.level, "level-001", [LocalPoint(0, 0), LocalPoint(1000, 0), LocalPoint(1000, 800), LocalPoint(0, 800)])
             }
             if withVenue { add(.venue, "venue-001", [LocalPoint(0, 0), LocalPoint(1000, 0), LocalPoint(1000, 1000), LocalPoint(0, 1000)]) }
-            add(.unit, "unit-001", [LocalPoint(0, 0), LocalPoint(500, 0), LocalPoint(500, 500), LocalPoint(0, 500)])
+            add(.unit, "unit-001", [LocalPoint(0, 0), LocalPoint(1000, 0), LocalPoint(1000, 800), LocalPoint(0, 800)])
             return level
         }
         var ground = level("1층", 0, withVenue: true), upper = level("2층", 1)
@@ -34,7 +34,7 @@ enum ClientDatasetSelfTest {
 
         func projectData(_ levels: [ProjectLevel], cross: [RoutingEdge]) -> Data {
             var file = ProjectFile.empty()
-            file.buildingProject = BuildingProject(levels: levels, crossLevelEdges: cross)
+            file.buildingProject = IMDFTestFixtures.authored(levels, cross: cross)
             return try! file.encoded()
         }
         func json(_ data: Data?) -> [String: Any] { (data.flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:] }

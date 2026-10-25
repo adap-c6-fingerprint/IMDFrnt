@@ -2,7 +2,7 @@ import Foundation
 
 /// Keeps arbitrary IMDF properties, foreign members, nulls and nested coordinates.
 /// Decimal avoids rounding integer metadata through a Double during import/save.
-enum ProjectJSON: Equatable, Codable, Sendable {
+enum ProjectJSON: Hashable, Codable, Sendable {
     case object([String: ProjectJSON]), array([ProjectJSON]), string(String), number(Decimal), bool(Bool), null
 
     init(from decoder: Decoder) throws {
@@ -98,6 +98,12 @@ struct BuildingProject: Equatable, Codable {
     /// 좌측 Feature Type 목록의 사용자 지정 순서(type 이름). 없으면 기본 순서다.
     var featureTypeOrder: [String]?
     var sharedFootprint: SharedFootprint?
+    /// Conflicting legacy manifests remain recoverable until the user explicitly chooses a value.
+    var legacyManifests: [ProjectJSON]?
+    var metadataTrash: [String: [ProjectJSON]]?
+    var manifestConflictsResolved: Bool?
+    /// Recovery copies include editor-only state (old selections, trash, dates and local display points).
+    var legacyMetadataGroups: [String: FeatureGroup]?
 
     /// Older projects stored footprint features under each level.  Footprints
     /// are building-wide IMDF features, so normalize that legacy shape at the
@@ -120,9 +126,8 @@ struct BuildingProject: Equatable, Codable {
     }
 
     func validate() throws {
-        guard Set(levels.map(\.id)).count == levels.count,
-              Set(levels.map { $0.info.ordinal }).count == levels.count else {
-            throw IMDFImporter.Failure(message: "프로젝트의 층 ID 또는 층 번호가 중복됩니다.")
+        guard Set(levels.map(\.id)).count == levels.count else {
+            throw IMDFImporter.Failure(message: "프로젝트의 층 ID가 중복됩니다.")
         }
         let nodes = levels.flatMap(\.nodes)
         guard Set(nodes.map(\.id)).count == nodes.count,
@@ -196,7 +201,7 @@ struct BuildingProject: Equatable, Codable {
             guard let coordinates = levels[i].info.imdfCoordinates, !levels[i].geoJSON.isEmpty else { continue }
             let doc = try SVGParser.parse(data: Data(levels[i].info.svg.utf8), sourceName: levels[i].info.sourceName)
             var elements: [String] = []
-            for type in ["level", "unit", "section", "fixture", "detail", "opening", "amenity"] {
+            for type in ["level", "unit", "section", "fixture", "kiosk", "detail", "opening", "amenity", "anchor"] {
                 let name = type + ".geojson"
                 let shared = (globalGeoJSON[name] ?? []).filter { Self.levelReferences($0, unitLevels: unitLevels).contains(levels[i].id) }
                 for feature in (levels[i].geoJSON[name] ?? []) + shared {
@@ -262,8 +267,6 @@ struct BuildingProject: Equatable, Codable {
                 project.levels[i].info.shortName = short["ko"]?.string ?? short["en"]?.string ?? short.string ?? ""
             }
         }
-        let buildings = project.globalGeoJSON["building.geojson"] ?? []
-        guard buildings.count <= 1 else { throw IMDFImporter.Failure(message: "한 프로젝트에는 건물 하나만 불러올 수 있습니다.") }
         return project
     }
 

@@ -173,13 +173,16 @@ struct OpeningHoursEditor: View {
 struct DisplayPointControls: View {
     @EnvironmentObject var env: AppEnvironment
     let feature: FeatureGroup
+    private var hasPoint: Bool {
+        env.isGlobalMetadata(feature.id) ? !feature.value("display_point").isNull : feature.displayPoint != nil
+    }
     var body: some View {
         HStack {
             Text("display point").font(.caption.weight(.semibold))
             Spacer()
-            Button(feature.displayPoint == nil ? "찍기" : "다시 찍기") { env.beginDisplayPointPicking(feature.id) }
+            Button(hasPoint ? "다시 찍기" : "찍기") { env.beginDisplayPointPicking(feature.id) }
                 .disabled(env.document == nil)
-            if feature.displayPoint != nil { Button("삭제") { env.clearDisplayPoint(feature.id) } }
+            if hasPoint { Button("삭제") { env.clearDisplayPoint(feature.id) } }
         }.controlSize(.small)
     }
 }

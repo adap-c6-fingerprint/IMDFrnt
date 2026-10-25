@@ -47,9 +47,11 @@ struct BuildingManager: View {
                         ForEach(["building", "venue", "address"], id: \.self) { type in
                             GroupBox(type == "building" ? "건물" : type == "venue" ? "Venue" : "주소") {
                                 VStack(alignment: .leading, spacing: 10) {
+                                    if type == "building" { Button("건물 추가") { env.createBuilding() } }
+                                    if type == "address" { Button("주소 추가") { env.addMetadataFeature(.address) } }
                                     if env.globalFeatures(type).isEmpty {
-                                        if type == "building" { Button("건물 생성") { env.createBuilding() } }
-                                        else { Text("IMDF를 불러오면 기존 정보가 보존됩니다.").foregroundStyle(.secondary) }
+                                        Text(type == "venue" ? "메인 venue 레이어에서 장소 전체의 경계를 하나 그리세요." : "공통 정보가 없습니다.")
+                                            .foregroundStyle(.secondary)
                                     }
                                     ForEach(env.globalFeatures(type), id: \.featureID) { feature in
                                         if let id = feature["id"]?.uuid { GlobalMetadataEditor(type: type, feature: feature).id(id) }
@@ -114,6 +116,9 @@ private struct GlobalMetadataEditor: View {
                         }))
                     }
                 }
+                if let kind = IMDFFeatureType(rawValue: type), let id = feature["id"]?.uuid {
+                    MetadataRecordEditor(type: kind, id: id)
+                }
             }.padding(.top, 8)
         }.font(.caption)
             .onAppear { text = feature["properties"]?.text ?? "{}" }
@@ -128,6 +133,7 @@ private struct ManifestEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            LegacyManifestChoices()
             JSONTextEditor(text: $text, height: 120)
             if let error { Text(error).foregroundStyle(.red).font(.caption) }
             Button("Manifest 적용") {

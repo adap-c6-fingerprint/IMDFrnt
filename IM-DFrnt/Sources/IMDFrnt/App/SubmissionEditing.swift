@@ -93,7 +93,9 @@ extension AppEnvironment {
     }
 
     func clearDisplayPoint(_ id: FeatureGroupID) {
-        perform("display point 삭제") { features.update(id) { $0.displayPoint = nil } }
+        if !updateGlobalProperty("display_point", value: .null, in: id) {
+            perform("display point 삭제") { features.update(id) { $0.displayPoint = nil } }
+        }
         if mode == .displayPointPicking(id) { mode = .idle }
     }
 
@@ -151,6 +153,7 @@ extension AppEnvironment {
                 props["display_point"] = .object(["type": .string("Point"), "coordinates": .array([
                     .number(Decimal(geo.longitude)), .number(Decimal(geo.latitude))])])
                 buildingProject.globalGeoJSON[type + ".geojson"]![index]["properties"] = props
+                buildingProject.globalGeoJSON[type + ".geojson"]![index]["imdfrnt_local_display_point"] = nil
             }
             mode = .idle
             return true

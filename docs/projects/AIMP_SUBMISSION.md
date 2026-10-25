@@ -20,8 +20,12 @@
 
 `--footprint-selftest`에 #79 회귀 검사를 연결했다. 새 ID 발급·원본 보존, 실제 다각형 내부 및 구멍 거부, 표시점 삭제/Undo, Footprint 외곽 복사/Undo, ordinal 0 부재, 운영시간 문자열/프로젝트 저장 왕복, 가져온 전역 Building, 다른 층의 정렬 좌표와 IMDF 내보내기를 검사한다.
 
-영향도: **L**. 공통 표시점 판정과 IMDF HOURS 필드의 해석이 바뀌므로 Building/Venue/Footprint 및 저장·내보내기 회귀를 함께 확인한다. 이전 프로젝트의 필드는 유지하며 스키마 버전을 바꾸지 않는다. AI 검토는 사람의 코드리뷰·승인을 대체하지 않는다. 사용자 지시로 이 단계에서는 로컬 커밋까지만 진행하며 PR 생성·push·merge는 하지 않는다.
+영향도: **L**. 공통 표시점 판정과 IMDF HOURS 필드의 해석이 바뀌므로 Building/Venue/Footprint 및 저장·내보내기 회귀를 함께 확인한다. #78의 공통 메타데이터와 프로젝트 v7 지원을 통합했으며, Building 표시점은 층별 FeatureGroup 대신 전역 GeoJSON properties에 저장한다. 이전 프로젝트의 휴지통·복구용 메타데이터를 보존한다. AI 검토는 사람의 코드리뷰·승인을 대체하지 않는다. 사용자 지시로 이 단계에서는 로컬 통합·커밋까지만 진행하며 PR 생성·push·원격 merge는 하지 않는다.
 
 AIMP 실제 업로드·승인 및 네이티브 UI 수동 조작은 별도 검증이다. 자체 검사 통과를 AIMP 승인으로 표시하지 않는다.
 
 2026-10-25 로컬 검증: Xcode 툴체인 Debug 빌드 성공, `--footprint-selftest` 83/83, `--building-selftest` 61/61, `--project-selftest` 24/24, 기존 `--selftest` ALL PASS. 외곽 일치는 다른 층에서 이동·회전·축척이 적용된 상태로 복사한 뒤 실제 IMDF 아카이브의 Level/Footprint 좌표를 1e-10도 허용오차로 비교했다.
+
+위 수치는 v7 통합 전 #79 단독 변경의 검사 기록이다. 통합 후에는 #78의 엄격한 공통 내보내기 검증을 그대로 적용하며, 합성 fixture도 명시적 Building 참조·Unit coverage·Venue 범위를 갖추도록 보완했다. `--footprint-selftest --submission-test-project <파일>`로 실제 v7 프로젝트의 전체 모델 왕복·앱 열기·전역 메타데이터/휴지통/이전 원본 보존과 원본 바이트 불변을 추가 확인한다.
+
+v7 통합 검증(2026-10-25): Release 빌드·ad-hoc 서명 검증 성공. `run-self-tests.sh`의 8/8 모드 통과(Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, Footprint 84/84, IMDF Compliance 50/50). 첨부된 실제 v7 프로젝트를 지정한 추가 Debug 검사는 87/87 PASS이며 원본 SHA-256은 검사 전후 동일하다. 별도 실행 앱은 `IM-DFrnt/.build/AIMP-v7/IM-DFrnt.app`에 생성해 기존 앱을 덮어쓰지 않는다. 실제 AIMP 업로드와 UI 수동 조작은 여전히 별도 확인 대상이다.

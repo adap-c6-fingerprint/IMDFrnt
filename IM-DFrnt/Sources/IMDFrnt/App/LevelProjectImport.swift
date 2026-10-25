@@ -47,7 +47,7 @@ extension AppEnvironment {
             let prepared = try await Task.detached(priority: .userInitiated) {
                 try PreparedLevelDrawing.make(LevelDrawingInput(levelID: target.id, svg: source.info.svg, sourceName: source.info.sourceName))
             }.value
-            guard importLevel(source, into: target.id, drawing: prepared) else { return }
+            guard importLevel(source, into: target.id, drawing: prepared, metadata: project) else { return }
             persist(showingBanner: false)
             notify("‘\(url.deletingPathExtension().lastPathComponent)’의 \(source.info.name)을 \(target.info.name)에 넣었습니다.")
         } catch {
@@ -74,7 +74,8 @@ extension AppEnvironment {
     /// 층 내용을 `targetID` 층에 옮긴다. 층 ID·이름·층 번호는 지금 층 것을 유지한다.
     /// 다른 층과 잇는 연결은 이 건물에 그 층이 없으니 가져오지 않는다.
     @discardableResult
-    func importLevel(_ source: ProjectLevel, into targetID: UUID, drawing: PreparedLevelDrawing? = nil) -> Bool {
+    func importLevel(_ source: ProjectLevel, into targetID: UUID, drawing: PreparedLevelDrawing? = nil,
+                     metadata: BuildingProject? = nil) -> Bool {
         guard let i = buildingProject.levels.firstIndex(where: { $0.id == targetID }) else { return false }
         let existingNodes = Set(projectContents.levels.flatMap(\.nodes).map(\.id))
         let existingEdges = Set(projectContents.levels.flatMap(\.edges).map(\.id) + buildingProject.crossLevelEdges.map(\.id))
@@ -107,6 +108,7 @@ extension AppEnvironment {
             }
             // IMDF에서 온 층은 GeoJSON이 원래 층 ID를 가리킨다. 지금 층 ID로 바꿔야 내보낼 때 어긋나지 않는다.
             buildingProject.levels[i] = level
+            if let metadata { mergeLevelMetadata(metadata, source: source, targetID: targetID) }
             levelDrawingCache.invalidate(targetID)
             if let drawing { levelDrawingCache.insert(drawing) }
             if routingFloorID == targetID { beginLevelDrawingLoad(targetID) }
@@ -116,5 +118,45 @@ extension AppEnvironment {
         }
         // 불러오면서 feature가 새로 생겨 '지금 고친 것'으로 찍힌다. 불러오기는 고친 것이 아니니 원래 시각으로 돌린다.
         return true
+    }
+
+    /// A single-floor import must bring the common records that its old floor-owned metadata now
+    /// references. Do not guess that equal names/addresses mean equal IDs or overwrite the target Venue.
+    private func mergeLevelMetadata(_ project: BuildingProject, source: ProjectLevel, targetID: UUID) {
+        var importedIDs = Set(source.geoJSON.values.flatMap { $0 }.compactMap { $0["id"]?.string?.lowercased() })
+        for f in source.editing.features.features { importedIDs.insert((source.editing.ids.peek(f.id) ?? f.id).uuidString.lowercased()) }
+        for name in ["address.geojson", "building.geojson", "occupant.geojson", "relationship.geojson"] {
+            for original in project.globalGeoJSON[name] ?? [] {
+                if name == "occupant.geojson", project.levels.count > 1,
+                   !importedIDs.contains(original["properties"]?["anchor_id"]?.string?.lowercased() ?? "") { continue }
+                if name == "relationship.geojson", project.levels.count > 1 {
+                    let props = original["properties"]
+                    let references = [props?["origin"], props?["destination"]].compactMap { $0 }
+                        + (props?["intermediary"]?.array ?? [])
+                    if !references.allSatisfy({ $0 == .null || importedIDs.contains($0["id"]?.string?.lowercased() ?? "") }) { continue }
+                }
+                let value = rewriteLevelID(original, old: source.id, new: targetID)
+                if !(buildingProject.globalGeoJSON[name] ?? []).contains(value) { buildingProject.globalGeoJSON[name, default: []].append(value) }
+            }
+        }
+        if buildingProject.globalGeoJSON["venue.geojson"]?.isEmpty != false,
+           !buildingProject.levels.contains(where: { !$0.editing.features.features(ofType: .venue).isEmpty }) {
+            buildingProject.globalGeoJSON["venue.geojson"] = project.globalGeoJSON["venue.geojson"]
+        }
+        if buildingProject.sharedFootprint == nil, var shared = project.sharedFootprint {
+            if shared.sourceLevelID == source.id { shared.sourceLevelID = targetID }
+            buildingProject.sharedFootprint = shared
+            buildingProject.globalGeoJSON["footprint.geojson"] = project.globalGeoJSON["footprint.geojson"]
+        }
+        var conflicts: [String: ProjectJSON] = [:]
+        for (key, value) in project.manifest.object where !["version", "created"].contains(key) {
+            if let current = buildingProject.manifest[key], current != .null, current != value { conflicts[key] = value }
+            else { buildingProject.manifest[key] = value }
+        }
+        if !conflicts.isEmpty {
+            conflicts["imdfrnt_source_level"] = .string(source.info.name)
+            buildingProject.legacyManifests = (buildingProject.legacyManifests ?? []) + [.object(conflicts)]
+            buildingProject.manifestConflictsResolved = false
+        }
     }
 }
