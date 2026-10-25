@@ -44,6 +44,9 @@ enum SubmissionSelfTest {
         env.editFootprintAnchors("검증 GPS") { $0 = anchors }
         let buildingID = env.addMetadataFeature(.building)!
         env.updateProperty("category", value: .string("unspecified"), in: buildingID)
+        for id in [footprint.id, duplicateID] {
+            env.updateProperty("building_ids", value: .stringArray([buildingID.uuidString.lowercased()]), in: id)
+        }
         env.setDisplayPoint(LocalPoint(20, 20), for: buildingID)
         let buildingPoint = env.globalFeatures("building")[0]["properties"]?["display_point"]
         check("#79 겹친 ground/aerial 안 Building display point 허용", buildingPoint?["type"]?.string == "Point")
@@ -51,6 +54,25 @@ enum SubmissionSelfTest {
         check("#79 Building 외곽 밖 거부 및 이전 점 보존", env.globalFeatures("building")[0]["properties"]?["display_point"] == buildingPoint)
         env.clearDisplayPoint(buildingID)
         check("#79 전역 Building 표시점 삭제", env.globalFeatures("building")[0]["properties"]?["display_point"] == .null)
+
+        let otherBuilding = env.addMetadataFeature(.building)!
+        env.updateProperty("category", value: .string("unspecified"), in: otherBuilding)
+        env.setDisplayPoint(LocalPoint(20, 20), for: otherBuilding)
+        check("#79 연결된 Footprint가 없는 Building 표시점 거부", env.globalFeatures("building")[1]["properties"]?["display_point"] == .null)
+        var otherFootprint = FeatureGroup(featureType: .footprint, serialNumber: "footprint-review", memberIDs: [])
+        otherFootprint.polygonRings = [island]
+        otherFootprint.properties["category"] = .string("ground")
+        otherFootprint.properties["building_ids"] = .stringArray([otherBuilding.uuidString.uppercased()])
+        env.features.insert(otherFootprint)
+        env.setDisplayPoint(LocalPoint(20, 20), for: buildingID)
+        let ownPoint = env.globalFeatures("building")[0]["properties"]?["display_point"]
+        env.setDisplayPoint(LocalPoint(220, 20), for: buildingID)
+        check("#79 다른 건물 Footprint의 표시점 거부·기존 값 보존", ownPoint?["type"]?.string == "Point"
+            && env.globalFeatures("building")[0]["properties"]?["display_point"] == ownPoint)
+        env.setDisplayPoint(LocalPoint(220, 20), for: otherBuilding)
+        check("#79 해당 건물 Footprint 표시점 허용·UUID 대소문자 무관", env.globalFeatures("building")[1]["properties"]?["display_point"]?["type"]?.string == "Point")
+        env.clearDisplayPoint(buildingID)
+        env.clearDisplayPoint(otherBuilding)
 
         var level = FeatureGroup(featureType: .level, serialNumber: "level-001", memberIDs: [])
         level.polygonRings = [outer, hole, island]; level.multiPolygon = true

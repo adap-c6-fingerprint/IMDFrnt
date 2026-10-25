@@ -143,7 +143,9 @@ extension AppEnvironment {
                   let geo = info.geoPoint(for: p) else {
                 notify("현재 층의 GPS를 먼저 설정하세요.", isError: true); return true
             }
-            let geometries = type == "building" ? globalFeatures("footprint").compactMap { $0["geometry"] }
+            let geometries = type == "building" ? globalFeatures("footprint").filter {
+                $0["properties"]?["building_ids"]?.array.contains { $0.uuid == id } == true
+            }.compactMap { $0["geometry"] }
                 : [globalFeatures(type)[index]["geometry"] ?? .null]
             let point = LocalPoint(geo.longitude, geo.latitude)
             let inside = geometries.contains { value in

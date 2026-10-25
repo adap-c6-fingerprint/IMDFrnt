@@ -1,5 +1,12 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-25 — #79 / IMD-68 자체 리뷰 후속: Building 표시점
+
+- Building 표시점을 지정할 때 `building_ids`로 해당 Building을 참조하는 Footprint만 검사한다. 다른 건물 또는 연결되지 않은 Footprint에서는 기존 표시점을 바꾸지 않는다. UUID 대소문자를 구분하지 않는다.
+- 다중 건물 허용/거부와 연결 누락 회귀 검사를 추가했다. 기존 합성 fixture에도 명시적 건물 참조를 설정했다.
+- Debug·Release 빌드와 ad-hoc 서명 검증 성공. 별도 앱 `.build/AIMP-v7-review-fix/IM-DFrnt.app`으로 전체 CLI 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, Footprint 93/93, IMDF Compliance 64/64. 두 P2의 회귀 경로를 재검수했다.
+- 누적 영향도 L이며 사람 코드리뷰·승인과 실제 GUI/AIMP 제출 검증은 남아 있다. 기존 앱·프로젝트는 변경하지 않았고 PR·push는 수행하지 않는다.
+
 ## 2026-10-25 — #79 / IMD-68 자체 리뷰 후속: 공통 UUID 충돌
 
 - 층 가져오기 전에 관련 공통 정보를 병합할 수 있는지 검사한다. 동일 UUID·동일 내용은 재사용하고, 내용 충돌이나 UUID 누락은 안내 후 전체 가져오기를 중단한다. UUID의 대소문자는 구분하지 않는다.
