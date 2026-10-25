@@ -92,7 +92,13 @@ struct CanvasView: View {
                 }
 
                 VStack {
-                    if env.showRoutingScreen {
+                    if case .displayPointPicking = env.mode {
+                        HStack {
+                            Text("도형 외곽 안에서 display point를 클릭하세요.")
+                            Button("취소") { env.mode = .idle }
+                        }
+                        .font(.caption).padding(10).toolbarCard(cornerRadius: 8)
+                    } else if env.showRoutingScreen {
                         Text(env.routingTool.hint)
                             .font(.caption).padding(10).toolbarCard(cornerRadius: 8)
                             .allowsHitTesting(false)

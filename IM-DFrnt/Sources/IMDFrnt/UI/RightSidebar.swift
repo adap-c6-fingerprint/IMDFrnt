@@ -239,6 +239,19 @@ struct RightSidebar: View {
 
         if env.canDesignateMultiPolygon(f) { multiPolygonSection(f) }
         if f.featureType == .fixture { fixtureTwinSection(f) }
+        if f.featureType == .footprint {
+            VStack(alignment: .leading, spacing: 6) {
+                Button("복제") { _ = env.duplicateFootprint(f.id) }
+                Button("Footprint를 기준층 Level 외곽에 맞추기") { env.matchFootprintToGroundLevel(f.id) }
+                    .disabled(env.groundFootprintUnavailableReason != nil)
+                if let reason = env.groundFootprintUnavailableReason {
+                    Text(reason)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Text("외곽을 교체하고 category를 ground로 설정합니다. 실행 취소로 되돌릴 수 있습니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
 
         VStack(alignment: .leading, spacing: 6) {
             ForEach(PropertySchema.fields(for: f.featureType)) { field in
@@ -248,18 +261,7 @@ struct RightSidebar: View {
 
         if f.featureType.hasDisplayPoint {
             Divider()
-            HStack {
-                Text("display point").font(.caption.weight(.semibold))
-                Spacer()
-                if let dp = f.displayPoint {
-                    Text(String(format: "%.1f, %.1f", dp.x, dp.y))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                }
-                Button(f.displayPoint == nil ? "찍기" : "다시 찍기") {
-                    env.beginDisplayPointPicking(f.id)
-                }
-                .controlSize(.small)
-            }
+            DisplayPointControls(feature: f)
         }
 
         Divider()
@@ -455,6 +457,10 @@ struct PropertySlotRow: View {
             Text(env.exportID(for: feature)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
                 .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        } else if feature.featureType == .venue, field.key == "hours" {
+            OpeningHoursEditor(value: Binding(get: {
+                if case .string(let text) = feature.value("hours") { return text }; return ""
+            }, set: { env.updateProperty("hours", value: $0.isEmpty ? .null : .string($0), in: feature.id) }))
         } else if !field.isEditable, field.type == .string {
             Text(feature.featureType == .manifest && field.key == "version" ? "1.0.0"
                  : feature.featureType == .manifest && field.key == "created" ? "내보낼 때 자동 기록" : value.displayText)

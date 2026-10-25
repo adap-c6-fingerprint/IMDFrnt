@@ -91,6 +91,29 @@ private struct GlobalMetadataEditor: View {
                     do { try env.setGlobalMetadata(type: type, id: feature["id"]!.uuid!, text: text); error = nil }
                     catch { self.error = error.localizedDescription }
                 }
+                if ["building", "venue"].contains(type), let id = feature["id"]?.uuid {
+                    HStack {
+                        Text("display point")
+                        Button(feature["properties"]?["display_point"] == nil || feature["properties"]?["display_point"] == .null ? "찍기" : "다시 찍기") {
+                            env.beginGlobalDisplayPointPicking(id)
+                        }
+                        .disabled(env.document == nil)
+                        Button("삭제") {
+                            var props = feature["properties"] ?? .object([:])
+                            props["display_point"] = .null
+                            do { try env.setGlobalMetadata(type: type, id: id, text: props.text) }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }
+                    if type == "venue" {
+                        OpeningHoursEditor(value: Binding(get: { feature["properties"]?["hours"]?.string ?? "" }, set: { hours in
+                            var props = feature["properties"] ?? .object([:])
+                            props["hours"] = hours.isEmpty ? .null : .string(hours)
+                            do { try env.setGlobalMetadata(type: type, id: id, text: props.text) }
+                            catch { self.error = error.localizedDescription }
+                        }))
+                    }
+                }
             }.padding(.top, 8)
         }.font(.caption)
             .onAppear { text = feature["properties"]?.text ?? "{}" }

@@ -217,7 +217,7 @@ enum PropertySchema {
                 .init(key: "name", type: .localizedName),
                 .init(key: "alt_name", type: .localizedName),
                 .init(key: "address_id", type: .reference(.address)),
-                .init(key: "hours", type: .alwaysNull),
+                .init(key: "hours", type: .string),
                 .init(key: "phone", type: .string),
                 .init(key: "website", type: .string),
                 .init(key: "display_point", type: .point, isEditable: false),

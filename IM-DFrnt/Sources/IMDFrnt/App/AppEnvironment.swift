@@ -2296,16 +2296,20 @@ final class AppEnvironment: ObservableObject {
     // MARK: display point (명세 7-3-4)
 
     func beginDisplayPointPicking(_ fid: FeatureGroupID) {
+        metadataEditorType = nil
+        showBuildingManager = false
+        showRoutingScreen = false; showLevelFootprintScreen = false; showMapAlignScreen = false; showAnchorScreen = false
+        cancelPointDraft()
         mode = .displayPointPicking(fid)
         selection.clear()
-        notify("그룹 범위 안에서 display point를 찍으세요. 이 모드에서는 개체 선택이 잠깁니다.")
+        notify("도형 외곽 안에서 display point를 찍으세요. 상단 취소 버튼으로 종료할 수 있습니다.")
     }
 
     func setDisplayPoint(_ p: LocalPoint, for fid: FeatureGroupID) {
-        guard let doc = document, let f = features.feature(fid) else { return }
-        let box = VertexExtractor.boundingBox(of: f.memberIDs, document: doc).insetBy(dx: -2, dy: -2)
-        guard box.contains(p.cg) else {
-            notify("display point는 그룹화 범위 안에만 찍을 수 있습니다.", isError: true)
+        if setGlobalDisplayPoint(p, for: fid) { return }
+        guard let f = features.feature(fid), !f.isInTrash else { return }
+        guard permitsDisplayPoint(p, for: f) else {
+            notify("display point는 실제 도형 외곽 안에 찍어야 합니다. 구멍과 외부는 선택할 수 없습니다.", isError: true)
             return
         }
         perform("display point 지정") { features.update(fid) { $0.displayPoint = p } }

@@ -55,6 +55,7 @@ struct MetadataEditor: View {
             ForEach(PropertySchema.fields(for: f.featureType)) { field in
                 PropertySlotRow(feature: f, field: field)
             }
+            if f.featureType.hasDisplayPoint { DisplayPointControls(feature: f) }
         }
         .padding(10)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
