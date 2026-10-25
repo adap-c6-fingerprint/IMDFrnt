@@ -1270,7 +1270,9 @@ struct CanvasView: View {
                 } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
                     selectByMarquee(m)
                 } else if moveBase == nil, moved < MarqueeRect.dragThreshold {
-                    if let hit = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) }),
+                    if env.handlePriorityCanvasClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale)) {
+                        // 표시점/Anchor 입력은 이름표·면·점 선택보다 먼저 소비한다.
+                    } else if let hit = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) }),
                        env.handleFeatureTagClick(hit.0) {
                         let tag = hit.0
                         if env.expandedFeatures.contains(tag),
@@ -1283,7 +1285,7 @@ struct CanvasView: View {
                     } else if env.isPolygonWorkMode {
                         env.handleFaceClick(at: toLocal(value.location))
                         // 폴리곤 type에서는 클릭이 개체가 아니라 **면**을 고른다(신기능 5-4).
-                    } else if env.isPointWorkMode, !env.mode.blocksSelection {
+                    } else if env.isPointWorkMode {
                         env.handlePointClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
                                              freePoint: NSEvent.modifierFlags.contains(.option),
                                              editing: NSEvent.modifierFlags.contains(.control),

@@ -1237,6 +1237,12 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 캔버스 입력
 
+    func handlePriorityCanvasClick(at point: LocalPoint, tolerance: Double) -> Bool {
+        guard mode.blocksSelection else { return false }
+        handleCanvasClick(at: point, tolerance: tolerance)
+        return true
+    }
+
     func handleCanvasClick(at point: LocalPoint, tolerance: Double) {
         guard let doc = document else { return }
 
