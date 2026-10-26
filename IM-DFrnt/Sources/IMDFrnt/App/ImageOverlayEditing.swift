@@ -94,7 +94,7 @@ extension AppEnvironment {
         }
         imageOverlays.adjusting = type
         // 처음 얹은 이미지는 거의 늘 자리를 맞춰야 하므로 조정 모드로 바로 들어간다.
-        notify("\(prepared.sourceName)을 \(buildingProject.levels[i].info.name) \(type.displayName) 레이어에 얹었습니다. 끌어서 옮기고, ⇧로 크기·⌥로 회전을 맞추세요.")
+        notify("\(prepared.sourceName)을 \(buildingProject.levels[i].info.name) \(type.displayName) 레이어에 얹었습니다. 안쪽을 끌어 옮기고, 꼭짓점으로 크기·위 손잡이로 회전을 맞추세요.")
     }
 
     /// 프로젝트에 넣는 변경. 끌기·슬라이더는 손을 뗄 때 한 번만 부르므로 실행취소 한 칸 = 조작 한 번이다.

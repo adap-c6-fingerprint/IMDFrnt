@@ -28,6 +28,22 @@ enum ImageOverlaySelfTest {
         check("배율 하한", o.scale == LevelImageOverlay.scaleRange.lowerBound)
         o.fit(in: CGSize(width: 1000, height: 800))
         check("도면에 맞추기: 90%·중앙·회전 0", abs(o.scale - 4.5) < 1e-9 && o.center == LocalPoint(500, 400) && o.rotation == 0)
+
+        // 꼭짓점·회전 손잡이로 직접 조정(2026-10-26). 200×100px, 중심 (500,400), 배율 2 → 꼭짓점 (300,300)~(700,500).
+        func nearL(_ a: LocalPoint, _ b: LocalPoint) -> Bool { abs(a.x - b.x) < 1e-6 && abs(a.y - b.y) < 1e-6 }
+        let h = LevelImageOverlay(image: ImageOverlayData(bytes: Data()), sourceName: "h", pixelWidth: 200, pixelHeight: 100,
+                                  centerX: 500, centerY: 400, scale: 2)
+        check("꼭짓점 좌표(왼쪽 위부터 시계 방향)", zip(h.corners, [LocalPoint(300, 300), LocalPoint(700, 300), LocalPoint(700, 500), LocalPoint(300, 500)]).allSatisfy(nearL))
+        let grown = h.scaled(corner: 2, from: LocalPoint(700, 500), to: LocalPoint(900, 600), aroundCenter: false)
+        check("오른쪽 아래 꼭짓점 끌기: 맞은편 꼭짓점 고정·비율 유지", abs(grown.scale - 3) < 1e-9 && nearL(grown.corners[0], LocalPoint(300, 300)))
+        let centered = h.scaled(corner: 2, from: LocalPoint(700, 500), to: LocalPoint(900, 600), aroundCenter: true)
+        check("⌥ 꼭짓점 끌기: 중심 고정", abs(centered.scale - 4) < 1e-9 && nearL(centered.center, h.center))
+        let crushed = h.scaled(corner: 2, from: LocalPoint(700, 500), to: LocalPoint(100, 100), aroundCenter: false)
+        check("맞은편을 넘겨 끌어도 뒤집히지 않음", crushed.scale > 0 && nearL(crushed.corners[0], LocalPoint(300, 300)))
+        let turned = h.rotated(from: LocalPoint(500, 300), to: LocalPoint(600, 400), snap: false)
+        check("회전 손잡이 끌기: 중심 기준 90°", abs(turned.rotation - 90) < 1e-9 && nearL(turned.center, h.center))
+        check("⇧ 회전은 15° 단위", h.rotated(from: LocalPoint(500, 300), to: LocalPoint(600, 390), snap: true).rotation == 90)
+        check("회전한 이미지의 안팎 판정", turned.contains(LocalPoint(500, 580)) && !turned.contains(LocalPoint(650, 400)))
         let sameID = ImageOverlayData(id: o.image.id, bytes: Data([1, 2, 3]))
         check("바이트는 비교하지 않고 ID로 같음 판정", sameID == o.image && ImageOverlayData(bytes: Data()) != o.image)
 

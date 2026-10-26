@@ -82,7 +82,8 @@ struct ImageOverlayOpacitySlider: View {
     }
 }
 
-/// 이미지 조정 모드의 캔버스 상단바. 끌기로 대강 맞추고 여기서 수치로 다듬는다.
+/// 이미지 조정 모드의 캔버스 상단바. 크기·회전은 이미지의 꼭짓점·회전 손잡이를 직접 끌어 맞추고
+/// (2026-10-26 요청), 여기에는 안내와 끌기로 하기 번거로운 것(90° 단위 회전·처음 자리·투명도)만 둔다.
 struct ImageOverlayToolbar: View {
     @EnvironmentObject var env: AppEnvironment
     @EnvironmentObject var overlays: ImageOverlaySession
@@ -90,52 +91,26 @@ struct ImageOverlayToolbar: View {
 
     var body: some View {
         if let overlay = overlays.current(type, in: env) {
-            let fit = overlay.fitScale(in: env.document?.canvasSize ?? .zero)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Label("\(type.displayName) 이미지 조정", systemImage: "photo").font(.callout.weight(.semibold))
-                    Text("끌기: 이동 · ⇧ 끌기: 크기 · ⌥ 끌기: 회전")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer(minLength: 8)
-                    Button("도면에 맞추기") {
-                        env.updateImageOverlay(type) { $0.fit(in: env.document?.canvasSize ?? .zero) }
-                    }
+            HStack(spacing: 10) {
+                Label("\(type.displayName) 이미지 조정", systemImage: "photo").font(.callout.weight(.semibold))
+                Text("안쪽 끌기: 이동 · 꼭짓점: 크기(⌥ 중심 기준) · 위 손잡이: 회전(⇧ 15°)")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text("\(String(format: "%.1f", overlay.rotation))°")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Button { env.updateImageOverlay(type) { $0.setRotation($0.rotation - 90) } } label: { Image(systemName: "rotate.left") }
+                    .buttonStyle(.borderless).help("왼쪽으로 90°")
+                Button { env.updateImageOverlay(type) { $0.setRotation($0.rotation + 90) } } label: { Image(systemName: "rotate.right") }
+                    .buttonStyle(.borderless).help("오른쪽으로 90°")
+                ImageOverlayOpacitySlider(type: type, overlay: overlay).frame(width: 140).controlSize(.mini)
+                Button("도면에 맞추기") {
+                    env.updateImageOverlay(type) { $0.fit(in: env.document?.canvasSize ?? .zero) }
+                }
+                .controlSize(.small)
+                Button("완료") { overlays.adjusting = nil }
                     .controlSize(.small)
-                    Button("완료") { overlays.adjusting = nil }
-                        .controlSize(.small)
-                }
-                HStack(spacing: 14) {
-                    labeled("크기", "\(Int((overlay.scale / fit * 100).rounded()))%") {
-                        Slider(value: Binding(get: { log2(overlay.scale / fit) },
-                                              set: { v in overlays.edit(type, in: env) { $0.setScale(fit * pow(2, v)) } }),
-                               in: -4...4) { if !$0 { overlays.commit(type, in: env) } }
-                    }
-                    labeled("회전", "\(String(format: "%.1f", overlay.rotation))°") {
-                        HStack(spacing: 4) {
-                            Button { env.updateImageOverlay(type) { $0.setRotation($0.rotation - 90) } } label: { Image(systemName: "rotate.left") }
-                                .buttonStyle(.borderless).help("왼쪽으로 90°")
-                            Slider(value: Binding(get: { overlay.rotation },
-                                                  set: { v in overlays.edit(type, in: env) { $0.setRotation(v) } }),
-                                   in: -180...180) { if !$0 { overlays.commit(type, in: env) } }
-                            Button { env.updateImageOverlay(type) { $0.setRotation($0.rotation + 90) } } label: { Image(systemName: "rotate.right") }
-                                .buttonStyle(.borderless).help("오른쪽으로 90°")
-                        }
-                    }
-                    ImageOverlayOpacitySlider(type: type, overlay: overlay).frame(width: 150)
-                }
-                .controlSize(.mini)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .frame(maxWidth: 720)
             .toolbarCard(cornerRadius: 10)
-        }
-    }
-
-    private func labeled<Content: View>(_ title: String, _ value: String, @ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 6) {
-            Text(title).font(.caption)
-            content()
-            Text(value).font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
         }
     }
 }

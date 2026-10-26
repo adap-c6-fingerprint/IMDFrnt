@@ -52,6 +52,7 @@ struct CanvasView: View {
     @State private var tagEditor: (id: FeatureGroupID, rect: CGRect)?
     /// 이미지 조정 드래그를 시작할 때의 값과 무엇을 바꾸는 드래그인지(신기능 15항).
     @State private var imageDrag: (base: LevelImageOverlay, kind: ImageDragKind)?
+    @State private var imageCursorActive = false
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -238,6 +239,7 @@ struct CanvasView: View {
     private func canvas(doc: DrawingDocument, viewport: CGSize) -> some View {
         featureLabelCanvas(doc: doc, viewport: viewport)
             .onContinuousHover(coordinateSpace: .local) { phase in
+                updateImageCursor(phase)
                 var hit: FeatureGroupID?
                 if case .active(let p) = phase { hit = labelHitBoxes.boxes.last { $0.1.contains(p) }?.0 }
                 // 나중에 그린 태그가 위에 보이므로 뒤에서부터 찾는다.
@@ -537,6 +539,8 @@ struct CanvasView: View {
                 drawCross(ctx, at: pending, scale: s,
                           color: env.canvasBackground.marker(.pending))
             }
+            drawImageHandles(in: screenCtx, scale: s)
+            // 이미지 조정 손잡이는 맨 위에 그린다. 다른 표시에 가리면 잡을 수 없다.
         }
         .contentShape(Rectangle())
     }
@@ -1020,7 +1024,8 @@ struct CanvasView: View {
 
     // MARK: 이미지 레이어 (신기능 15항, #84)
 
-    enum ImageDragKind { case move, scale, rotate }
+    /// 조정 중 드래그가 무엇을 하는가. 누른 자리로 시작할 때 정하고 끝까지 유지한다.
+    enum ImageDragKind: Equatable { case move, corner(Int), rotate, pan }
 
     /// 조정 중인 이미지 type. 그 이미지가 지금 층에서 보일 때만 값이 있다.
     /// 숨긴 이미지나 숨긴 레이어의 이미지를 보이지 않는 채로 끌어 옮기지 않게 한다.
@@ -1051,32 +1056,88 @@ struct CanvasView: View {
         }
     }
 
-    /// 끌기 = 이동, ⇧ 끌기 = 크기, ⌥ 끌기 = 회전. 셋 다 이미지 중심이 기준이다.
+    /// 조정 손잡이의 화면 좌표. 꼭짓점 넷과, 위 변 가운데에서 바깥으로 뺀 회전 손잡이다.
+    /// 화면 좌표로 두어 확대율과 상관없이 같은 크기로 그리고 같은 거리에서 잡히게 한다.
+    private func imageHandles(_ overlay: LevelImageOverlay, scale s: CGFloat) -> (corners: [CGPoint], top: CGPoint, knob: CGPoint) {
+        let corners = overlay.corners.map { docToScreen($0.cg, scale: s) }
+        let top = CGPoint(x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2)
+        let c = docToScreen(overlay.center.cg, scale: s)
+        let dx = top.x - c.x, dy = top.y - c.y, length = max(hypot(dx, dy), 1e-9)
+        // 중심 → 위 변 가운데 방향이 이미지의 '위'다. 회전·캔버스 회전과 무관하게 이미지 바깥쪽을 가리킨다.
+        return (corners, top, CGPoint(x: top.x + dx / length * 26, y: top.y + dy / length * 26))
+    }
+
+    private static let imageHandleRadius: CGFloat = 9
+
+    /// 화면 좌표 `p`를 눌렀을 때 할 일. 회전 손잡이 → 꼭짓점 → 이미지 안 → 그 밖(화면 팬) 순서다.
+    private func imageDragKind(at p: CGPoint, overlay: LevelImageOverlay, scale s: CGFloat) -> ImageDragKind {
+        let h = imageHandles(overlay, scale: s), r = Self.imageHandleRadius
+        if hypot(p.x - h.knob.x, p.y - h.knob.y) <= r { return .rotate }
+        if let i = h.corners.indices.min(by: { hypot(p.x - h.corners[$0].x, p.y - h.corners[$0].y) < hypot(p.x - h.corners[$1].x, p.y - h.corners[$1].y) }),
+           hypot(p.x - h.corners[i].x, p.y - h.corners[i].y) <= r { return .corner(i) }
+        return overlay.contains(toLocal(p)) ? .move : .pan
+    }
+
+    private func drawImageHandles(in screen: GraphicsContext, scale s: CGFloat) {
+        guard let type = adjustingImageType,
+              let overlay = overlays.preview[type.rawValue] ?? env.imageOverlay(for: type) else { return }
+        let h = imageHandles(overlay, scale: s), accent = Color.accentColor, fill = Color.white
+        var stem = Path(); stem.move(to: h.top); stem.addLine(to: h.knob)
+        screen.stroke(stem, with: .color(accent), lineWidth: 1.5)
+        let knob = Path(ellipseIn: CGRect(x: h.knob.x - 6, y: h.knob.y - 6, width: 12, height: 12))
+        screen.fill(knob, with: .color(fill)); screen.stroke(knob, with: .color(accent), lineWidth: 1.5)
+        screen.draw(Image(systemName: "arrow.clockwise").resizable(), in: CGRect(x: h.knob.x - 4, y: h.knob.y - 4, width: 8, height: 8))
+        for p in h.corners {
+            let square = Path(CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10))
+            screen.fill(square, with: .color(fill)); screen.stroke(square, with: .color(accent), lineWidth: 1.5)
+        }
+    }
+
+    /// 마우스를 손잡이에 올리면 무엇을 하는지 커서 모양으로 알린다.
+    private func updateImageCursor(_ phase: HoverPhase) {
+        guard let type = adjustingImageType, case .active(let p) = phase, let overlay = env.imageOverlay(for: type) else {
+            if imageCursorActive { NSCursor.arrow.set(); imageCursorActive = false }
+            return
+        }
+        imageCursorActive = true
+        switch imageDragKind(at: p, overlay: overlay, scale: effectiveScale) {
+        case .corner, .rotate: NSCursor.crosshair.set()
+        case .move: NSCursor.openHand.set()
+        case .pan: NSCursor.arrow.set()
+        }
+    }
+
+    /// 꼭짓점 끌기 = 크기(⌥: 중심 기준), 위 손잡이 끌기 = 회전(⇧: 15° 단위), 안쪽 끌기 = 이동, 바깥 끌기 = 화면 이동.
     /// 시작 때의 값에 그때까지의 총 변화만 얹는다. 프레임마다 누적하면 오차가 쌓인다.
     private func adjustImage(_ type: IMDFFeatureType, _ value: DragGesture.Value) {
         if imageDrag == nil, let stored = env.imageOverlay(for: type) {
-            let flags = NSEvent.modifierFlags
-            imageDrag = (stored, flags.contains(.shift) ? .scale : flags.contains(.option) ? .rotate : .move)
+            imageDrag = (stored, imageDragKind(at: value.startLocation, overlay: stored, scale: effectiveScale))
+            lastDrag = .zero
         }
         guard let (base, kind) = imageDrag else { return }
-        let start = toLocal(value.startLocation), now = toLocal(value.location), c = base.center
-        var next = base
+        let start = toLocal(value.startLocation), now = toLocal(value.location), flags = NSEvent.modifierFlags
+        let next: LevelImageOverlay
         switch kind {
         case .move:
-            next.center = LocalPoint(c.x + now.x - start.x, c.y + now.y - start.y)
-        case .scale:
-            let d0 = start.distance(to: c), d1 = now.distance(to: c)
-            guard d0 > 1e-9 else { return }
-            next.setScale(base.scale * d1 / d0)
+            var moved = base
+            moved.center = LocalPoint(base.centerX + now.x - start.x, base.centerY + now.y - start.y)
+            next = moved
+        case .corner(let i):
+            next = base.scaled(corner: i, from: start, to: now, aroundCenter: flags.contains(.option))
         case .rotate:
-            let a0 = atan2(start.y - c.y, start.x - c.x), a1 = atan2(now.y - c.y, now.x - c.x)
-            next.setRotation(base.rotation + (a1 - a0) * 180 / .pi)
+            next = base.rotated(from: start, to: now, snap: flags.contains(.shift))
+        case .pan:
+            offset.width += value.translation.width - lastDrag.width
+            offset.height += value.translation.height - lastDrag.height
+            lastDrag = value.translation
+            return
+            // 이미지 밖을 끌면 화면을 옮긴다. 큰 이미지를 맞추다 보면 화면 밖 꼭짓점을 찾아가야 한다.
         }
         overlays.setPreview(next, for: type)
     }
 
     private func finishImageAdjust() {
-        defer { imageDrag = nil }
+        defer { imageDrag = nil; lastDrag = .zero }
         guard let (base, _) = imageDrag, let type = overlays.adjusting,
               let result = overlays.preview[type.rawValue], result != base else {
             if let type = overlays.adjusting { overlays.clearPreview(for: type) }

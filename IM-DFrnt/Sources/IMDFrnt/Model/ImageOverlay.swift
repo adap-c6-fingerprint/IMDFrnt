@@ -66,6 +66,43 @@ struct LevelImageOverlay: Equatable, Codable, Sendable {
         scale = min(Self.scaleRange.upperBound, max(Self.scaleRange.lowerBound, value))
     }
 
+    /// 네 꼭짓점의 도면 좌표. 왼쪽 위부터 시계 방향(이미지 기준)이다.
+    var corners: [LocalPoint] {
+        [CGPoint(x: 0, y: 0), CGPoint(x: pixelWidth, y: 0), CGPoint(x: pixelWidth, y: pixelHeight), CGPoint(x: 0, y: pixelHeight)]
+            .map { let p = $0.applying(transform); return LocalPoint(p.x, p.y) }
+    }
+
+    /// 도면 좌표가 이미지 안에 있는가. 회전한 이미지도 정확히 판정하도록 이미지 픽셀로 되돌려 본다.
+    func contains(_ p: LocalPoint) -> Bool {
+        pixelRect.contains(CGPoint(x: p.x, y: p.y).applying(transform.inverted()))
+    }
+
+    /// 꼭짓점 `corner`를 `start`에서 `now`로 끌었을 때의 결과(2026-10-26 요청 — 이미지에서 직접 조정).
+    /// 맞은편 꼭짓점을 고정하고 비율은 유지한다. `aroundCenter`(⌥)면 중심을 고정한다.
+    /// 끈 거리를 처음 대각선 방향으로 투영해 배율을 정한다. 커서가 대각선에서 조금 벗어나도 크기가 튀지 않는다.
+    func scaled(corner: Int, from start: LocalPoint, to now: LocalPoint, aroundCenter: Bool) -> LevelImageOverlay {
+        let fixed = aroundCenter ? center : corners[(corner + 2) % 4]
+        let v0 = (x: start.x - fixed.x, y: start.y - fixed.y), v1 = (x: now.x - fixed.x, y: now.y - fixed.y)
+        let length2 = v0.x * v0.x + v0.y * v0.y
+        guard length2 > 1e-12 else { return self }
+        var next = self
+        next.setScale(scale * max(0.02, (v1.x * v0.x + v1.y * v0.y) / length2))
+        // 맞은편 꼭짓점을 넘어 뒤집히지 않게 아래를 막는다. 뒤집힌 사진은 쓸 데가 없다.
+        let factor = next.scale / scale
+        next.center = LocalPoint(fixed.x + (centerX - fixed.x) * factor, fixed.y + (centerY - fixed.y) * factor)
+        return next
+    }
+
+    /// 회전 손잡이를 `start`에서 `now`로 끌었을 때의 결과. 중심이 축이고, `snap`(⇧)이면 15° 단위로 맞춘다.
+    func rotated(from start: LocalPoint, to now: LocalPoint, snap: Bool) -> LevelImageOverlay {
+        let a0 = atan2(start.y - centerY, start.x - centerX), a1 = atan2(now.y - centerY, now.x - centerX)
+        var degrees = rotation + (a1 - a0) * 180 / .pi
+        if snap { degrees = (degrees / 15).rounded() * 15 }
+        var next = self
+        next.setRotation(degrees)
+        return next
+    }
+
     mutating func setRotation(_ degrees: Double) {
         var d = degrees.truncatingRemainder(dividingBy: 360)
         if d > 180 { d -= 360 } else if d <= -180 { d += 360 }
