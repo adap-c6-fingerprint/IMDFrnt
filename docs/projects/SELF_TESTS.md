@@ -1,6 +1,13 @@
 # Self-test 재현
 
-## 현재 검증 결과 — PR #80 추가 리뷰 7건 후속 (2026-10-26)
+## 현재 검증 결과 — PR #80 메타데이터 후속 리뷰 3건 (2026-10-26)
+
+- Debug·Release 빌드와 ad-hoc 서명 검증 성공. 별도 앱 `IM-DFrnt/.build/AIMP-metadata-review/IM-DFrnt.app`으로 CLI 전체 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, **Footprint 93/93, IMDF Compliance 142/142**.
+- 새 회귀 29건: 메타데이터 편집 중 개별 내보내기 대상 선택/편집 종료 후 복구, 비문자열·공백·줄바꿈 이름 fallback, 다중 건물에서 관련 Building/Address 선택 및 실제 가져오기, 무관한 충돌 무시·관련 충돌/중복 UUID 원자적 중단, Undo/Redo·저장 왕복, Venue/공통 Footprint 및 Occupant의 종속 주소, Footprint의 현재 참조 우선, 구형 단일 층 정보와 단일 기본값 보존을 확인했다.
+- 로그: `imdfrnt-self-tests.tLtBdd`(로컬 임시 폴더). 기존 앱·사용자 프로젝트·무관한 파일 권한 변경은 보존했다. 저장 형식은 v7 그대로이며 기존 검사도 유지한다.
+- 내보낼 타입 선택은 저장 패널을 열지 않고 실제 명령이 사용하는 상태 선택 로직으로 검사했다. 네이티브 저장 패널·GUI 수동 조작·AIMP 제출·사람 리뷰/승인은 별도다. 아래 수치는 각 시점의 과거 실행 기록이다.
+
+## PR #80 추가 리뷰 7건 검증 기록 (2026-10-26)
 
 - Debug·Release 빌드 및 ad-hoc 서명 검증 성공. 별도 앱 `IM-DFrnt/.build/AIMP-review-safety/IM-DFrnt.app`으로 전체 CLI 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, **Footprint 93/93, IMDF Compliance 113/113**.
 - 새 회귀 검사는 운영시간 중간/마지막/중복 삭제·지연 입력·재로딩·시간 값 비교/문자열 보존, 지역 태그 이름 표시, 꼭짓점 이동 차단과 정상 이동 유지, 점 Feature 범위 거부 시 상태 보존 및 선형 투영 유지, 반복 Manifest 충돌/해결 상태/새 충돌/Undo/Redo/저장 왕복, IMDF 준수 검사의 PASS/FAIL 요약을 확인한다.
