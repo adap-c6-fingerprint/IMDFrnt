@@ -2537,9 +2537,12 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: 내보내기 (명세 7-4)
 
+    /// A metadata sheet is the current editing context even if a canvas/routing layer remains open.
+    var individualExportType: IMDFFeatureType? { metadataEditorType ?? layers.activePropertyType }
+
     func export() {
-        if showRoutingScreen { exportRoutingGraph(); return }
-        guard let type = layers.activePropertyType ?? metadataEditorType else {
+        if showRoutingScreen, metadataEditorType == nil { exportRoutingGraph(); return }
+        guard let type = individualExportType else {
             notify("먼저 property type 레이어를 선택하세요.", isError: true)
             return
         }
