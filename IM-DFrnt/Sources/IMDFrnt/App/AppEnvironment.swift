@@ -465,19 +465,17 @@ final class AppEnvironment: ObservableObject {
     /// feature의 name을 이름표 위에 다는 글자. ko·en이 다 있으면 category와 같은 `한국어(영어)`, 하나만 있으면 그것, 없으면 빈 문자열이다.
     static func nameText(of f: FeatureGroup) -> String {
         let labels = f.value("name").projectJSON.object
-        let ordered = labels.sorted { $0.key < $1.key }
+        let candidates = labels.sorted { $0.key < $1.key }.compactMap { key, value -> (String, String)? in
+            guard let text = value.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return (key.lowercased(), text)
+        }
         func label(_ language: String) -> String {
-            let candidates = ordered.compactMap { key, value -> (String, String)? in
-                guard let text = value.string?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
-                return (key.lowercased(), text)
-            }
             return candidates.first { $0.0 == language }?.1
                 ?? candidates.first { $0.0.hasPrefix(language + "-") }?.1 ?? ""
         }
         let en = label("en"), ko = label("ko")
-        let e = en.trimmingCharacters(in: .whitespaces), k = ko.trimmingCharacters(in: .whitespaces)
-        if !k.isEmpty, !e.isEmpty { return "\(k)(\(e))" }
-        return k.isEmpty ? (e.isEmpty ? ordered.compactMap { $0.value.string }.first ?? "" : e) : k
+        if !ko.isEmpty, !en.isEmpty { return "\(ko)(\(en))" }
+        return ko.isEmpty ? (en.isEmpty ? candidates.first?.1 ?? "" : en) : ko
     }
 
     /// category 필터를 통과하는가. 걸러진 feature는 카드 목록과 캔버스(도형·이름표)에서 빠진다.
