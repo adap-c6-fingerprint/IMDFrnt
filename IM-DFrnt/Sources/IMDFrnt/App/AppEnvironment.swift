@@ -194,6 +194,9 @@ final class AppEnvironment: ObservableObject {
     /// 알림을 보내지 않으므로, 좌우 사이드바처럼 이동과 무관한 화면이 다시 그려지지 않는다(제안 4).
     let moves = MoveSession()
 
+    /// 이미지 레이어 조정 상태와 조작 중 미리보기(신기능 15항). `moves`와 같은 이유로 `@Published`가 아니다.
+    let imageOverlays = ImageOverlaySession()
+
     /// 속성 필터 레이어의 후보를 즉시 찾기 위한 색인(제안 6). 복사가 아니라 색인이다 —
     /// 레이어가 개체 목록을 한 벌씩 들고 있으면 태깅할 때마다 그 전부를 고쳐야 한다.
     private(set) var objectIDsByAttributeKey: [String: [VectorObjectID]] = [:]

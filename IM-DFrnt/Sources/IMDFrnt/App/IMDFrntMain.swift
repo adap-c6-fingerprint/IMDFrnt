@@ -15,6 +15,7 @@ enum IMDFrntMain {
                 await DocumentOpeningSelfTest.runIfRequested()
                 await BuildingSelfTest.runIfRequested()
                 ProjectSelfTest.runIfRequested()
+                await ImageOverlaySelfTest.runIfRequested()
                 await RoutingSelfTest.runIfRequested()
                 _ = SelfTest.runIfRequested()
                 exit(1)

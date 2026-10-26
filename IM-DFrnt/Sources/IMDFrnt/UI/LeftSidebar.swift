@@ -464,6 +464,9 @@ struct LeftSidebar: View {
                 }
                 .padding(.leading, 33)
                 // 예전 '레이어' 섹션의 표시·투명도·닫기를 type 줄 바로 아래로 옮겼다(신기능 12항).
+                ImageOverlayRow(type: type)
+                    .padding(.leading, 33)
+                // 이미지는 그 type 레이어에 딸린다(신기능 15항). 레이어가 열려 있어야 얹을 수 있다.
             }
         }
         .padding(.vertical, 10).padding(.horizontal, 8)
