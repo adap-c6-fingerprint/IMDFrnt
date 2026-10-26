@@ -70,8 +70,12 @@ enum FootprintReviewSelfTest {
         let original = env.globalFeatures("footprint")[0]
         env.buildingProject.collectionHeaders["footprint.geojson"] = .array([])
         env.selectPropertyType(.footprint)
-        env.export()
-        check("잘못된 Footprint JSON은 강제 캐스트 종료 대신 안내", env.banner?.text == "Footprint GeoJSON 형식이 올바르지 않습니다.")
+        do {
+            _ = try IMDFArchive.build(projectData: env.makeProjectFile()!.encoded(), documents: [:])
+            check("잘못된 Footprint JSON은 강제 캐스트 종료 대신 안내", false)
+        } catch let blocked as IMDFArchive.Blocked {
+            check("잘못된 Footprint JSON은 강제 캐스트 종료 대신 안내", blocked.messages.contains { $0.contains("footprint.geojson") && $0.contains("FeatureCollection") })
+        }
         env.buildingProject.collectionHeaders.removeValue(forKey: "footprint.geojson")
         let exportID = original["id"]!.uuid!
         let geometry = "{\"type\":\"Polygon\",\"coordinates\":[[[129,36],[129.002,36],[129.002,35.998],[129,36]]]}"
@@ -87,7 +91,7 @@ enum FootprintReviewSelfTest {
 
         let file = env.makeProjectFile()!
         let loaded = try ProjectFile.decoded(from: file.encoded())
-        check("v6 저장으로 v5 앱의 무손실인 척하는 재저장 방지", loaded.version == 6 && loaded.buildingProject == env.projectContents)
+        check("v7 저장으로 구버전 앱의 무손실인 척하는 재저장 방지", loaded.version == 7 && loaded.buildingProject == env.projectContents)
         var oldFile = file; oldFile.version = 5
         check("기존 v5 프로젝트는 계속 읽기 가능", try ProjectFile.decoded(from: oldFile.encoded()).version == 5)
         var oldRegistration = try ProjectJSON.parse(JSONEncoder().encode(env.buildingProject.levels.first { $0.id == other }!.info.footprintRegistration!))
@@ -124,6 +128,7 @@ enum FootprintReviewSelfTest {
         b.info.anchors = anchors(longitude: 130, latitude: 37)
         var footprint = FeatureGroup(featureType: .footprint, serialNumber: "footprint-001", memberIDs: [])
         footprint.polygonRings = [ring]
+        footprint.properties["category"] = .string("ground")
         a.editing.features.insert(footprint)
         var second = FeatureGroup(featureType: .footprint, serialNumber: "footprint-002", memberIDs: [])
         second.polygonRings = [ring]; second.displayPoint = ring[0]
@@ -170,10 +175,12 @@ enum FootprintReviewSelfTest {
         var footprint = FeatureGroup(featureType: .footprint, serialNumber: "footprint-001", memberIDs: [])
         footprint.polygonRings = [ring]
         let buildingID = UUID()
+        footprint.properties["category"] = .string("ground")
         var shared = SharedFootprint(features: [footprint], anchors: anchors(longitude: 129, latitude: 36))
         var project = BuildingProject()
         project.sharedFootprint = shared
-        project.globalGeoJSON["building.geojson"] = [.object(["id": .string(buildingID.uuidString.lowercased()), "properties": .object([:]), "geometry": .null])]
+        project.globalGeoJSON["building.geojson"] = [IMDFTestFixtures.feature("building", id: buildingID, properties: ["category": .string("unspecified")])]
+        project = IMDFTestFixtures.metadata(project)
         var file = ProjectFile.empty(); file.buildingProject = project
         let archive = try IMDFArchive.build(projectData: file.encoded(), documents: [:])
         let json = try ProjectJSON.parse(archive.files["footprint.geojson"]!)
@@ -181,9 +188,12 @@ enum FootprintReviewSelfTest {
         let explicit = UUID().uuidString.lowercased()
         shared.features[0].properties["building_ids"] = .stringArray([explicit])
         project.sharedFootprint = shared; file.buildingProject = project
-        let explicitArchive = try IMDFArchive.build(projectData: file.encoded(), documents: [:])
-        let explicitJSON = try ProjectJSON.parse(explicitArchive.files["footprint.geojson"]!)
-        check("명시한 Footprint building_ids는 덮어쓰지 않음", explicitJSON["features"]!.array[0]["properties"]?["building_ids"]?.array == [.string(explicit)])
+        do {
+            _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:])
+            check("명시한 잘못된 building_ids는 덮어쓰지 않고 오류로 차단", false)
+        } catch let blocked as IMDFArchive.Blocked {
+            check("명시한 잘못된 building_ids는 덮어쓰지 않고 오류로 차단", blocked.messages.contains { $0.contains("building_ids") && $0.contains("실제 building") })
+        }
     }
 
     /// Ensure opacity changes reuse outlines and cached snapping still honors current zoom tolerance.

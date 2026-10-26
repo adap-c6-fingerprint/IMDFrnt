@@ -1,5 +1,54 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-26 — #79 / IMD-68 / PR #80 메타데이터 후속 리뷰 3건
+
+- 개별 내보내기는 열린 공통 정보 편집기의 타입을 우선한다. 편집기가 닫히면 기존 활성 레이어·길찾기 내보내기를 유지한다.
+- 다층 프로젝트의 층 가져오기는 선택 층과 실제 복사할 공통 정보에서 도달하는 Building·Address만 충돌 검사/병합한다. 무관한 정보는 가져오지 않으며, 필요한 정보의 UUID 충돌은 기존처럼 변경 전에 전체 중단한다. Building 경유 주소·Venue/공통 Footprint 종속, 구형 단일 층의 미연결 공통 정보와 기존 단일 기본값 경로를 보존한다. Occupant/Relationship의 선택 필터는 유지한다.
+- 다국어 캔버스 이름은 모든 fallback에서 공백·줄바꿈과 빈 문자열을 건너뛴다. ko/en 기본·지역 태그 우선순위는 유지한다.
+- Debug·Release 빌드·ad-hoc 서명과 CLI 전체 8/8 통과: Footprint 93/93, IMDF Compliance 142/142(새 회귀 29건). 실제 가져오기 충돌/부분 반영 방지·Undo/Redo·저장 왕복, Footprint 현재 참조·기본값 및 편집 대상 선택을 포함한다. 앱은 `.build/AIMP-metadata-review/IM-DFrnt.app`, 로그는 `imdfrnt-self-tests.tLtBdd`다.
+- 기존 앱·사용자 프로젝트·무관한 권한 변경은 보존한다. 기존 브랜치에서 커밋·PR #80 반영을 진행하며, 누적 영향도 L과 사람 리뷰/승인 경로를 유지한다. GUI 파일 저장 패널·AIMP 제출은 미검증이고 merge는 하지 않는다.
+
+## 2026-10-26 — #79 / IMD-68 / PR #80 추가 리뷰 7건
+
+- 운영시간 구간은 안정 ID로 조회·편집·삭제하며 삭제 후 지연 입력은 무시한다. 동일 시간 재로딩은 ID를 유지하고 시간 값 비교와 hours 문자열 형식은 그대로다.
+- 표시점/Anchor 입력 중 꼭짓점 드래그를 시작하지 않으며, 점형 Feature에만 기존 범위 검사를 연결한다. 선형 투영·면형 검사·일반 꼭짓점 이동은 유지한다. 캔버스 이름은 기본 태그 우선 및 지역 태그 fallback을 적용한다.
+- 동일 Manifest 충돌을 다시 보관하거나 해결 상태를 해제하지 않는다. 새로운 충돌만 재확인하며 이전 사본·Undo/Redo를 보존한다.
+- IMDF 준수 검사 요약은 실제 실패 수에 따라 PASS/FAIL을 출력한다. 길찾기 저장 문서의 v7 저장·v2~v6 읽기·buildingProject 공통 구조를 갱신했다.
+- Debug·Release 빌드·서명 및 CLI 전체 8/8 통과: Footprint 93/93, IMDF Compliance 113/113. 새 검사 30건은 안정 ID/삭제/지연 입력, 이름 표시, 우선 입력, 점 범위, 반복 충돌, 저장/Undo/Redo와 요약을 포함한다. 앱은 `.build/AIMP-review-safety/IM-DFrnt.app`이며 기존 앱·프로젝트는 보존한다.
+- 성능 캐시·주석 커버리지와 무관한 기존 파일 권한 변경은 제외한다. 누적 영향도 L이며 GUI/AIMP 수동 검증·사람 코드리뷰/승인은 별도다. 사용자 요청에 따라 커밋·push 후 `@coderabbitai review`를 요청한다.
+
+## #79 / IMD-68 / PR #80 — CodeRabbit 리뷰 1~6번 후속
+
+- 충돌하는 복사 도형의 내부 ID와 export UUID를 새로 발급하고 속성 참조·소유권·대여·GeoJSON·출입구 노드 및 종속 Occupant/Relationship 참조를 함께 갱신한다. 같은 층 교체 시 충돌하지 않는 ID는 유지한다.
+- Manifest 기본 언어 태그를 이름 간편 입력과 자동 Level 이름에 적용한다. 출력에는 일반 언어 라벨에서 정확한 기본 태그를 보완하고 기존 언어를 유지하며 엄격한 검증은 완화하지 않는다.
+- 표시점/Anchor 클릭을 이름표·면·점 선택보다 우선 처리한다. Footprint 테스트 요약은 실패 수에 따라 PASS/FAIL을 표시한다.
+- 검사 문서·README의 현재 모드 수/목록/결과와 길찾기 level_id/ordinal 계약을 갱신했다. 이전 시점의 검사 기록은 역사로 구분해 보존한다.
+- Debug·Release 빌드와 서명, 전체 CLI 8/8 통과(Footprint 93/93, IMDF Compliance 83/83). 별도 앱 `.build/AIMP-coderabbit-fixes/IM-DFrnt.app`이며 기존 앱·프로젝트는 수정하지 않았다. 누적 영향도 L, 실제 GUI/AIMP와 사람 리뷰/승인은 별도다.
+- 사용자 지시로 성능 개선·주석 커버리지(7·8번)는 제외한다. 기존 파일 권한 변경을 제외하고 로컬 커밋만 진행한다.
+
+## 2026-10-25 — #79 / IMD-68 자체 리뷰 후속: Building 표시점
+
+- Building 표시점을 지정할 때 `building_ids`로 해당 Building을 참조하는 Footprint만 검사한다. 다른 건물 또는 연결되지 않은 Footprint에서는 기존 표시점을 바꾸지 않는다. UUID 대소문자를 구분하지 않는다.
+- 다중 건물 허용/거부와 연결 누락 회귀 검사를 추가했다. 기존 합성 fixture에도 명시적 건물 참조를 설정했다.
+- Debug·Release 빌드와 ad-hoc 서명 검증 성공. 별도 앱 `.build/AIMP-v7-review-fix/IM-DFrnt.app`으로 전체 CLI 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, Footprint 93/93, IMDF Compliance 64/64. 두 P2의 회귀 경로를 재검수했다.
+- 누적 영향도 L이며 사람 코드리뷰·승인과 실제 GUI/AIMP 제출 검증은 남아 있다. 기존 앱·프로젝트는 변경하지 않았고 PR·push는 수행하지 않는다.
+
+## 2026-10-25 — #79 / IMD-68 자체 리뷰 후속: 공통 UUID 충돌
+
+- 층 가져오기 전에 관련 공통 정보를 병합할 수 있는지 검사한다. 동일 UUID·동일 내용은 재사용하고, 내용 충돌이나 UUID 누락은 안내 후 전체 가져오기를 중단한다. UUID의 대소문자는 구분하지 않는다.
+- Address·Building·Occupant·Relationship 충돌과 부분 반영 방지, 층·도면·편집 상태·Undo/Redo 보존, 동일 레코드 재사용 회귀 검사를 추가했다. Debug 빌드 및 IMDF Compliance 64/64 PASS.
+- 기존 파일 권한 변경은 이번 수정에 포함하지 않는다. PR·push 없이 기존 #79 브랜치에서 로컬 커밋한다.
+
+## 2026-10-25 — #78 / IMD-67 Apple IMDF 공통 정보·내보내기
+
+- Linear IMD-67 / GitHub #78에 공식 문서 대조와 재현된 10개 수정 항목을 먼저 기록하고, develop 2179869에서 `feat/#78-imdf-standard-export`를 만들었다. Push·PR 생성은 하지 않는다.
+- Address·Building·Occupant·Manifest 편집을 프로젝트 공통 원본으로 통합했다. 기존 층별 메타데이터는 수명 UUID·속성·참조·편집 원본을 보존해 이전하며, 옛 개체 소유권을 해제한다. 휴지통/복원/Undo/Redo와 층 단위 가져오기의 공통 정보 보존을 포함한다. Manifest 충돌은 사용자가 선택한다.
+- 공식 16종을 타입 목록과 내보내기에 포함하고 Detail·Kiosk·Relationship 및 컬렉션 헤더·foreign member를 보존한다. 선택 속성의 null 고정을 풀어 문·접근성·상관 ID·유효 기간·부모 관계·다국어 JSON을 편집한다. 다중 건물·합법적 동일 ordinal을 허용한다.
+- ZIP·개별 GeoJSON·클라이언트 묶음의 최종 검증을 공유한다. 필수 레코드/속성·공식 category·UUID v4/참조·부모 순환·기하 유효성·Venue 포함·Unit–Level·Opening 경계·Anchor/display_point 위치를 검사한다. 점 작도 도형의 display_point와 플래그 없는 Polygon 구멍 출력을 수정했다. Footprint category를 출력 시 ground로 추정하지 않는다.
+- 프로젝트 형식은 v7이며 v2~v6 읽기를 유지한다. 이전 앱의 조용한 데이터 유실을 방지한다. 초안 저장과 공식 IMDF 전달 검증은 구분한다.
+- Debug 빌드 및 8/8 CLI 모드 통과: SelfTest ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, Footprint 56/56, IMDF Compliance 50/50. 실제 5층 완료 프로젝트의 이전·저장·재열기 63/63, 원본 SHA-256 검사 전후 동일.
+- 실제 화면 조작·Apple IMDF Sandbox 업로드는 미검증이다. 실측 위치·층/시설의 현실 의미·조건부 상관 관계·복합 OSM hours·언어 하위 태그의 IANA 등록 등은 수동/Apple 검증을 남긴다. 로컬 검증을 Apple 인증이나 모든 의미 규칙 자동 충족으로 표현하지 않는다. [공통 정보와 출력 사용법](docs/projects/BUILDING_LEVELS.md#78--imd-67--공통-정보와-공식-imdf-내보내기).
+
 ## 2026-10-24 — #74 / IMD-64 전역 Footprint와 층 정렬
 
 - Footprint는 메인 화면의 기존 레이어·점 작도·꼭짓점 편집 UI를 사용하며 건물 전역의 한 저장소를 공유한다. GPS 없이도 작도한다. 기존 층별 편집/GeoJSON Footprint를 ID·원본 속성과 함께 이전한다.

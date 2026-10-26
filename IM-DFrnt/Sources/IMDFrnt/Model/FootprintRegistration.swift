@@ -152,7 +152,7 @@ struct SharedFootprint: Codable, Equatable {
                 if let data = try? JSONSerialization.data(withJSONObject: value.jsonValue, options: [.fragmentsAllowed]),
                    let json = try? ProjectJSON.parse(data) { properties[key] = json }
             }
-            if properties["category"] == nil || properties["category"] == .null { properties["category"] = .string("ground") }
+            // ground/aerial/subterranean describe real capture conditions; do not guess at export time.
             result["properties"] = properties
             return result
         }

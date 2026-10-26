@@ -84,7 +84,7 @@ enum BuildingSelfTest {
             env.renameProjectLevelID(first, to: changed)
             check("중복 LevelID 차단", env.projectContents == beforeDuplicate)
             env.updateProjectLevel(changed) { $0.ordinal = 0 }
-            check("중복 ordinal 차단", env.projectContents == beforeDuplicate)
+            check("동일 ordinal의 별도 Level 허용", env.projectContents.levels.first { $0.id == changed }?.info.ordinal == 0)
             let polygon = "{\"type\":\"Polygon\",\"coordinates\":[[[129,36],[129.001,36],[129.001,36.001],[129,36]]] }"
             let footprint = try env.saveFootprint(id: nil, geometryText: polygon, category: "ground")
             let footprintBefore = env.globalFeatures("footprint")[0]
@@ -292,8 +292,9 @@ enum BuildingSelfTest {
             check("occupant: 올바른 값은 문제 없음", PropertyRules.problems(in: occupant).isEmpty)
             let badOccupant = feature(.occupant, ["name": .localized(en: "Cafe", ko: ""), "category": .string("커피"),
                                                   "hours": .string("평일 9시"), "phone": .string("054-279-2114"), "website": .string("example.com")])
-            check("occupant: ko 없는 이름·목록 밖 category·anchor 없음·형식 틀린 hours·phone·website는 위반",
-                  ["name", "category", "anchor_id", "hours", "phone", "website"].allSatisfy { severity(badOccupant, $0) == .violation })
+            check("occupant: category·anchor·phone·website 오류는 위반, 언어는 최종 Manifest 기준 검사",
+                  ["category", "anchor_id", "phone", "website"].allSatisfy { severity(badOccupant, $0) == .violation }
+                  && severity(badOccupant, "name") == nil && severity(badOccupant, "hours") == .warning)
             check("occupant: category 목록은 Apple 범주 파일 전량", PropertySchema.categoryOptions(for: .occupant).count == 1116)
             check("phone 칸은 공백·하이픈을 떼고, 공백만 넣으면 null",
                   PropertySlotRow.text(" +82 54-279-2114 ", key: "phone") == .string("+82542792114")
@@ -308,24 +309,20 @@ enum BuildingSelfTest {
 
             let env = environment()
             try env.createNewProject()
-            let l = env.addProjectLevel()
+            _ = env.addProjectLevel()
             await env.waitForLevelDrawing()
             env.addMetadataFeature(.address)
             var project = env.projectContents
             var blocked: [String] = []
             do { guard var file = env.makeProjectFile() else { throw CocoaError(.fileWriteUnknown) }; file.buildingProject = project; _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:]) }
             catch let b as IMDFArchive.Blocked { blocked = b.messages }
-            check("내보내기: 빈 address는 막고 고칠 칸을 알려준다", blocked.contains { $0.contains("address-001 country") })
-            let i = project.levels.firstIndex { $0.id == l }!
-            let id = project.levels[i].editing.features.features(ofType: .address)[0].id
-            project.levels[i].editing.features.update(id) { f in
-                f.properties["address"] = .string("청암로 77"); f.properties["locality"] = .string("포항시")
-                f.properties["country"] = .string("KR"); f.properties["province"] = .string("KR-47")
-            }
+            check("내보내기: 빈 address는 막고 고칠 칸을 알려준다", blocked.contains { $0.contains("address.geojson") && $0.contains("country") })
+            project.globalGeoJSON["address.geojson"]![0]["properties"] = .object([
+                "address": .string("청암로 77"), "locality": .string("포항시"), "country": .string("KR"), "province": .string("KR-47")])
             blocked = []
             do { guard var file = env.makeProjectFile() else { throw CocoaError(.fileWriteUnknown) }; file.buildingProject = project; _ = try IMDFArchive.build(projectData: file.encoded(), documents: [:]) }
             catch let b as IMDFArchive.Blocked { blocked = b.messages }
-            check("내보내기: address를 채우면 그 칸 때문에 막히지 않는다", !blocked.contains { $0.contains("address-001") })
+            check("내보내기: address를 채우면 그 칸 때문에 막히지 않는다", !blocked.contains { $0.contains("address.geojson") })
             check("manifest created는 소수 초 없는 DATE-TIME",
                   (IMDFArchive.manifest(imported: nil, feature: nil, now: Date(timeIntervalSince1970: 0))["created"] as? String) == "1970-01-01T00:00:00Z")
         } catch { check("정보 type 스펙 점검", false); print(error) }

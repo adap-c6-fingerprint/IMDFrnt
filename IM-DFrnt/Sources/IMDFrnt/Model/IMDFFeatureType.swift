@@ -1,11 +1,9 @@
 import Foundation
 
-/// 명세 3항의 property type 14종.
-/// section·geofence는 초판 목록(12종)에 없었으나, 둘 다 Polygon이라
-/// opening 빌려주기 대상이 되므로 2026-08-24에 추가했다.
+/// Apple IMDF 1.0.0의 Feature 16종과 별도 manifest 편집 항목.
 enum IMDFFeatureType: String, CaseIterable, Identifiable, Codable, Hashable {
-    case address, amenity, anchor, building, fixture, footprint, geofence
-    case level, manifest, occupant, opening, section, unit, venue
+    case address, amenity, anchor, building, detail, fixture, footprint, geofence, kiosk
+    case level, manifest, occupant, opening, relationship, section, unit, venue
 
     var id: String { rawValue }
 
@@ -16,18 +14,18 @@ enum IMDFFeatureType: String, CaseIterable, Identifiable, Codable, Hashable {
     /// `01) geojson 파일별 properties 구조.md`의 geometry 열 그대로.
     var requiredGeometry: GeoJSONGeometryKind {
         switch self {
-        case .address, .occupant, .building, .manifest: return .none
+        case .address, .occupant, .building, .manifest, .relationship: return .none
         case .amenity, .anchor: return .point
-        case .opening: return .lineString
+        case .opening, .detail: return .lineString
         case .fixture: return .multiPolygon
-        case .footprint, .geofence, .level, .section, .unit, .venue: return .polygon
+        case .footprint, .geofence, .kiosk, .level, .section, .unit, .venue: return .polygon
         }
     }
 
     /// display point 찍기 버튼 노출 조건(명세 7-3-4).
     var hasDisplayPoint: Bool {
         switch self {
-        case .amenity, .building, .fixture, .geofence, .level, .section, .unit, .venue: return true
+        case .amenity, .building, .fixture, .geofence, .kiosk, .level, .opening, .section, .unit, .venue: return true
         default: return false
         }
     }

@@ -239,6 +239,19 @@ struct RightSidebar: View {
 
         if env.canDesignateMultiPolygon(f) { multiPolygonSection(f) }
         if f.featureType == .fixture { fixtureTwinSection(f) }
+        if f.featureType == .footprint {
+            VStack(alignment: .leading, spacing: 6) {
+                Button("복제") { _ = env.duplicateFootprint(f.id) }
+                Button("Footprint를 기준층 Level 외곽에 맞추기") { env.matchFootprintToGroundLevel(f.id) }
+                    .disabled(env.groundFootprintUnavailableReason != nil)
+                if let reason = env.groundFootprintUnavailableReason {
+                    Text(reason)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Text("외곽을 교체하고 category를 ground로 설정합니다. 실행 취소로 되돌릴 수 있습니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
 
         VStack(alignment: .leading, spacing: 6) {
             ForEach(PropertySchema.fields(for: f.featureType)) { field in
@@ -248,18 +261,7 @@ struct RightSidebar: View {
 
         if f.featureType.hasDisplayPoint {
             Divider()
-            HStack {
-                Text("display point").font(.caption.weight(.semibold))
-                Spacer()
-                if let dp = f.displayPoint {
-                    Text(String(format: "%.1f, %.1f", dp.x, dp.y))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                }
-                Button(f.displayPoint == nil ? "찍기" : "다시 찍기") {
-                    env.beginDisplayPointPicking(f.id)
-                }
-                .controlSize(.small)
-            }
+            DisplayPointControls(feature: f)
         }
 
         Divider()
@@ -455,6 +457,10 @@ struct PropertySlotRow: View {
             Text(env.exportID(for: feature)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
                 .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        } else if feature.featureType == .venue, field.key == "hours" {
+            OpeningHoursEditor(value: Binding(get: {
+                if case .string(let text) = feature.value("hours") { return text }; return ""
+            }, set: { env.updateProperty("hours", value: $0.isEmpty ? .null : .string($0), in: feature.id) }))
         } else if !field.isEditable, field.type == .string {
             Text(feature.featureType == .manifest && field.key == "version" ? "1.0.0"
                  : feature.featureType == .manifest && field.key == "created" ? "내보낼 때 자동 기록" : value.displayText)
@@ -470,9 +476,15 @@ struct PropertySlotRow: View {
             Text("null").font(.caption2).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.type == .point {
-            Text(feature.displayPoint == nil ? "null" : "Point")
-                .font(.caption2).foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if env.isGlobalMetadata(feature.id) {
+                JSONPropertyEditor(feature: feature, key: field.key)
+            } else {
+                Text(feature.displayPoint == nil ? "null" : "Point")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else if field.type == .json {
+            JSONPropertyEditor(feature: feature, key: field.key)
         } else if field.key == "category",
                   !PropertySchema.categoryOptions(for: feature.featureType).isEmpty {
             let type = feature.featureType
@@ -495,16 +507,17 @@ struct PropertySlotRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if field.type == .localizedName {
             VStack(spacing: 3) {
-                textField("en", get: { if case .localized(let en, _) = value { return en }; return "" },
-                          set: { en in
-                    let ko = { if case .localized(_, let k) = value { return k }; return "" }()
-                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
-                })
-                textField("ko", get: { if case .localized(_, let ko) = value { return ko }; return "" },
-                          set: { ko in
-                    let en = { if case .localized(let e, _) = value { return e }; return "" }()
-                    env.updateProperty(field.key, value: Self.label(en: en, ko: ko), in: feature.id)
-                })
+                ForEach(env.nameEditingLanguages, id: \.self) { language in
+                    textField(language, get: {
+                        let labels = value.projectJSON.object
+                        let base = language.split(separator: "-").first.map(String.init) ?? language
+                        return labels.first { $0.key.lowercased() == language.lowercased() }?.value.string
+                            ?? labels.first { $0.key.lowercased() == base.lowercased() }?.value.string ?? ""
+                    }, set: {
+                        env.updateLocalizedProperty(field.key, language: language, text: $0, in: feature)
+                    })
+                }
+                DisclosureGroup("모든 언어 JSON") { JSONPropertyEditor(feature: feature, key: field.key) }
             }
         } else if field.type == .integer {
             textField("null", get: { if case .integer(let i) = value { return String(i) }; return "" },
@@ -534,11 +547,13 @@ struct PropertySlotRow: View {
             // 직접 고르지 않는다. 예전에는 이 층에 그린 level feature의 일련번호를 골랐는데,
             // 내보내기는 level feature의 id를 층 UUID로 바꾸므로 고른 값과 실제 level id가 어긋날 수 있었다.
         } else if case .reference(let refType) = field.type {
+            let choices = env.referenceChoices(refType)
+            let labels = Dictionary(choices.map { ($0.id, $0.label) }, uniquingKeysWith: { a, _ in a })
             SearchablePicker(selection: { if case .string(let s) = value { return s }; return "" }(),
-                             options: env.features.features(ofType: refType).map(\.serialNumber)) {
+                             options: choices.map(\.id), onSelect: {
                 env.updateProperty(field.key, value: $0.isEmpty ? .null : .string($0), in: feature.id)
-            }
-            .help("일련번호로 고르면 내보내기 때 해당 feature의 UUID로 치환됩니다.")
+            }, label: { labels[$0] ?? $0 })
+            .help("공통 정보와 모든 층의 Feature에서 고릅니다. 값은 UUID로 저장됩니다.")
             // 참조 칸(unit_id·anchor_id 등)도 드롭다운이었다. 일련번호가 수백 개면 찾을 수 없어 같은 검색 칸을 쓴다.
         } else {
             textField("null", get: { if case .string(let s) = value { return s }; return "" },

@@ -33,12 +33,11 @@ extension AppEnvironment {
 
     /// Create the single building metadata record when none exists.
     func createBuilding() {
-        guard globalFeatures("building").isEmpty else { return }
         let feature: ProjectJSON = .object(["type": .string("Feature"), "feature_type": .string("building"),
             "id": .string(UUID().uuidString.lowercased()), "geometry": .null,
             "properties": .object(["category": .string("unspecified"), "name": .null, "alt_name": .null,
                 "restriction": .null, "display_point": .null, "address_id": .null])])
-        perform("건물 생성") { buildingProject.globalGeoJSON["building.geojson"] = [feature] }
+        perform("건물 생성") { buildingProject.globalGeoJSON["building.geojson", default: []].append(feature) }
         hasCreatedProject = true
     }
 

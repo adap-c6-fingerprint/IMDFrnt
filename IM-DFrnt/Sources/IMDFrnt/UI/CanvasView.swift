@@ -92,7 +92,13 @@ struct CanvasView: View {
                 }
 
                 VStack {
-                    if env.showRoutingScreen {
+                    if case .displayPointPicking = env.mode {
+                        HStack {
+                            Text("도형 외곽 안에서 display point를 클릭하세요.")
+                            Button("취소") { env.mode = .idle }
+                        }
+                        .font(.caption).padding(10).toolbarCard(cornerRadius: 8)
+                    } else if env.showRoutingScreen {
                         Text(env.routingTool.hint)
                             .font(.caption).padding(10).toolbarCard(cornerRadius: 8)
                             .allowsHitTesting(false)
@@ -1161,7 +1167,7 @@ struct CanvasView: View {
                     dragIsVertex = false
                     let onTag = labelHitBoxes.boxes.contains { $0.1.contains(value.startLocation) }
                     // 이름표는 도형 왼쪽 위 꼭짓점 바로 위에 붙는다. 꼭짓점 끌기를 먼저 잡으면 이름표를 누를 수 없다.
-                    if env.isPointWorkMode, env.isVertexMoveEnabled, !NSEvent.modifierFlags.contains(.control), !onTag,
+                    if env.allowsCanvasVertexDrag, !NSEvent.modifierFlags.contains(.control), !onTag,
                        let target = env.vertexHit(at: toLocal(value.startLocation),
                                                   tolerance: 6 / Double(effectiveScale)) {
                         dragIsVertex = true
@@ -1264,7 +1270,9 @@ struct CanvasView: View {
                 } else if let m = marquee, moved >= MarqueeRect.dragThreshold {
                     selectByMarquee(m)
                 } else if moveBase == nil, moved < MarqueeRect.dragThreshold {
-                    if let hit = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) }),
+                    if env.handlePriorityCanvasClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale)) {
+                        // 표시점/Anchor 입력은 이름표·면·점 선택보다 먼저 소비한다.
+                    } else if let hit = labelHitBoxes.boxes.last(where: { $0.1.contains(value.location) }),
                        env.handleFeatureTagClick(hit.0) {
                         let tag = hit.0
                         if env.expandedFeatures.contains(tag),
@@ -1277,7 +1285,7 @@ struct CanvasView: View {
                     } else if env.isPolygonWorkMode {
                         env.handleFaceClick(at: toLocal(value.location))
                         // 폴리곤 type에서는 클릭이 개체가 아니라 **면**을 고른다(신기능 5-4).
-                    } else if env.isPointWorkMode, !env.mode.blocksSelection {
+                    } else if env.isPointWorkMode {
                         env.handlePointClick(at: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
                                              freePoint: NSEvent.modifierFlags.contains(.option),
                                              editing: NSEvent.modifierFlags.contains(.control),

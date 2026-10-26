@@ -47,9 +47,11 @@ struct BuildingManager: View {
                         ForEach(["building", "venue", "address"], id: \.self) { type in
                             GroupBox(type == "building" ? "건물" : type == "venue" ? "Venue" : "주소") {
                                 VStack(alignment: .leading, spacing: 10) {
+                                    if type == "building" { Button("건물 추가") { env.createBuilding() } }
+                                    if type == "address" { Button("주소 추가") { env.addMetadataFeature(.address) } }
                                     if env.globalFeatures(type).isEmpty {
-                                        if type == "building" { Button("건물 생성") { env.createBuilding() } }
-                                        else { Text("IMDF를 불러오면 기존 정보가 보존됩니다.").foregroundStyle(.secondary) }
+                                        Text(type == "venue" ? "메인 venue 레이어에서 장소 전체의 경계를 하나 그리세요." : "공통 정보가 없습니다.")
+                                            .foregroundStyle(.secondary)
                                     }
                                     ForEach(env.globalFeatures(type), id: \.featureID) { feature in
                                         if let id = feature["id"]?.uuid { GlobalMetadataEditor(type: type, feature: feature).id(id) }
@@ -91,6 +93,32 @@ private struct GlobalMetadataEditor: View {
                     do { try env.setGlobalMetadata(type: type, id: feature["id"]!.uuid!, text: text); error = nil }
                     catch { self.error = error.localizedDescription }
                 }
+                if ["building", "venue"].contains(type), let id = feature["id"]?.uuid {
+                    HStack {
+                        Text("display point")
+                        Button(feature["properties"]?["display_point"] == nil || feature["properties"]?["display_point"] == .null ? "찍기" : "다시 찍기") {
+                            env.beginGlobalDisplayPointPicking(id)
+                        }
+                        .disabled(env.document == nil)
+                        Button("삭제") {
+                            var props = feature["properties"] ?? .object([:])
+                            props["display_point"] = .null
+                            do { try env.setGlobalMetadata(type: type, id: id, text: props.text) }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }
+                    if type == "venue" {
+                        OpeningHoursEditor(value: Binding(get: { feature["properties"]?["hours"]?.string ?? "" }, set: { hours in
+                            var props = feature["properties"] ?? .object([:])
+                            props["hours"] = hours.isEmpty ? .null : .string(hours)
+                            do { try env.setGlobalMetadata(type: type, id: id, text: props.text) }
+                            catch { self.error = error.localizedDescription }
+                        }))
+                    }
+                }
+                if let kind = IMDFFeatureType(rawValue: type), let id = feature["id"]?.uuid {
+                    MetadataRecordEditor(type: kind, id: id)
+                }
             }.padding(.top, 8)
         }.font(.caption)
             .onAppear { text = feature["properties"]?.text ?? "{}" }
@@ -105,6 +133,7 @@ private struct ManifestEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            LegacyManifestChoices()
             JSONTextEditor(text: $text, height: 120)
             if let error { Text(error).foregroundStyle(.red).font(.caption) }
             Button("Manifest 적용") {

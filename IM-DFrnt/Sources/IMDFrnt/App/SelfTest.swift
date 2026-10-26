@@ -137,15 +137,19 @@ enum SelfTest {
                 level.editing.features.insert(f)
             }
             if withLevelPolygon {
-                add(.level, "level-001", [LocalPoint(0, 0), LocalPoint(1000, 0), LocalPoint(1000, 1000), LocalPoint(0, 1000)])
+                add(.level, "level-001", [LocalPoint(0, 0), LocalPoint(1000, 0), LocalPoint(1000, 500), LocalPoint(0, 500)])
             }
             add(.unit, "unit-001", [LocalPoint(0, 0), LocalPoint(500, 0), LocalPoint(500, 500), LocalPoint(0, 500)])
             add(.unit, "unit-002", [LocalPoint(500, 0), LocalPoint(1000, 0), LocalPoint(1000, 500), LocalPoint(500, 500)])
+            var opening = FeatureGroup(featureType: .opening, serialNumber: "opening-001", memberIDs: [])
+            opening.drawnVertices = [LocalPoint(0, 0), LocalPoint(100, 0)]
+            opening.properties["category"] = .string("pedestrian")
+            level.editing.features.insert(opening)
             return level
         }
         func archiveData(_ levels: [ProjectLevel]) -> Data {
             var file = ProjectFile.empty()
-            file.buildingProject = BuildingProject(levels: levels)
+            file.buildingProject = IMDFTestFixtures.authored(levels)
             return try! file.encoded()
         }
         func json(_ data: Data?) -> [String: Any] { (data.flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:] }
@@ -171,9 +175,9 @@ enum SelfTest {
             let manifest = json(out.files["manifest.json"])
             check("IMDF 아카이브: manifest.json은 version 1.0.0·created·language를 갖는다",
                   manifest["version"] as? String == "1.0.0" && (manifest["created"] as? String)?.isEmpty == false
-                      && manifest["language"] as? String == "ko-KR")
-            check("IMDF 아카이브: 필수 파일 address·venue는 비어도 들어가고 경고한다",
-                  out.files["address.geojson"] != nil && out.files["venue.geojson"] != nil && out.warnings.count == 2)
+                      && manifest["language"] as? String == "ko")
+            check("IMDF 아카이브: 필수 Address·Venue가 채워져 있다",
+                  out.featureCounts["address.geojson"] == 1 && out.featureCounts["venue.geojson"] == 1)
             check("IMDF 아카이브: geometry는 위경도 Polygon이다",
                   ((units.first?["geometry"] as? [String: Any])?["type"] as? String) == "Polygon"
                       && (((units.first?["geometry"] as? [String: Any])?["coordinates"] as? [[[Double]]])?.first?.first?.first ?? 0) > 129)
@@ -419,7 +423,8 @@ enum SelfTest {
 
         // Anchor 없이 내보내기 → 차단
         env.selectPropertyType(.unit)
-        env.export()
+        env.exportBlockers = ExportValidator(document: env.document!, features: env.features.features,
+            anchors: env.anchors, georeferencer: env.georeferencer, segmentation: env.segmentation).validate(type: .unit)
         check("앱: Anchor 없으면 내보내기 차단", !env.exportBlockers.isEmpty,
               env.exportBlockers.first?.message ?? "")
         env.exportBlockers = []
@@ -572,7 +577,7 @@ enum SelfTest {
         check("앱: 복원", env.features.count(ofType: .unit) == 1 && env.ownership.claimedCount == 1)
 
         // property type 14종 — section·geofence 추가분 확인
-        check("property type 14종", IMDFFeatureType.allCases.count == 14,
+        check("공식 Feature 16종 + Manifest", IMDFFeatureType.allCases.count == 17,
               "\(IMDFFeatureType.allCases.count)종")
         check("section geometry", IMDFFeatureType.section.requiredGeometry == .polygon)
         check("geofence geometry", IMDFFeatureType.geofence.requiredGeometry == .polygon)
@@ -582,7 +587,7 @@ enum SelfTest {
 
         // 문 빌려주기 대상(명세 10-2-4) — 닫힌 폴리곤이 필요한 type만
         let borrowers = IMDFFeatureType.allCases.filter(\.canBorrowOpenings).map(\.rawValue).sorted()
-        check("빌려주기 대상", borrowers == ["fixture", "footprint", "geofence", "level",
+        check("빌려주기 대상", borrowers == ["fixture", "footprint", "geofence", "kiosk", "level",
                                           "section", "unit", "venue"],
               borrowers.joined(separator: ","))
         check("amenity는 빌리지 않음", !IMDFFeatureType.amenity.canBorrowOpenings,
@@ -2142,7 +2147,7 @@ enum SelfTest {
         check("저장: 확장자는 .imdfrnt", ProjectFile.fileExtension == "imdfrnt",
               ProjectFile.fileExtension)
         check("저장: 버전 1과 확장자가 같으므로 version 필드가 유일한 판별 수단",
-              ProjectFile.currentVersion == 6,
+              ProjectFile.currentVersion == 7,
               "확장자를 되돌려서 파일 이름만으로는 옛 파일을 구분할 수 없다")
         check("저장: 자동 저장 주기 30초",
               abs(AppEnvironment.autosaveInterval - 30) < 1e-9,
@@ -3859,20 +3864,20 @@ enum SelfTest {
               md.layers.layers.count == layersBefore && md.layers.layer(for: .building) == nil
                   && md.metadataEditorType == .building)
         check("메타데이터: 도형 없는 type만 해당한다",
-              IMDFFeatureType.allCases.filter(\.isMetadataOnly) == [.address, .building, .manifest, .occupant])
+              IMDFFeatureType.allCases.filter(\.isMetadataOnly) == [.address, .building, .manifest, .occupant, .relationship])
         let bid = md.addMetadataFeature(.building)
-        let mdSaved = bid.flatMap { md.features.feature($0) }
-        check("메타데이터: 추가하면 속성이 모두 null인 feature가 지금 층에 생긴다",
+        let mdSaved = md.metadataFeatures(.building).first
+        check("메타데이터: 추가하면 속성이 모두 null인 공통 Feature가 생긴다",
               mdSaved?.featureType == .building && mdSaved?.memberIDs.isEmpty == true && mdSaved?.polygonRings.isEmpty == true
-                  && PropertySchema.fields(for: .building).allSatisfy { mdSaved?.properties[$0.key] == .null })
+                  && PropertySchema.fields(for: .building).allSatisfy { mdSaved?.value($0.key).isNull == true })
         if let bid { md.updateProperty("name", value: .localized(en: "Library", ko: "도서관"), in: bid) }
         check("메타데이터: 우측 패널과 같은 방식으로 속성을 넣는다",
-              bid.flatMap { md.features.feature($0)?.value("name") } == .localized(en: "Library", ko: "도서관"))
+              md.globalFeatures("building").first?["properties"]?["name"] == .object(["en": .string("Library"), "ko": .string("도서관")]))
         md.undo(); md.undo()
-        check("메타데이터: 추가·입력은 실행취소로 되돌아간다", md.features.features(ofType: .building).isEmpty)
+        check("메타데이터: 추가·입력은 실행취소로 되돌아간다", md.globalFeatures("building").isEmpty)
         _ = md.addMetadataFeature(.manifest)
         check("메타데이터: manifest는 하나만 둔다",
-              md.addMetadataFeature(.manifest) == nil && md.features.features(ofType: .manifest).count == 1)
+              md.addMetadataFeature(.manifest) == nil && md.metadataFeatures(.manifest).count == 1)
         md.layers.addPropertyTypeLayer(.occupant)
         md.openMetadataEditor(.occupant)
         check("메타데이터: 예전에 만든 이 type의 레이어는 창을 열 때 닫는다", md.layers.layer(for: .occupant) == nil)

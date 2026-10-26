@@ -22,9 +22,8 @@ enum RoutingExporter {
         if !graph.hardSearchRadiusMeters.isFinite || graph.hardSearchRadiusMeters <= 0 {
             errors.append("탐색 반경은 0보다 큰 미터 값이어야 합니다.")
         }
-        if Set(graph.floors.map(\.id)).count != graph.floors.count ||
-            Set(graph.floors.map(\.ordinal)).count != graph.floors.count {
-            errors.append("층 ID와 층 번호는 중복될 수 없습니다.")
+        if Set(graph.floors.map(\.id)).count != graph.floors.count {
+            errors.append("층 ID는 중복될 수 없습니다.")
         }
         let ids = graph.nodes.map(\.id) + graph.edges.map(\.id)
         if Set(ids).count != ids.count { errors.append("노드·연결 ID가 중복됩니다.") }
