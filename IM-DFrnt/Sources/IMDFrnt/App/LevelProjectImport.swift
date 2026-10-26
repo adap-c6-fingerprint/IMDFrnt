@@ -145,20 +145,14 @@ extension AppEnvironment {
         for record in merged.values.flatMap({ $0 }) {
             if let id = record["id"]?.uuid { known[id] = record }
         }
-        var importedIDs = Set(source.geoJSON.values.flatMap { $0 }.compactMap { $0["id"]?.string?.lowercased() })
-        for f in source.editing.features.features {
-            importedIDs.insert((f.featureType == .level ? targetID : source.editing.ids.peek(f.id) ?? f.id).uuidString.lowercased())
-        }
+        let target = projectContents
+        let copiesVenue = target.globalGeoJSON["venue.geojson"]?.isEmpty != false
+            && !target.levels.filter { $0.id != targetID }.contains { !$0.editing.features.features(ofType: .venue).isEmpty }
+            && source.editing.features.features(ofType: .venue).isEmpty
+        let selected = LevelImportMetadata.records(in: project, source: source, targetID: targetID,
+            includingVenue: copiesVenue, includingFootprint: target.sharedFootprint == nil)
         for name in ["address.geojson", "building.geojson", "occupant.geojson", "relationship.geojson"] {
-            for original in project.globalGeoJSON[name] ?? [] {
-                if name == "occupant.geojson", project.levels.count > 1,
-                   !importedIDs.contains(original["properties"]?["anchor_id"]?.string?.lowercased() ?? "") { continue }
-                if name == "relationship.geojson", project.levels.count > 1 {
-                    let props = original["properties"]
-                    let references = [props?["origin"], props?["destination"]].compactMap { $0 }
-                        + (props?["intermediary"]?.array ?? [])
-                    if !references.allSatisfy({ $0 == .null || importedIDs.contains($0["id"]?.string?.lowercased() ?? "") }) { continue }
-                }
+            for original in selected[name] ?? [] {
                 let value = rewriteLevelID(original, old: source.id, new: targetID)
                 guard let id = value["id"]?.uuid else {
                     throw IMDFImporter.Failure(message: "\(name): 공통 정보에 유효한 UUID가 없습니다.")
