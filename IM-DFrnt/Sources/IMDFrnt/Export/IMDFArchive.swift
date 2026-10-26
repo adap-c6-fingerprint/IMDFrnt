@@ -33,7 +33,8 @@ enum IMDFArchive {
     /// `projectData`는 지금 층까지 반영한 프로젝트 파일(`ProjectFile.encoded()`)이다.
     /// 백그라운드에서 돌리기 위해 값 대신 데이터로 받는다.
     static func build(projectData: Data, documents: [UUID: DrawingDocument],
-                      now: Date = Date(), reporter: LongTaskReporter? = nil) throws -> Output {
+                      now: Date = Date(), reporter: LongTaskReporter? = nil,
+                      openingBoundaryPolicy: IMDFValidation.OpeningBoundaryPolicy = .strict) throws -> Output {
         let file = try ProjectFile.decoded(from: projectData)
         let project = file.commonProject()
         let levels = project.levels.sorted { $0.info.ordinal < $1.info.ordinal }
@@ -50,6 +51,9 @@ enum IMDFArchive {
             blockers.append("전역 Footprint의 GPS Anchor를 먼저 설정하세요. 서로 일직선이 아닌 대응점 최소 3쌍이 필요합니다.")
         }
         var warnings: [String] = []
+        if openingBoundaryPolicy == .allowMismatchForSandbox {
+            warnings.append("Sandbox 검사용 파일입니다. Opening–Unit 경계 불일치만 허용하며 IMDF 규칙 충족이나 AIMP 승인을 의미하지 않습니다.")
+        }
 
         // 1. 층별 준비 — 도면(구성원 개체를 쓰는 예전 feature만 필요), 좌표 변환, 살아 있는 feature.
         struct Prepared {
@@ -209,7 +213,7 @@ enum IMDFArchive {
             files[name] = try encode(value.anyValue)
             // 가져온 아카이브에 있던 다른 파일(LICENSE 등)도 버리지 않는다.
         }
-        let validation = IMDFValidation.check(files: files)
+        let validation = IMDFValidation.check(files: files, openingBoundaryPolicy: openingBoundaryPolicy)
         guard validation.errors.isEmpty else { throw Blocked(messages: validation.errors) }
         warnings += validation.warnings
         reporter?.report(1, "완료")
@@ -286,6 +290,15 @@ extension AppEnvironment {
 
     /// 모든 층을 합쳐 IMDF 아카이브로 내보낸다. 층 도면을 읽어야 할 수 있어 백그라운드에서 진행률과 함께 만든다.
     func exportIMDFArchive(only type: IMDFFeatureType? = nil) {
+        exportIMDFArchive(only: type, openingBoundaryPolicy: .strict)
+    }
+
+    /// A separate opt-in command; regular ZIP, individual GeoJSON and client exports remain strict.
+    func exportIMDFForSandbox() {
+        exportIMDFArchive(only: nil, openingBoundaryPolicy: .allowMismatchForSandbox)
+    }
+
+    private func exportIMDFArchive(only type: IMDFFeatureType?, openingBoundaryPolicy: IMDFValidation.OpeningBoundaryPolicy) {
         guard !isProjectBusy else { return }
         guard var file = makeProjectFile() else { return }
         file.buildingProject = projectContents
@@ -308,7 +321,8 @@ extension AppEnvironment {
             let output: IMDFArchive.Output
             do {
                 output = try await Task.detached(priority: .userInitiated) {
-                    try IMDFArchive.build(projectData: projectData, documents: drawings, reporter: reporter)
+                    try IMDFArchive.build(projectData: projectData, documents: drawings, reporter: reporter,
+                                          openingBoundaryPolicy: openingBoundaryPolicy)
                 }.value
             } catch let blocked as IMDFArchive.Blocked {
                 endLongTask(task)
@@ -323,15 +337,17 @@ extension AppEnvironment {
             // 새로 발급한 id를 프로젝트에 남긴다. 다음 내보내기에서 같은 feature가 같은 id를 갖는다(IMDF 요건).
 
             let panel = NSSavePanel()
+            let sandbox = openingBoundaryPolicy == .allowMismatchForSandbox
             let filename = type.map { $0 == .manifest ? "manifest.json" : $0.rawValue + ".geojson" }
             if let filename, output.files[filename] == nil {
                 notify("\(filename)에 내보낼 Feature가 없습니다.", isError: true); return
             }
-            panel.nameFieldStringValue = filename ?? "\(projectDisplayName).zip"
+            panel.nameFieldStringValue = filename ?? "\(projectDisplayName)\(sandbox ? "-sandbox" : "").zip"
             panel.allowedContentTypes = filename == nil ? [.zip] : [.json, UTType(filenameExtension: "geojson") ?? .json]
             panel.canCreateDirectories = true
-            panel.title = "IMDF 아카이브 저장"
-            panel.message = filename == nil ? "IMDF 규격은 ZIP(.zip)으로 전달하도록 정합니다."
+            panel.title = sandbox ? "Sandbox 검사용 IMDF 저장" : "IMDF 아카이브 저장"
+            panel.message = sandbox ? "Opening–Unit 경계 불일치만 허용합니다. 도형을 수정하거나 다른 오류를 무시하지 않습니다. 최종 제출 전 Sandbox에서 확인하세요."
+                : filename == nil ? "IMDF 규격은 ZIP(.zip)으로 전달하도록 정합니다."
                 : "전체 프로젝트를 검증한 뒤 모든 층의 이 타입을 한 파일로 저장합니다. 이 파일 하나는 완전한 IMDF 아카이브가 아닙니다."
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do {
