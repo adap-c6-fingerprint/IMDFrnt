@@ -310,6 +310,7 @@ enum IMDFComplianceSelfTest {
             try await ReviewFollowupSelfTest.run(check)
             try await ReviewSafetySelfTest.run(check)
             try await MetadataReviewSelfTest.run(check)
+            try OpeningBoundaryExportSelfTest.run(check)
         } catch { check("IMDF 준수 테스트 실행", false); print(error) }
         print(summary(total: total, failures: failures))
         exit(failures == 0 ? 0 : 1)

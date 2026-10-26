@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-26 — #82 / IMD-70 Opening 경계 오류만 허용하는 Sandbox 내보내기
+
+- 최신 develop `e9f4704`에서 `feat/#82-opening-boundary-export`를 생성했다. 기존 #82에 목적·검증 조건을 기록하고 새 이슈는 만들지 않았다.
+- **파일 → Sandbox 검사용 내보내기… (Opening 경계 오류만 우회)**를 추가했다. 명시적 검사 전용 정책에서만 Opening–Unit 경계 불일치를 차단 오류 대신 안내로 남긴다. 기본 파일명에 `-sandbox`를 붙이고 저장 패널에 범위를 표시한다. 문자열 오류 필터링이나 전역 검증 해제는 사용하지 않는다.
+- 일반 ZIP·개별 GeoJSON·클라이언트 묶음과 모든 다른 검사/사전 차단을 유지한다. 정책은 호출 단위로 전달하고 저장하거나 재사용하지 않는다. 도형·속성·참조·UUID를 자동 수정하거나 Opening을 누락하지 않는다. 저장 형식은 v7 그대로다.
+- Debug·Release 빌드·ad-hoc 서명과 CLI 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, Footprint 93/93, IMDF Compliance 169/169(새 회귀 27건). 일반/검사 전용 차이, 혼합 오류 차단, ZIP 저장·재가져오기, 원본/출력 보존 및 정책 누출 방지를 검사했다.
+- 검증 앱은 `IM-DFrnt/.build/Opening-boundary-sandbox/IM-DFrnt.app`, 로그는 `imdfrnt-self-tests.KFf3yO`다. 기존 앱·사용자 프로젝트·무관한 권한 변경은 보존한다. GUI 메뉴/저장 패널 직접 조작·실제 Sandbox/AIMP 업로드는 미검증이다.
+- 영향도 M: 별도 내보내기 기능의 UI·검증·출력 연결이 바뀌지만 일반 출력 계약과 저장 구조는 유지한다. 사람 리뷰·승인 경로를 적용하고 PR 생성 후 merge는 하지 않는다.
+
 ## 2026-10-26 — #79 / IMD-68 / PR #80 메타데이터 후속 리뷰 3건
 
 - 개별 내보내기는 열린 공통 정보 편집기의 타입을 우선한다. 편집기가 닫히면 기존 활성 레이어·길찾기 내보내기를 유지한다.

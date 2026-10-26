@@ -16,6 +16,9 @@ struct ProjectFileToolbar: View {
                 Divider()
                 Button("IMDF 아카이브 내보내기… (모든 층)") { env.exportIMDFArchive() }
                     .disabled(env.buildingProject.levels.isEmpty)
+                Button("Sandbox 검사용 내보내기… (Opening 경계 오류만 우회)") { env.exportIMDFForSandbox() }
+                    .disabled(env.buildingProject.levels.isEmpty)
+                    .help("Opening–Unit 경계 불일치만 허용한 검사용 ZIP입니다. 다른 오류와 일반 내보내기의 검증은 유지합니다.")
                 Button("클라이언트용 묶음 내보내기… (지도+길찾기)") { env.exportClientDataset() }
                     .disabled(env.buildingProject.levels.isEmpty)
             }

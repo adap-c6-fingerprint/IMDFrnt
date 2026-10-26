@@ -49,6 +49,14 @@ IMDF에서 만든 SVG는 표시용 캐시다. 재열기 시 실제 GeoJSON geome
 - 실제 건물의 ground/aerial/subterranean 범위, 지면 출입층 ordinal 0 여부, 같은 외벽인 층의 정렬·실측 ±5m 정확도, 조건부 층간 시설/상관 ID 규칙은 현실 정보가 필요하다. 자동으로 주소·카테고리·모양을 추정하지 않는다. 복합 OSM 영업시간과 언어 태그의 IANA 등록 여부도 최종 Apple 검증이 필요하다. 현재 로컬 검증을 Apple 인증이나 전체 규칙 통과 보장으로 표현하지 않는다.
 - [Apple 공식 Reference](https://register.apple.com/resources/imdf/reference/reference), [Level](https://register.apple.com/resources/imdf/types/level), [Footprint](https://register.apple.com/resources/imdf/types/footprint). IMDF Sandbox 업로드와 실제 화면 조작은 별도 수동 검증 대상으로 남는다.
 
+## #82 / IMD-70 — Sandbox 검사용 Opening 경계 우회
+
+- **파일 → Sandbox 검사용 내보내기… (Opening 경계 오류만 우회)**로 모든 층의 IMDF ZIP을 저장한다. 기본 파일명에는 `-sandbox`가 붙고 저장 패널에 검사 전용임을 표시한다.
+- 이 명령에서만 `Opening은 같은 Level의 Unit 경계 위에 있어야 합니다.` 검사를 차단 오류 대신 우회 안내로 남긴다. 해당 Opening의 UUID와 경계 불일치는 저장 완료 안내에 포함한다. 도형·속성·참조·UUID를 자동 수정하거나 Opening을 누락하지 않는다.
+- UUID 중복/형식·필수 속성·참조·좌표/JSON·Unit–Level 빈틈·Venue 포함·표시점 및 다른 모든 검사와 사전 차단은 그대로 유지한다. 해당 경계 오류 외에 다른 오류가 있으면 검사용 내보내기도 차단된다.
+- 일반 **IMDF 아카이브 내보내기**, 개별 GeoJSON(`⌘E` 포함), **클라이언트용 묶음**은 기존 엄격한 검증을 유지한다. 검사 전용 모드는 명령에만 적용하며 프로젝트에 저장하거나 다음 내보내기로 이어지지 않는다.
+- 검사용 ZIP은 IMDF Sandbox에서 문제를 확인하기 위한 파일이다. 내보내기 성공이 IMDF 규칙 충족이나 AIMP 승인을 의미하지 않는다. 실제 Sandbox 업로드/GUI 저장 패널 조작은 별도 수동 검증이다.
+
 ## 후속 범위
 
 - #20: IMDF 도형과 독립된 SVG 참고 레이어, 건물 Footprint 배경, 표시·숨김과 불투명도, 도면 캐싱·비동기 로딩·메타데이터 탭바를 추가했다. [사용법과 검증](LEVEL_DRAWINGS.md)을 참고한다.

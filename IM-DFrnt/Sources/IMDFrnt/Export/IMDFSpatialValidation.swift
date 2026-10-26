@@ -27,7 +27,8 @@ enum IMDFSpatialValidation {
 
     struct Invalid: Error { let message: String }
 
-    static func check(_ records: [IMDFValidation.Record], byID: [String: IMDFValidation.Record], result: inout IMDFValidation.Report) {
+    static func check(_ records: [IMDFValidation.Record], byID: [String: IMDFValidation.Record], result: inout IMDFValidation.Report,
+                      openingBoundaryPolicy: IMDFValidation.OpeningBoundaryPolicy = .strict) {
         func coordinate(_ value: ProjectJSON?) -> [Double]? {
             guard let value else { return nil }
             let a = value.array
@@ -110,7 +111,14 @@ enum IMDFSpatialValidation {
                 if !units.contains(where: { candidate in
                     guard let unit = geometries[candidate.id] else { return false }
                     return opening.lines.allSatisfy { lineOnBoundary($0, rings: unit.rings) }
-                }) { result.errors.append("\(record.label): Opening은 같은 Level의 Unit 경계 위에 있어야 합니다.") }
+                }) {
+                    switch openingBoundaryPolicy {
+                    case .strict:
+                        result.errors.append("\(record.label): Opening은 같은 Level의 Unit 경계 위에 있어야 합니다.")
+                    case .allowMismatchForSandbox:
+                        result.warnings.append("\(record.label): Sandbox 검사용으로 Opening–Unit 경계 불일치를 허용했습니다. 도형은 수정하지 않았으므로 Sandbox에서 확인하세요.")
+                    }
+                }
             }
             if record.type == .geofence, let shape = geometries[record.id] {
                 for levelID in p["level_ids"]?.array.compactMap({ $0.string?.lowercased() }) ?? [] {

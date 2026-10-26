@@ -4,6 +4,12 @@ import Foundation
 /// https://register.apple.com/resources/imdf/reference/reference
 /// Draft project saving is deliberately not gated by these delivery requirements.
 enum IMDFValidation {
+    /// Only the explicit Sandbox export may relax this one spatial rule. All other checks stay strict.
+    enum OpeningBoundaryPolicy: Equatable, Sendable {
+        case strict
+        case allowMismatchForSandbox
+    }
+
     struct Report {
         var errors: [String] = []
         var warnings: [String] = []
@@ -29,7 +35,7 @@ enum IMDFValidation {
         .relationship: ["category", "direction"]
     ]
 
-    static func check(files: [String: Data]) -> Report {
+    static func check(files: [String: Data], openingBoundaryPolicy: OpeningBoundaryPolicy = .strict) -> Report {
         var result = Report()
         var json: [String: ProjectJSON] = [:]
         for (name, data) in files {
@@ -84,7 +90,7 @@ enum IMDFValidation {
             checkProperties(record, language: language, byID: byID, result: &result)
         }
         checkParentCycles(records, result: &result)
-        IMDFSpatialValidation.check(records, byID: byID, result: &result)
+        IMDFSpatialValidation.check(records, byID: byID, result: &result, openingBoundaryPolicy: openingBoundaryPolicy)
         result.errors = Array(NSOrderedSet(array: result.errors)) as? [String] ?? result.errors
         result.warnings = Array(NSOrderedSet(array: result.warnings)) as? [String] ?? result.warnings
         return result
