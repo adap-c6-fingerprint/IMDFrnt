@@ -10,6 +10,8 @@ SVG 도면에서 IMDF GeoJSON을 반자동으로 추출하는 macOS 앱의 **UI 
 
 주소·건물·입주자·Manifest는 프로젝트 공통 정보다. **IMDF 아카이브 내보내기 (모든 층)**는 Apple IMDF 1.0.0의 필수 정보·참조·공간 관계를 점검한 후 ZIP으로 저장한다. 개별 GeoJSON도 같은 검증을 사용한다. 프로젝트는 v7로 저장하며, Apple Sandbox 및 실제 건물 조건의 최종 확인은 별도로 필요하다. [현재 지원 범위와 수동 검증 항목](../docs/projects/BUILDING_LEVELS.md#78--imd-67--공통-정보와-공식-imdf-내보내기).
 
+Opening 경계 오류를 Sandbox에서 확인하려면 **파일 → Sandbox 검사용 내보내기… (Opening 경계 오류만 우회)**를 사용한다. 이 명령만 Opening–Unit 경계 불일치를 허용하고 나머지 검증은 유지한다. 일반 내보내기와 클라이언트 묶음은 그대로 엄격하게 검사하며, 도형을 자동 수정하지 않는다. [검사 전용 내보내기](../docs/projects/BUILDING_LEVELS.md#82--imd-70--sandbox-검사용-opening-경계-우회).
+
 명세: `02) Projects/06) Challenge 6/02) FP-to-IMDF 자동화/00) FP-to-IMDF 새버전 (반자동화).md`
 아키텍처: 같은 폴더 `03) FTI 아키텍쳐.md`
 

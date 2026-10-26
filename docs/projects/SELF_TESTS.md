@@ -1,6 +1,13 @@
 # Self-test 재현
 
-## 현재 검증 결과 — PR #80 메타데이터 후속 리뷰 3건 (2026-10-26)
+## 현재 검증 결과 — #82 / IMD-70 Sandbox 내보내기 (2026-10-26)
+
+- Debug·Release 빌드 및 ad-hoc 서명 검증 성공. 별도 앱 `IM-DFrnt/.build/Opening-boundary-sandbox/IM-DFrnt.app`으로 CLI 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, **Footprint 93/93, IMDF Compliance 169/169**.
+- 새 회귀 27건은 경계 불일치만 있는 합성 입력에서 일반 ZIP 차단·검사 전용 ZIP 허용, 우회 UUID/결과 안내, Opening/다른 타입 출력 보존, 실제 ZIP 저장·재가져오기, 이후 일반/클라이언트 검증 유지와 정상 경계 허용을 확인한다.
+- UUID 중복/형식·참조·필수 속성·좌표/geometry·Unit–Level 빈틈·Venue 포함·display_point·Manifest 언어·미해결 Manifest·Footprint 이전 미완료·JSON 손상이 함께 있을 때 검사용 모드에서도 차단되는지 확인했다.
+- 로그: `imdfrnt-self-tests.KFf3yO`(로컬 임시 폴더). 사용자 프로젝트와 기존 앱은 수정하지 않았다. 네이티브 메뉴/저장 패널 직접 조작·실제 Sandbox/AIMP 업로드·사람 리뷰/승인은 별도다. 아래는 이전 검증 기록이다.
+
+## PR #80 메타데이터 후속 리뷰 3건 검증 기록 (2026-10-26)
 
 - Debug·Release 빌드와 ad-hoc 서명 검증 성공. 별도 앱 `IM-DFrnt/.build/AIMP-metadata-review/IM-DFrnt.app`으로 CLI 전체 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 164/164, Drawing Loading 56/56, **Footprint 93/93, IMDF Compliance 142/142**.
 - 새 회귀 29건: 메타데이터 편집 중 개별 내보내기 대상 선택/편집 종료 후 복구, 비문자열·공백·줄바꿈 이름 fallback, 다중 건물에서 관련 Building/Address 선택 및 실제 가져오기, 무관한 충돌 무시·관련 충돌/중복 UUID 원자적 중단, Undo/Redo·저장 왕복, Venue/공통 Footprint 및 Occupant의 종속 주소, Footprint의 현재 참조 우선, 구형 단일 층 정보와 단일 기본값 보존을 확인했다.
