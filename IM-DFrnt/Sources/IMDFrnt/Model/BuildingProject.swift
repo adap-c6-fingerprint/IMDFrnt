@@ -75,6 +75,8 @@ struct ProjectLevel: Identifiable, Equatable, Codable {
     var workStatus: [String: LayerWorkStatus]?
     /// 이 층에서 type별로 사용자가 마지막으로 feature를 고친 시각. 최근 작업 순 정렬에 쓴다.
     var lastEdited: [String: Date]?
+    /// feature type 레이어 위에 얹은 이미지(신기능 15항, #84). 키는 type 이름이다. type마다 하나다.
+    var imageOverlays: [String: LevelImageOverlay]?
 }
 
 /// Common building and Levels are authoritative. RoutingGraph is a compatibility

@@ -102,6 +102,9 @@ extension AppEnvironment {
 
     func beginLevelDrawingLoad(_ id: UUID?) {
         cancelLevelDrawingLoads()
+        imageOverlays.clearAll()
+        // 조정 중이던 이미지는 떠난 층의 것이다. 새 층의 같은 type 이미지를 모르고 옮기지 않게 끈다.
+        // 층 선택·층 추가·실행취소로 층이 바뀌는 길이 모두 여기를 지난다.
         let level = buildingProject.levels.first { $0.id == id }
         installLevelMetadata(level)
         refreshCanvasReferences()

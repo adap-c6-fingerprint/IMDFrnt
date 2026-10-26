@@ -24,6 +24,7 @@ extension PathGeometry {
 struct CanvasView: View {
     @EnvironmentObject var env: AppEnvironment
     @EnvironmentObject var moves: MoveSession
+    @EnvironmentObject var overlays: ImageOverlaySession
     // 이동량은 `AppEnvironment`가 아니라 이 객체가 들고 있다(제안 4).
     // 드래그 한 프레임마다 사이드바까지 다시 그려지던 것을 막는다.
 
@@ -49,6 +50,8 @@ struct CanvasView: View {
     @State private var labelHitBoxes = FeatureLabelHitBoxes()
     /// 이름표를 눌러 연 편집 창의 대상과 그 이름표 자리(화면 좌표).
     @State private var tagEditor: (id: FeatureGroupID, rect: CGRect)?
+    /// 이미지 조정 드래그를 시작할 때의 값과 무엇을 바꾸는 드래그인지(신기능 15항).
+    @State private var imageDrag: (base: LevelImageOverlay, kind: ImageDragKind)?
     @StateObject private var zoomMonitor = ZoomEventMonitor()
 
     var body: some View {
@@ -92,7 +95,10 @@ struct CanvasView: View {
                 }
 
                 VStack {
-                    if case .displayPointPicking = env.mode {
+                    if let type = adjustingImageType {
+                        CanvasBarFit { ImageOverlayToolbar(type: type) }
+                        // 조정 중에는 드래그가 이미지를 움직인다. 지금 무엇을 끄는지 늘 보여야 한다.
+                    } else if case .displayPointPicking = env.mode {
                         HStack {
                             Text("도형 외곽 안에서 display point를 클릭하세요.")
                             Button("취소") { env.mode = .idle }
@@ -380,6 +386,10 @@ struct CanvasView: View {
                     if st.isSelected { drawSelectionBox(cache.box, in: g, scale: s, background: background) }
                 }
             }
+
+            drawImageOverlays(in: ctx, scale: s)
+            // 이미지 레이어(신기능 15항)는 도면 개체 위, 작업 표시(면·점·이름표) 아래다.
+            // 작업 표시가 이미지에 덮이면 사진 위에서 점을 찍어도 찍힌 자리가 안 보인다.
 
             // 다각형 선택 모드(신기능 5-4) — 폴리곤 type 레이어에서는 면을 그리고 고른다.
             // **면 → 선 → 점 순서가 규칙이다.** 면을 나중에 그리면 경계선과 꼭짓점을 덮어
@@ -1008,6 +1018,74 @@ struct CanvasView: View {
                    with: .color(color), lineWidth: 1.5 / s)
     }
 
+    // MARK: 이미지 레이어 (신기능 15항, #84)
+
+    enum ImageDragKind { case move, scale, rotate }
+
+    /// 조정 중인 이미지 type. 그 이미지가 지금 층에서 보일 때만 값이 있다.
+    /// 숨긴 이미지나 숨긴 레이어의 이미지를 보이지 않는 채로 끌어 옮기지 않게 한다.
+    private var adjustingImageType: IMDFFeatureType? {
+        guard !env.showRoutingScreen, let type = overlays.adjusting,
+              env.visibleImageOverlays.contains(where: { $0.type == type }) else { return nil }
+        return type
+    }
+
+    private func drawImageOverlays(in ctx: GraphicsContext, scale s: CGFloat) {
+        let adjusting = adjustingImageType
+        for (type, stored) in env.visibleImageOverlays {
+            let overlay = overlays.preview[type.rawValue] ?? stored
+            guard let image = overlays.image(for: overlay.image) else { continue }
+            var g = ctx
+            g.opacity *= overlay.presentation.opacity
+            g.concatenate(overlay.transform)
+            g.draw(Image(decorative: image, scale: 1), in: overlay.pixelRect)
+            // 그리는 것은 이미지 한 장과 변환 하나뿐이다. 화면만 옮길 때 다시 계산하는 것이 없다.
+            if adjusting == type {
+                var frame = ctx
+                frame.concatenate(overlay.transform)
+                frame.stroke(Path(overlay.pixelRect), with: .color(.accentColor),
+                             style: StrokeStyle(lineWidth: CanvasZoom.screenLength(1.5, at: s) / overlay.scale,
+                                                dash: [6, 4].map { CanvasZoom.screenLength($0, at: s) / overlay.scale }))
+                // 조정 중인 이미지는 테두리를 둘러 어디까지가 이미지인지 보이게 한다. 선 굵기는 화면 기준으로 일정하다.
+            }
+        }
+    }
+
+    /// 끌기 = 이동, ⇧ 끌기 = 크기, ⌥ 끌기 = 회전. 셋 다 이미지 중심이 기준이다.
+    /// 시작 때의 값에 그때까지의 총 변화만 얹는다. 프레임마다 누적하면 오차가 쌓인다.
+    private func adjustImage(_ type: IMDFFeatureType, _ value: DragGesture.Value) {
+        if imageDrag == nil, let stored = env.imageOverlay(for: type) {
+            let flags = NSEvent.modifierFlags
+            imageDrag = (stored, flags.contains(.shift) ? .scale : flags.contains(.option) ? .rotate : .move)
+        }
+        guard let (base, kind) = imageDrag else { return }
+        let start = toLocal(value.startLocation), now = toLocal(value.location), c = base.center
+        var next = base
+        switch kind {
+        case .move:
+            next.center = LocalPoint(c.x + now.x - start.x, c.y + now.y - start.y)
+        case .scale:
+            let d0 = start.distance(to: c), d1 = now.distance(to: c)
+            guard d0 > 1e-9 else { return }
+            next.setScale(base.scale * d1 / d0)
+        case .rotate:
+            let a0 = atan2(start.y - c.y, start.x - c.x), a1 = atan2(now.y - c.y, now.x - c.x)
+            next.setRotation(base.rotation + (a1 - a0) * 180 / .pi)
+        }
+        overlays.setPreview(next, for: type)
+    }
+
+    private func finishImageAdjust() {
+        defer { imageDrag = nil }
+        guard let (base, _) = imageDrag, let type = overlays.adjusting,
+              let result = overlays.preview[type.rawValue], result != base else {
+            if let type = overlays.adjusting { overlays.clearPreview(for: type) }
+            return
+        }
+        env.updateImageOverlay(type) { $0 = result }
+        // 프로젝트에는 손을 뗄 때 한 번만 넣는다. 실행취소 한 칸 = 드래그 한 번.
+    }
+
     private func drawReferenceLayers(in context: GraphicsContext, canvasSize: CGSize, scale: CGFloat) {
         guard let prepared = env.canvasReferences, prepared.input.levelID == env.routingFloorID else { return }
         let footprint = env.footprintPresentation
@@ -1159,6 +1237,11 @@ struct CanvasView: View {
     private func dragGesture(viewport: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                if let type = adjustingImageType {
+                    adjustImage(type, value)
+                    return
+                    // 조정 모드의 드래그는 이미지만 움직인다. 점 찍기·선택·팬은 조정을 끝낸 뒤 그대로 된다.
+                }
                 if dragStart == nil {
                     dragStart = offset
                     lastDrag = .zero
@@ -1237,6 +1320,10 @@ struct CanvasView: View {
                 }
             }
             .onEnded { value in
+                if imageDrag != nil || adjustingImageType != nil {
+                    finishImageAdjust()
+                    return
+                }
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if env.showRoutingScreen {
                     if routingDragIsConnection {

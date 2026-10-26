@@ -22,6 +22,7 @@ struct IMDFrntApp: App {
             RootView()
                 .environmentObject(env)
                 .environmentObject(env.moves)
+                .environmentObject(env.imageOverlays)
                 .frame(minWidth: 1180, minHeight: 720)
                 .background(ProjectWindowDelegateInstaller(delegate: delegate))
                 .onAppear {
