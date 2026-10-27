@@ -128,8 +128,11 @@ struct CanvasView: View {
                 // 캔버스 크기에 못 박는다. 없으면 상단바가 제 폭을 고집해 캔버스 칸을 넓히고,
                 // 넓어진 캔버스가 오른쪽 사이드바를 덮는다(창을 좁혔을 때).
 
-                VStack {
+                VStack(alignment: .leading, spacing: 0) {
                     Spacer()
+                    if env.showRoutingScreen {
+                        RoutingMapLayersPanel().padding(.leading, 12)
+                    }
                     ViewThatFits(in: .horizontal) {
                         HStack {
                             zoomControls(doc: displayedDocument, viewport: geo.size).fixedSize()
@@ -275,17 +278,22 @@ struct CanvasView: View {
                 ctx.translateBy(x: -c.x, y: -c.y)
             }
 
+            if env.showRoutingScreen {
+                if let drawing = env.routingMapDrawingCache.value(env: env, document: doc) {
+                    drawing.draw(in: ctx, settings: env.currentRoutingMapLayerSettings,
+                                 backgroundColors: env.canvasBackground, scale: s, visible: visible) { reference in
+                        drawReferenceLayers(in: reference, canvasSize: doc.canvasSize, scale: s, routing: true)
+                    }
+                }
+                drawRouting(in: &ctx, scale: s)
+                return
+            }
             drawReferenceLayers(in: ctx, canvasSize: doc.canvasSize, scale: s)
             let primary = env.currentRoutingFloor?.imdfCoordinates == nil ? env.primarySVGPresentation : DrawingLayerPresentation(isVisible: true, opacity: 1)
             if primary.isVisible {
                 var images = ctx; images.opacity *= primary.opacity
                 doc.drawImages(in: images)
             }
-            if env.showRoutingScreen {
-                drawRouting(in: &ctx, document: doc, scale: s, visible: visible)
-                return
-            }
-
             let renderCache = env.renderCache
             let segmentation = env.segmentation
             let background = env.canvasBackground
@@ -1011,7 +1019,7 @@ struct CanvasView: View {
                    with: .color(color), lineWidth: 1.5 / s)
     }
 
-    private func drawReferenceLayers(in context: GraphicsContext, canvasSize: CGSize, scale: CGFloat) {
+    private func drawReferenceLayers(in context: GraphicsContext, canvasSize: CGSize, scale: CGFloat, routing: Bool = false) {
         guard let prepared = env.canvasReferences, prepared.input.levelID == env.routingFloorID else { return }
         let footprint = env.footprintPresentation
         if footprint.isVisible {
@@ -1020,7 +1028,9 @@ struct CanvasView: View {
                 context.stroke(path, with: .color(.purple.opacity(footprint.opacity)), lineWidth: CanvasZoom.screenLength(2, at: scale))
             }
         }
-        guard let doc = prepared.reference, let presentation = env.activeLevel?.referenceDrawing?.presentation,
+        guard let doc = prepared.reference else { return }
+        let presentation = routing ? DrawingLayerPresentation(isVisible: true, opacity: 1) : env.activeLevel?.referenceDrawing?.presentation
+        guard let presentation,
               presentation.isVisible, doc.canvasSize.width > 0, doc.canvasSize.height > 0 else { return }
         let fit = min(canvasSize.width / doc.canvasSize.width, canvasSize.height / doc.canvasSize.height)
         var layer = context
@@ -1035,19 +1045,7 @@ struct CanvasView: View {
         }
     }
 
-    private func drawRouting(in ctx: inout GraphicsContext, document: DrawingDocument, scale s: CGFloat, visible: CGRect) {
-        let presentation = env.currentRoutingFloor?.imdfCoordinates == nil ? env.primarySVGPresentation : DrawingLayerPresentation(isVisible: true, opacity: 1)
-        for object in document.objects where presentation.isVisible {
-            let cached = env.renderCache.entry(for: object, segmentation: env.segmentation)
-            guard cached.box.insetBy(dx: -2, dy: -2).intersects(visible) else { continue }
-            let path = cached.path
-            if let fill = object.style.fill {
-                ctx.fill(path, with: .color(env.canvasBackground.resolveFill(fill).opacity(0.25 * presentation.opacity)),
-                         style: FillStyle(eoFill: env.currentRoutingFloor?.imdfCoordinates != nil))
-            }
-            ctx.stroke(path, with: .color(env.canvasBackground.resolve(object.style.stroke).opacity(0.6 * presentation.opacity)),
-                       lineWidth: CanvasZoom.strokeWidth(object.style.strokeWidth, at: s))
-        }
+    private func drawRouting(in ctx: inout GraphicsContext, scale s: CGFloat) {
         func point(_ node: RoutingNode) -> LocalPoint {
             node.id == routingDragNode ? (routingDragPoint ?? node.point) : node.point
         }

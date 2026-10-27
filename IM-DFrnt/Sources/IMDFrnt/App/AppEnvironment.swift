@@ -151,6 +151,8 @@ final class AppEnvironment: ObservableObject {
     }
     @Published var showRoutingScreen = false
     @Published var routingFloorID: UUID?
+    @Published var routingMapLayerSettings: [UUID: RoutingMapLayerSettings] = [:]
+    let routingMapDrawingCache = RoutingMapDrawingCache()
     @Published var routingSelectedNodeID: UUID?
     @Published var routingSelectedEdgeID: UUID?
     @Published var routingSelectedEdgeIDs: Set<UUID> = []
@@ -621,6 +623,8 @@ final class AppEnvironment: ObservableObject {
         buildingProject = BuildingProject()
         showBuildingManager = false
         routingFloorID = nil
+        routingMapLayerSettings = [:]
+        routingMapDrawingCache.reset()
         routingSelectedNodeID = nil
         routingSelectedEdgeID = nil
         routingSelectedEdgeIDs = []
