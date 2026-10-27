@@ -41,6 +41,9 @@ struct CanvasView: View {
     @State private var routingDragIsConnection = false
     @State private var routingDragOptionHeld = false
     @State private var routingDragCommandHeld = false
+    @State private var routingDragShiftHeld = false
+    @State private var routingDragIsMarquee = false
+    @State private var routingDragFloorID: UUID?
     @State private var routingDragConnectCandidate: UUID?
     @State private var routingConnectionStarted = false
     /// 꼭짓점을 끄는 드래그인가(#21). 시작할 때 정하고 끝까지 유지한다.
@@ -217,15 +220,12 @@ struct CanvasView: View {
             }
             .accessibilityValue(env.routingSelectedNodeID == node.id ? "선택됨" : "")
         }
-        ForEach(env.routing.edges.filter { edge in
-            env.routing.node(edge.from)?.floorID == env.currentRoutingFloor?.id ||
-                env.routing.node(edge.to)?.floorID == env.currentRoutingFloor?.id
-        }) { edge in
+        ForEach(env.visibleRoutingEdges) { edge in
             Button("연결 \(env.routing.node(edge.from)?.label ?? "") ↔ \(env.routing.node(edge.to)?.label ?? "")") {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 env.selectRoutingEdge(edge.id)
             }
-            .accessibilityValue(env.routingSelectedEdgeID == edge.id ? "선택됨" : "")
+            .accessibilityValue(env.routingSelectedEdgeIDs.contains(edge.id) ? "선택됨" : "")
         }
     }
 
@@ -1049,10 +1049,10 @@ struct CanvasView: View {
             node.id == routingDragNode ? (routingDragPoint ?? node.point) : node.point
         }
         let floorID = env.currentRoutingFloor?.id
-        for edge in env.routing.edges {
+        for edge in env.visibleRoutingEdges {
             guard let a = env.routing.node(edge.from), let b = env.routing.node(edge.to),
                   a.floorID == floorID || b.floorID == floorID else { continue }
-            let selected = env.routingSelectedEdgeID == edge.id
+            let selected = env.routingSelectedEdgeIDs.contains(edge.id)
             let color = selected ? Color.orange : (edge.accessible ? Color.blue : Color.purple)
             if a.floorID == b.floorID {
                 var line = Path()
@@ -1175,17 +1175,22 @@ struct CanvasView: View {
                         env.beginVertexDrag(target, at: toLocal(value.startLocation))
                     }
                     if env.showRoutingScreen {
+                        routingDragFloorID = env.currentRoutingFloor?.id
                         NSApp.keyWindow?.makeFirstResponder(nil)
                         let hit = env.nearestRoutingNode(to: toLocal(value.startLocation),
                                                         tolerance: 9 / Double(effectiveScale))
                         let modifiers = NSEvent.modifierFlags
+                        routingDragShiftHeld = modifiers.contains(.shift)
                         routingDragOptionHeld = modifiers.contains(.option)
                         routingDragCommandHeld = modifiers.contains(.command) &&
                             modifiers.intersection([.option, .control]).isEmpty
                         routingDragIsConnection = routingDragOptionHeld ||
                             (!routingDragCommandHeld && env.routingTool == .connect && hit != nil)
+                        routingDragIsMarquee = !routingDragOptionHeld && !routingDragCommandHeld &&
+                            !modifiers.contains(.control) && (env.routingTool == .edges || routingDragShiftHeld)
+                        if routingDragIsMarquee { routingDragIsConnection = false }
                         routingDragConnectCandidate = routingDragIsConnection ? hit?.id : nil
-                        if !routingDragIsConnection && !routingDragCommandHeld &&
+                        if !routingDragIsConnection && !routingDragCommandHeld && !routingDragIsMarquee &&
                             (env.routingTool == .place || env.routingTool == .select) {
                             routingDragNode = hit?.id
                             if let routingDragNode { env.selectRoutingNode(routingDragNode) }
@@ -1213,6 +1218,8 @@ struct CanvasView: View {
                 if dragIsVertex {
                     env.updateVertexDrag(to: toLocal(value.location), tolerance: 6 / Double(effectiveScale),
                                          freePoint: NSEvent.modifierFlags.contains(.option))
+                } else if routingDragIsMarquee {
+                    marquee = MarqueeRect(start: value.startLocation, current: value.location)
                 } else if routingDragIsConnection {
                     let moved = abs(value.translation.width) + abs(value.translation.height)
                     if !routingConnectionStarted, let from = routingDragConnectCandidate,
@@ -1239,7 +1246,22 @@ struct CanvasView: View {
             .onEnded { value in
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if env.showRoutingScreen {
-                    if routingDragIsConnection {
+                    if routingDragFloorID != env.currentRoutingFloor?.id {
+                        env.routingConnectionDrag = nil
+                    } else if routingDragIsMarquee {
+                        if moved >= MarqueeRect.dragThreshold {
+                            let rect = CGRect(x: min(value.startLocation.x, value.location.x),
+                                              y: min(value.startLocation.y, value.location.y),
+                                              width: abs(value.location.x - value.startLocation.x),
+                                              height: abs(value.location.y - value.startLocation.y))
+                            env.selectRoutingEdges(in: rect,
+                                projecting: { docToScreen($0.cg, scale: effectiveScale) },
+                                additive: routingDragShiftHeld)
+                        } else {
+                            env.handleRoutingClick(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale),
+                                                   modifiers: routingDragShiftHeld ? .shift : [])
+                        }
+                    } else if routingDragIsConnection {
                         if routingConnectionStarted {
                             if CGRect(origin: .zero, size: viewport).contains(value.location) {
                                 env.finishRoutingConnectionDrag(at: toLocal(value.location), tolerance: 9 / Double(effectiveScale))
@@ -1307,6 +1329,9 @@ struct CanvasView: View {
                 routingDragIsConnection = false
                 routingDragOptionHeld = false
                 routingDragCommandHeld = false
+                routingDragShiftHeld = false
+                routingDragIsMarquee = false
+                routingDragFloorID = nil
                 routingDragConnectCandidate = nil
                 routingConnectionStarted = false
                 dragStart = nil

@@ -167,6 +167,7 @@ extension AppEnvironment {
         moves.reset(nil); isMoveEnabled = false; mode = .idle
         doorDraftPoints = []
         routingConnectionDrag = nil; routingSelectedNodeID = nil; routingSelectedEdgeID = nil
+        routingSelectedEdgeIDs = []
         routingPendingAnchor = nil; pendingDeletion = nil; pendingClearSelection = nil
         conflict = nil; exportBlockers = []; closedPolygonNotice = nil
     }

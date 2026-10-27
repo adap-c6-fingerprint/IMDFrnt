@@ -27,7 +27,16 @@ extension AppEnvironment {
 
     func requestRoutingSelectionDeletion() {
         if let id = routingSelectedNodeID { requestRoutingNodeDeletion(id) }
-        else if let id = routingSelectedEdgeID { requestRoutingEdgeDeletion(id) }
+        else {
+            let ids = Set(selectedRoutingEdges.map(\.id))
+            if ids.count == 1, let id = ids.first { requestRoutingEdgeDeletion(id) }
+            else if !ids.isEmpty {
+                requestDeletion(title: "선택한 연결 \(ids.count)개를 삭제할까요?",
+                                message: "양 끝 노드는 남습니다. 실행 취소로 복구할 수 있습니다.") {
+                    $0.deleteRoutingEdges(ids)
+                }
+            }
+        }
     }
 
     func requestRoutingNodeDeletion(_ id: UUID) {

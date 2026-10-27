@@ -9,8 +9,8 @@ import Foundation
 /// 폐기 UUID 대장(`retired`)도 같은 이유로 함께 저장한다 — "MUST NOT be re-assigned".
 struct ProjectFile: Codable, Equatable {
 
-    /// v7 owns metadata globally and supports nested properties. Older readers must reject instead of dropping data.
-    static let currentVersion = 7
+    /// v8 adds routing edge groups. Older readers must reject instead of silently dropping them.
+    static let currentVersion = 8
     static let fileExtension = "imdfrnt"
     /// 버전 2에서 바뀐 것은 **개체를 가리키는 방식**이다 — id를 도면 내용에서 결정적으로 뽑는다(신기능 1-2-6).
     /// 이건 형식이 아니라 **뜻**을 바꾸므로 버전 1 파일은 열지 않고 거절한다(아래 `decoded`).
@@ -129,6 +129,7 @@ struct ProjectFile: Codable, Equatable {
 extension ProjectFile {
     func validateLegacyRouting() throws {
         guard buildingProject == nil, let graph = routing else { return }
+        try graph.validateEdgeGroups()
         let floors = Set(graph.floors.map(\.id)), nodes = Set(graph.nodes.map(\.id))
         guard floors.count == graph.floors.count,
               nodes.count == graph.nodes.count, graph.nodes.allSatisfy({ floors.contains($0.floorID) }),

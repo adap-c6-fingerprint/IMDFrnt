@@ -67,6 +67,20 @@ enum ClientDatasetSelfTest {
             let nodes = graph.filter { props($0)["role"] as? String == "node" }
             let edges = graph.filter { props($0)["role"] as? String == "edge" }
             check("클라이언트 묶음: 지금 층 밖의 노드·층간 연결까지 모두 들어간다", nodes.count == 4 && edges.count == 2)
+            var groupedFile = try ProjectFile.decoded(from: projectData([ground, upper], cross: [cross]))
+            let edgeGroup = RoutingEdgeGroup(name: "계단 접근로")
+            groupedFile.buildingProject!.edgeGroups = [edgeGroup]
+            groupedFile.buildingProject!.levels[0].edges[0].groupID = edgeGroup.id
+            groupedFile.buildingProject!.crossLevelEdges[0].groupID = edgeGroup.id
+            let groupedOut = try ClientDataset.build(projectData: groupedFile.encoded(),
+                datasetID: "synthetic-two-floors", documents: [:], now: Date(timeIntervalSince1970: 0))
+            let groupedEdges = features(groupedOut.files["routing-graph.geojson"]).filter { props($0)["role"] as? String == "edge" }
+            check("#88 클라이언트 묶음은 같은 층/층간 그룹 보존", groupedEdges.count == 2 && groupedEdges.allSatisfy {
+                props($0)["group_id"] as? String == edgeGroup.id.uuidString.lowercased() && props($0)["group_name"] as? String == edgeGroup.name
+            })
+            check("#88 엣지 그룹은 IMDF 출력에 영향 없음", ClientDataset.mapFiles.allSatisfy {
+                out.files["IMDFData/" + $0] == groupedOut.files["IMDFData/" + $0]
+            })
             check("클라이언트 묶음: 노드 level_id·level이 함께 낸 level.geojson의 UUID·ordinal과 같다",
                   nodes.allSatisfy { n in
                       guard let id = props(n)["level_id"] as? String, let ordinal = levels[id] else { return false }
