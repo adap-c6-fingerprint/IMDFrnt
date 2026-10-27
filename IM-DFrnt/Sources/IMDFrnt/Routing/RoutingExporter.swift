@@ -14,6 +14,8 @@ enum RoutingExporter {
     }
 
     static func collection(_ graph: RoutingGraph) throws -> [String: Any] {
+        do { try graph.validateEdgeGroups() }
+        catch { throw Failure(messages: [error.localizedDescription]) }
         var errors: [String] = []
         if graph.nodes.isEmpty { errors.append("먼저 노드를 찍어 주세요.") }
         if graph.layoutVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -79,11 +81,16 @@ enum RoutingExporter {
         }
         for edge in graph.edges.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
             guard let from = coordinates[edge.from], let to = coordinates[edge.to] else { continue }
+            var properties: [String: Any] = ["role": "edge", "from": edge.from.uuidString.lowercased(),
+                                           "to": edge.to.uuidString.lowercased(), "accessible": edge.accessible,
+                                           "direction": "undirected", "category": edge.category.rawValue]
+            if let group = graph.edgeGroup(edge.groupID) {
+                properties["group_id"] = group.id.uuidString.lowercased()
+                properties["group_name"] = group.name
+            }
             features.append([
                 "type": "Feature", "id": edge.id.uuidString.lowercased(),
-                "properties": ["role": "edge", "from": edge.from.uuidString.lowercased(),
-                               "to": edge.to.uuidString.lowercased(), "accessible": edge.accessible,
-                               "direction": "undirected", "category": edge.category.rawValue],
+                "properties": properties,
                 "geometry": ["type": "LineString", "coordinates": [from.geoJSONArray, to.geoJSONArray]]
             ])
         }

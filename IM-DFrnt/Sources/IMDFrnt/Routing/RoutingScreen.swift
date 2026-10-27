@@ -20,7 +20,7 @@ struct RoutingScreen: View {
                         Text($0.title).tag($0)
                     }
                 }
-                .pickerStyle(.segmented).frame(maxWidth: 460)
+                .pickerStyle(.segmented).frame(maxWidth: 550)
                 Button("출입구 노드 자동 배치") { env.placeEntranceNodes() }
                     .disabled(!env.hasOpeningFeatures || env.isImportingIMDF)
                     .help("IMDF opening 중앙에 출입구(entrance) 노드를 놓습니다. 다시 실행해도 중복되지 않습니다.")
@@ -110,6 +110,8 @@ struct RoutingScreen: View {
     private var inspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                RoutingEdgeGroupsPanel()
+                Divider()
                 if let floor = env.currentRoutingFloor {
                     RoutingFloorEditor(floor: floor).id(floor.id)
                     Divider()
@@ -416,7 +418,7 @@ final class RoutingKeyMonitor {
             return true
         }
         guard !modifiers.contains(.option) else { return false }
-        if [51, 117].contains(keyCode), env.routingSelectedNodeID != nil || env.routingSelectedEdgeID != nil {
+        if [51, 117].contains(keyCode), env.routingSelectedNodeID != nil || !env.routingSelectedEdgeIDs.isEmpty {
             env.requestRoutingSelectionDeletion(); return env.pendingDeletion != nil
         }
         return false

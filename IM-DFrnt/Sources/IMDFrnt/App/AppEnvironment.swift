@@ -153,6 +153,9 @@ final class AppEnvironment: ObservableObject {
     @Published var routingFloorID: UUID?
     @Published var routingSelectedNodeID: UUID?
     @Published var routingSelectedEdgeID: UUID?
+    @Published var routingSelectedEdgeIDs: Set<UUID> = []
+    @Published var routingEdgeFilter: RoutingEdgeFilter = .all
+    @Published var routingNewEdgeGroupID: UUID?
     @Published var routingTool: RoutingTool = .place
     @Published var routingConnectStart: UUID?
     @Published var routingConnectionDrag: RoutingConnectionDrag?
@@ -620,6 +623,9 @@ final class AppEnvironment: ObservableObject {
         routingFloorID = nil
         routingSelectedNodeID = nil
         routingSelectedEdgeID = nil
+        routingSelectedEdgeIDs = []
+        routingEdgeFilter = .all
+        routingNewEdgeGroupID = nil
         routingConnectStart = nil
         routingConnectionDrag = nil
         routingPendingAnchor = nil
@@ -1505,7 +1511,8 @@ final class AppEnvironment: ObservableObject {
                        buildingProject: projectContents,
                        routing: routing, routingFloorID: routingFloorID,
                        routingSelectedNodeID: routingSelectedNodeID,
-                       routingSelectedEdgeID: routingSelectedEdgeID)
+                       routingSelectedEdgeID: routingSelectedEdgeID,
+                       routingSelectedEdgeIDs: routingSelectedEdgeIDs)
     }
 
     private func restore(_ s: EditorSnapshot) {
@@ -1533,6 +1540,8 @@ final class AppEnvironment: ObservableObject {
         routingFloorID = s.routingFloorID
         routingSelectedNodeID = s.routingSelectedNodeID
         routingSelectedEdgeID = s.routingSelectedEdgeID
+        routingSelectedEdgeIDs = s.routingSelectedEdgeIDs
+        normalizeRoutingEdgeState()
         routingConnectStart = nil
         routingConnectionDrag = nil
         routingPendingAnchor = nil

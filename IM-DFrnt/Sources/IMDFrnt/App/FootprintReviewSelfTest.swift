@@ -91,7 +91,7 @@ enum FootprintReviewSelfTest {
 
         let file = env.makeProjectFile()!
         let loaded = try ProjectFile.decoded(from: file.encoded())
-        check("v7 저장으로 구버전 앱의 무손실인 척하는 재저장 방지", loaded.version == 7 && loaded.buildingProject == env.projectContents)
+        check("현재 버전 저장으로 구버전 앱의 무손실인 척하는 재저장 방지", loaded.version == ProjectFile.currentVersion && loaded.buildingProject == env.projectContents)
         var oldFile = file; oldFile.version = 5
         check("기존 v5 프로젝트는 계속 읽기 가능", try ProjectFile.decoded(from: oldFile.encoded()).version == 5)
         var oldRegistration = try ProjectJSON.parse(JSONEncoder().encode(env.buildingProject.levels.first { $0.id == other }!.info.footprintRegistration!))

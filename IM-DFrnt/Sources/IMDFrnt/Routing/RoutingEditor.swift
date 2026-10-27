@@ -150,9 +150,16 @@ extension AppEnvironment {
 
     func nearestRoutingEdge(to point: LocalPoint, tolerance: Double) -> RoutingEdge? {
         var best: (RoutingEdge, Double)?
-        for edge in routing.edges {
+        for edge in visibleRoutingEdges {
             guard let a = routing.node(edge.from), let b = routing.node(edge.to),
-                  a.floorID == currentRoutingFloor?.id, b.floorID == a.floorID else { continue }
+                  a.floorID == currentRoutingFloor?.id || b.floorID == currentRoutingFloor?.id else { continue }
+            if a.floorID != b.floorID {
+                guard routingTool == .edges else { continue }
+                let local = a.floorID == currentRoutingFloor?.id ? a : b
+                let distance = point.distance(to: local.point)
+                if distance <= tolerance && distance < (best?.1 ?? .infinity) { best = (edge, distance) }
+                continue
+            }
             let dx = b.point.x - a.point.x, dy = b.point.y - a.point.y
             let length = dx * dx + dy * dy
             guard length > 0 else { continue }
@@ -166,11 +173,13 @@ extension AppEnvironment {
     func selectRoutingNode(_ id: UUID?) {
         routingSelectedNodeID = id
         routingSelectedEdgeID = nil
+        routingSelectedEdgeIDs = []
     }
 
     func selectRoutingEdge(_ id: UUID?) {
         routingSelectedNodeID = nil
-        routingSelectedEdgeID = id
+        routingSelectedEdgeIDs = Set(id.map { [$0] } ?? [])
+        normalizeRoutingEdgeState()
     }
 
     /// Both Option-drag and the connection tool use the same drop behavior.
@@ -198,7 +207,7 @@ extension AppEnvironment {
         routingConnectionDrag = nil
         guard let target = drag.target else { return }
         var connected: UUID?
-        perform("노드 연결") { connected = routing.connect(drag.from, target) }
+        perform("노드 연결") { connected = connectRoutingNodes(drag.from, target) }
         if let connected { selectRoutingEdge(connected) }
     }
 
@@ -214,13 +223,18 @@ extension AppEnvironment {
             routingPendingAnchor = point
             return
         }
+        if !addingNode, routingTool == .edges || modifiers.contains(.shift) {
+            let edge = nearestRoutingEdge(to: point, tolerance: tolerance)
+            selectRoutingEdge(edge?.id, additive: modifiers.contains(.shift))
+            return
+        }
         if let hit = nearestRoutingNode(to: point, tolerance: tolerance) {
             selectRoutingNode(hit.id)
             if routingTool == .connect && !addingNode {
                 if let start = routingConnectStart {
                     guard start != hit.id else { routingConnectStart = nil; return }
                     var connected: UUID?
-                    perform("노드 연결") { connected = routing.connect(start, hit.id) }
+                    perform("노드 연결") { connected = connectRoutingNodes(start, hit.id) }
                     if let connected {
                         routingConnectStart = nil
                         selectRoutingEdge(connected)
@@ -275,7 +289,7 @@ extension AppEnvironment {
 
     func deleteRoutingSelection() {
         if let id = routingSelectedNodeID { deleteRoutingNode(id) }
-        else if let id = routingSelectedEdgeID { deleteRoutingEdge(id) }
+        else { deleteRoutingEdges(Set(selectedRoutingEdges.map(\.id))) }
     }
 
     func deleteRoutingNode(_ id: UUID) {
@@ -283,18 +297,14 @@ extension AppEnvironment {
         perform("노드와 연결 삭제") {
             routing.removeNode(id)
             if routingSelectedNodeID == id { selectRoutingNode(nil) }
-            if let selected = routingSelectedEdgeID, routing.edge(selected) == nil { routingSelectedEdgeID = nil }
+            normalizeRoutingEdgeState()
             if routingConnectStart == id { routingConnectStart = nil }
             if routingConnectionDrag?.from == id || routingConnectionDrag?.target == id { routingConnectionDrag = nil }
         }
     }
 
     func deleteRoutingEdge(_ id: UUID) {
-        guard routing.edge(id) != nil else { return }
-        perform("연결 삭제") {
-            routing.edges.removeAll { $0.id == id }
-            if routingSelectedEdgeID == id { routingSelectedEdgeID = nil }
-        }
+        deleteRoutingEdges([id])
     }
 
     func addRoutingAnchor(longitude: Double, latitude: Double) {

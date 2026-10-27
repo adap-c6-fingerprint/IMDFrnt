@@ -194,6 +194,7 @@ enum RoutingSelfTest {
         OpeningEntranceSelfTest.run(check: check)
         ClientDatasetSelfTest.run(check: check)
         VerticalReplicationSelfTest.run(check: check)
+        RoutingEdgeGroupSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

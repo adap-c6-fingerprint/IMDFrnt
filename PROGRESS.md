@@ -1,5 +1,16 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-28 — #88 / IMD-73 길찾기 엣지 그룹
+
+- 최신 develop `1146120`에서 `feat/#88-edge-groups`를 만들고 연결된 기존 이슈 #88에 범위·완료 기준을 구체화했다.
+- 그룹 UUID·이름 관리, Shift 클릭/드래그 다중 선택, 일괄 배정·해제, 수동 새 연결 기본 그룹, 전체/미배정/지정 그룹 필터를 추가했다. 필터는 캔버스·히트테스트·선택·배정에 공통 적용한다. 기존 핀 이동·연결과 자동 노드/엘리베이터 배치는 유지한다.
+- 그룹/배정은 기존 프로젝트·Undo snapshot에 추가한다. 층 가져오기에서 UUID/이름 충돌은 가져온 그룹만 재발급한다. 새 파일은 v8로 저장해 이전 앱의 조용한 그룹 유실을 차단하고 v2~v7 읽기를 유지한다. IMDF 도형·관리·좌표·출력 계약은 바꾸지 않는다.
+- 길찾기 GeoJSON에 배정된 엣지만 `group_id`·`group_name`을 추가한다. IMDFrnt는 안내 엔진이 아니므로 실제 소비 앱 수정 없이 동일 그룹=직진/그룹 변경=안내 판단 규칙을 문서화했다. 층 전환·도착·안전 안내는 별도 유지해야 한다.
+- Debug·Release 빌드 및 ad-hoc 서명 검증 성공. 전체 CLI 8/8 통과: Self ALL PASS, Building 61/61, Project 24/24, Document open 23/23, Routing 208/208(추가44건), Drawing Loading 56/56, Footprint 93/93, IMDF Compliance 169/169. 검증 앱은 `IM-DFrnt/.build/IMD73-edge-groups-verified/IM-DFrnt.app`, 로그는 `imdfrnt-self-tests.NrPw5j`다. GUI/소비 앱 실기기 확인은 사람 검수로 남긴다.
+- Release 첫 전체 검사는 6/8 모드 통과였으며 실패 2건은 Self/Footprint의 고정 v7 기대값이었다(동작 회귀 아님). 현재 v8 기대값으로 수정하고 전체 재검증한다. 추가 클라이언트 묶음 검사까지 Routing 208/208 통과했다.
+- 영향도 L: 길찾기 저장·내보내기 계약과 UI·선택/Undo·층 가져오기가 연결된다. 커밋 후 셀프 리뷰, CodeRabbit Major/Critical 해소 뒤 In Review로 이동하며 사람 리뷰·승인·merge는 별도다. 기존 앱·사용자 프로젝트·무관한 파일 권한 변경은 보존한다.
+- [PR #89](https://github.com/adap-c6-fingerprint/IMDFrnt/pull/89)를 생성하고 커밋 후 셀프 리뷰 및 CodeRabbit 전체 리뷰/후속 리뷰를 요청했다. 최신 커밋의 CodeRabbit 검토 완료 전에는 통과로 간주하지 않는다.
+
 ## 2026-10-26 — #82 / IMD-70 Opening 경계 오류만 허용하는 Sandbox 내보내기
 
 - 최신 develop `e9f4704`에서 `feat/#82-opening-boundary-export`를 생성했다. 기존 #82에 목적·검증 조건을 기록하고 새 이슈는 만들지 않았다.

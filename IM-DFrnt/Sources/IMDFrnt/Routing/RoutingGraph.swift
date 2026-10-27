@@ -76,6 +76,24 @@ struct RoutingEdge: Identifiable, Equatable, Codable {
     var to: UUID
     var accessible = true
     var category: RoutingEdgeCategory = .walkway
+    var groupID: UUID?
+}
+
+struct RoutingEdgeGroup: Identifiable, Equatable, Codable {
+    var id: UUID = UUID()
+    var name: String
+}
+
+enum RoutingEdgeFilter: Hashable {
+    case all, unassigned, group(UUID)
+
+    func includes(_ edge: RoutingEdge) -> Bool {
+        switch self {
+        case .all: true
+        case .unassigned: edge.groupID == nil
+        case .group(let id): edge.groupID == id
+        }
+    }
 }
 
 struct RoutingGraph: Equatable, Codable {
@@ -85,6 +103,19 @@ struct RoutingGraph: Equatable, Codable {
     var layoutVersion = "layout-1"
     var hardSearchRadiusMeters = 25.0
     var imdfSourceName: String?
+    /// Optional for projects written before edge grouping (#88).
+    var edgeGroups: [RoutingEdgeGroup]?
+
+    func edgeGroup(_ id: UUID?) -> RoutingEdgeGroup? { edgeGroups?.first { $0.id == id } }
+
+    func validateEdgeGroups() throws {
+        let groups = edgeGroups ?? []
+        let ids = Set(groups.map(\.id))
+        guard ids.count == groups.count,
+              edges.allSatisfy({ $0.groupID == nil || ids.contains($0.groupID!) }) else {
+            throw IMDFImporter.Failure(message: "엣지 그룹 UUID가 중복되거나 연결의 그룹 참조가 없습니다.")
+        }
+    }
 
     func floor(_ id: UUID?) -> RoutingFloor? { floors.first { $0.id == id } }
     func node(_ id: UUID?) -> RoutingNode? { nodes.first { $0.id == id } }
@@ -161,11 +192,12 @@ struct RoutingGraph: Equatable, Codable {
 }
 
 enum RoutingTool: String, CaseIterable {
-    case place, select, connect, calibrate
+    case place, select, edges, connect, calibrate
     var title: String {
         switch self {
         case .place: "노드 찍기"
         case .select: "선택·이동"
+        case .edges: "엣지 선택"
         case .connect: "노드 연결"
         case .calibrate: "좌표 기준점"
         }
@@ -174,6 +206,7 @@ enum RoutingTool: String, CaseIterable {
         switch self {
         case .place: "⌘ Command + 클릭으로 노드 추가 · 클릭으로 선택 · 핀 드래그로 이동 · ⌥ Option + 드래그로 연결"
         case .select: "⌘ Command + 클릭으로 노드 추가 · 핀·연결선 선택 · Delete로 삭제 · ⌥ Option + 드래그로 연결"
+        case .edges: "엣지 클릭 · Shift + 클릭으로 추가/해제 · 드래그로 사각형 선택 · Shift + 드래그로 추가 선택"
         case .connect: "⌘ Command + 클릭으로 노드 추가 · 핀 드래그로 연결 · 층간 연결은 두 핀을 차례로 클릭"
         case .calibrate: "기준점 클릭 후 실제 경도·위도 입력 (최소 3점) · ⌘ Command + 클릭으로 노드 추가"
         }
