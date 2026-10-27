@@ -74,9 +74,12 @@ struct CanvasView: View {
                             DispatchQueue.main.async { openRequestedTagEditor(id, scale: effectiveScale) }
                             // 방금 저장한 feature의 이름표는 다음 그리기에서 생긴다. 한 박자 늦춰 그 자리를 찾는다.
                         }
-                        .onChange(of: geo.size) { _, size in
-                            // Switching from the drawing editor changes sidebar widths and layout.
-                            if env.showRoutingScreen { fit(doc: doc, viewport: size) }
+                        .onChange(of: geo.size) { oldSize, size in
+                            // Inspector changes can resize the canvas while placing/selecting nodes.
+                            // Preserve zoom/pan; only fit when the initial viewport becomes usable.
+                            if env.showRoutingScreen, CanvasZoom.routingResizeNeedsFit(from: oldSize, to: size) {
+                                fit(doc: doc, viewport: size)
+                            }
                         }
                 } else if let levelID = env.loadingLevelID {
                     VStack(spacing: 10) {

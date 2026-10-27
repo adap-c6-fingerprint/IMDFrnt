@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-28 — #90 / IMD-75 노드·엣지 화면 확대 리셋 방지
+
+- PR #89가 반영된 최신 develop `23cbc26`에서 `fix/#90-routing-viewport-reset`를 만들고 기존 #90에 수정 범위·완료 조건을 기록했다.
+- 노드 화면에서 캔버스 크기가 바뀔 때마다 `fit`하던 경로를 초기 비유효 크기 → 유효 크기일 때만 실행하도록 제한했다. 선택 패널/창 크기 변화는 확대·이동 상태를 덮어쓰지 않는다. onAppear·문서 fingerprint·층 전환·수동 맞춤 경로와 다른 편집 화면은 유지한다.
+- IMDF 관리·노드/엣지 데이터·그룹·좌표 변환·저장 v8·내보내기는 변경하지 않았다. 기존 앱·원본 프로젝트·무관한 파일 실행 권한 변경도 보존했다.
+- Debug/Release 빌드·ad-hoc 서명 검증 성공. Release 전체 CLI 8/8 통과: Self ALL PASS, Building61, Project24, Document23, Routing220(추가12), Drawing56, Footprint93, Compliance169. 로그 `imdfrnt-self-tests.sqNAbL`, 검증 앱 `IM-DFrnt/.build/IMD75-viewport-fix/IM-DFrnt.app`.
+- 검사는 크기 변경 시 맞춤 여부와 모델 조작 후 문서/층 트리거 불변을 확인한다. 실제 SwiftUI 창의 배율·화면 픽셀을 조작한 GUI 검사는 아니므로 확대/팬 → 노드·엣지 편집 → 창 리사이즈 → 맞춤·층 전환은 사람 최종 검수로 남긴다.
+- 영향도 S: 노드 편집의 한정된 크기 변경 이벤트 경로만 수정하고 공유 데이터 계약은 유지한다. 커밋 후 셀프 리뷰와 PR/CodeRabbit Major·Critical 검토를 수행하며 사용자 지침에 따라 자동 merge하지 않는다.
+
 ## 2026-10-28 — #88 / IMD-73 길찾기 엣지 그룹
 
 - 최신 develop `1146120`에서 `feat/#88-edge-groups`를 만들고 연결된 기존 이슈 #88에 범위·완료 기준을 구체화했다.

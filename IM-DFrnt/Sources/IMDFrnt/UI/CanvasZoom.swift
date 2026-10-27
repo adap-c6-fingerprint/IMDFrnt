@@ -17,6 +17,14 @@ enum CanvasZoom {
         min(max(scale, minScale), maxScale)
     }
 
+    /// Node/edge inspector layout changes must not reset zoom/pan (#90).
+    /// onAppear fits the first layout; this only retries an initially unusable viewport.
+    static func routingResizeNeedsFit(from old: CGSize, to new: CGSize) -> Bool {
+        let wasUsable = old.width.isFinite && old.height.isFinite && old.width > 1 && old.height > 1
+        let isUsable = new.width.isFinite && new.height.isFinite && new.width > 1 && new.height > 1
+        return !wasUsable && isUsable
+    }
+
     // MARK: 선 두께 — 상한만 올리면 확대가 소용없어지는 이유
 
     /// 확대해도 선이 더 굵어지지 않는 시점(배율).
