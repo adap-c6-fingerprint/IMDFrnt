@@ -1,5 +1,16 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-28 — #92 / IMD-76 노드 화면 층별 레이어 불투명도
+
+- PR #91이 머지된 최신 develop `a1c89ec`에서 `feat/#92-routing-map-layers`를 만들고 IMD-76/GitHub #92에 범위·완료 조건을 기록했다.
+- 노드 화면 왼쪽 하단에 Fixture·Unit·배경 0~100% 슬라이더/수치를 추가했다. 배경 → Unit → Fixture → 기존 노드/엣지 순서로 합성하며 기본값은 100/35/80%다. 면과 선을 레이어 단위로 합성하고 0%에서 그 레이어 그리기를 생략한다.
+- 현재 층의 기존 태깅/직접 그린 면과 IMDF 원본 도형을 분리 표시한다. 구멍/MultiPolygon·공통 층 참조를 유지하고 원본/편집 UUID 중복·휴지통 부활을 막는다. IMDF 합성 SVG를 배경으로 중복 그리지 않고 타입별 표시 캐시만 만든다. 원본 SVG/이미지·참고 도면은 배경에 포함한다.
+- 보기 설정은 층별 세션 상태로만 유지하고 프로젝트 전환 시 초기화한다. IMDF 편집 화면 레이어 설정·데이터 관리·좌표·노드/엣지 편집·Undo·파일 v8·저장/내보내기는 유지한다. 기존 확대 리셋 수정과 사용자 파일/무관한 실행 권한 변경도 보존한다.
+- Debug/Release 빌드·ad-hoc 서명 검증 성공. `LC_ALL=C bash run-self-tests.sh .build/IMD76-routing-layers/IM-DFrnt.app` 전체 8/8 통과: Self ALL PASS, Building61, Project24, Document23, Routing248(추가28), Drawing56, Footprint93, Compliance169. 최종 로그 `imdfrnt-self-tests.qsqUkQ`, 검수 앱 `IM-DFrnt/.build/IMD76-routing-layers/IM-DFrnt.app`.
+- 첫 전체 실행도 앱 exit는 모두 0이었지만 색상 경고가 섞인 로그의 awk UTF-8 판독이 실패해 7/8로 집계됐다. 검사 조건은 유지한 채 byte locale에서 재실행해 8/8을 확인했다. 공통 검사 스크립트는 변경하지 않았다.
+- 작은 실제 Canvas 벡터 이미지로 순서·0/50/100% 합성을 검사했다. NSApplication 전 headless ImageRenderer는 이 환경에서 CGImage 픽셀을 표시하지 못하므로 실제 PNG/JPG 표시·슬라이더 마우스 조작·좁은 창·확대/팬 GUI는 사람 최종 검수로 남긴다. 현재 열린 앱은 교체/종료하지 않았다.
+- 영향도 M: 노드 표시 기능의 UI·세션 상태·렌더링 캐시가 연결되지만 저장/IMDF 계약은 바꾸지 않는다. 커밋 후 셀프 리뷰·PR·CodeRabbit Major/Critical 확인 뒤 In Review로 넘기고 사람 리뷰·승인·merge를 기다린다.
+
 ## 2026-10-28 — #90 / IMD-75 노드·엣지 화면 확대 리셋 방지
 
 - PR #89가 반영된 최신 develop `23cbc26`에서 `fix/#90-routing-viewport-reset`를 만들고 기존 #90에 수정 범위·완료 조건을 기록했다.
