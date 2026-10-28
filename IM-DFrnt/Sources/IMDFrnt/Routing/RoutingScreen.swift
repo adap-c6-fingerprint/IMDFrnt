@@ -62,14 +62,16 @@ struct RoutingScreen: View {
     }
 
     private var floors: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let graph = env.routing
+        let isolatedCount = graph.isolatedNodes.count, componentCount = graph.componentCount
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("층별 도면").font(.headline)
                 Spacer()
                 Button { env.addRoutingFloor() } label: { Image(systemName: "plus") }
                     .help("새 층 추가")
             }
-            if let source = env.routing.imdfSourceName {
+            if let source = graph.imdfSourceName {
                 Label(source, systemImage: "map").font(.caption).lineLimit(2)
                 Text("IMDF의 층 ID·좌표를 사용합니다.").font(.caption2).foregroundStyle(.secondary)
             } else {
@@ -80,8 +82,8 @@ struct RoutingScreen: View {
                 .font(.caption2).foregroundStyle(.secondary)
             ScrollView {
                 VStack(spacing: 4) {
-                    ForEach(env.routing.floors.sorted { $0.ordinal < $1.ordinal }) { floor in
-                        RoutingFloorCell(floor: floor, nodeCount: env.routing.nodes(on: floor.id).count,
+                    ForEach(graph.floors.sorted { $0.ordinal < $1.ordinal }) { floor in
+                        RoutingFloorCell(floor: floor, nodeCount: graph.nodes(on: floor.id).count,
                                          isSelected: env.currentRoutingFloor?.id == floor.id,
                                          onSelect: { env.selectRoutingFloor(floor.id) },
                                          onDelete: { env.requestRoutingFloorDeletion(floor.id) },
@@ -90,24 +92,24 @@ struct RoutingScreen: View {
                     }
                 }
             }
-            if let start = env.routing.node(env.routingConnectStart) {
+            if let start = graph.node(env.routingConnectStart) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("연결 시작: \(start.label)", systemImage: "link")
-                    Text("\(env.routing.floor(start.floorID)?.name ?? "")에서 선택한 핀입니다. 도착 핀을 클릭하세요.")
+                    Text("\(graph.floor(start.floorID)?.name ?? "")에서 선택한 핀입니다. 도착 핀을 클릭하세요.")
                     Button("연결 취소") { env.routingConnectStart = nil }
                 }
                 .font(.caption).padding(10)
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             }
             Divider()
-            Text("전체 노드 \(env.routing.nodes.count)개 · 연결 \(env.routing.edges.count)개")
+            Text("전체 노드 \(graph.nodes.count)개 · 연결 \(graph.edges.count)개")
                 .font(.caption)
-            if !env.routing.isolatedNodes.isEmpty {
-                Label("연결 없는 노드 \(env.routing.isolatedNodes.count)개", systemImage: "exclamationmark.triangle")
+            if isolatedCount > 0 {
+                Label("연결 없는 노드 \(isolatedCount)개", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange)
             }
-            if env.routing.componentCount > 1 {
-                Text("경로가 \(env.routing.componentCount)개 그룹으로 나뉘어 있습니다.")
+            if componentCount > 1 {
+                Text("경로가 \(componentCount)개 그룹으로 나뉘어 있습니다.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }

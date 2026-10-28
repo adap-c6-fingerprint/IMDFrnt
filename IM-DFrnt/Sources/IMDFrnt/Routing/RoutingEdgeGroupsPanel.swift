@@ -7,12 +7,15 @@ struct RoutingEdgeGroupsPanel: View {
     @State private var assignmentID: UUID?
 
     var body: some View {
+        let graph = env.routing, nodes = graph.nodesByID
+        let visible = graph.visibleEdges(on: env.currentRoutingFloor?.id, filter: env.routingEdgeFilter)
+        let selectedCount = visible.filter { env.routingSelectedEdgeIDs.contains($0.id) }.count
         VStack(alignment: .leading, spacing: 10) {
             Text("엣지 그룹").font(.headline)
             Picker("엣지 필터", selection: Binding(get: { env.routingEdgeFilter }, set: { env.setRoutingEdgeFilter($0) })) {
                 Text("전체").tag(RoutingEdgeFilter.all)
                 Text("미배정만").tag(RoutingEdgeFilter.unassigned)
-                ForEach(env.routing.edgeGroups ?? []) { group in
+                ForEach(graph.edgeGroups ?? []) { group in
                     Text(label(group)).tag(RoutingEdgeFilter.group(group.id))
                 }
             }
@@ -26,7 +29,7 @@ struct RoutingEdgeGroupsPanel: View {
                     .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             DisclosureGroup("그룹 이름·UUID 관리") {
-                ForEach(env.routing.edgeGroups ?? []) { group in
+                ForEach(graph.edgeGroups ?? []) { group in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             TextField("그룹 이름", text: Binding(
@@ -44,26 +47,26 @@ struct RoutingEdgeGroupsPanel: View {
                 }
             }
             Divider()
-            Text("선택 엣지 \(env.selectedRoutingEdges.count)개").font(.subheadline.weight(.semibold))
+            Text("선택 엣지 \(selectedCount)개").font(.subheadline.weight(.semibold))
             RoutingEdgeGroupPicker(title: "배정할 그룹", selection: $assignmentID)
             Button("선택 엣지에 적용") { env.assignRoutingEdgeGroup(assignmentID) }
-                .disabled(env.selectedRoutingEdges.isEmpty)
+                .disabled(selectedCount == 0)
             Text("미배정 선택 후 적용하면 그룹을 해제합니다.")
                 .font(.caption2).foregroundStyle(.secondary)
             Button("엣지 다중 선택 도구") { env.setRoutingTool(.edges) }
             Text("Shift 클릭: 추가/해제 · 드래그: 교차하는 엣지 선택 · Shift 드래그: 추가. 층간 엣지는 아래 목록에서도 선택할 수 있습니다.")
                 .font(.caption2).foregroundStyle(.secondary)
-            DisclosureGroup("현재 층 엣지 \(env.visibleRoutingEdges.count)개") {
+            DisclosureGroup("현재 층 엣지 \(visible.count)개") {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(env.visibleRoutingEdges) { edge in
+                        ForEach(visible) { edge in
                             Button {
                                 env.selectRoutingEdge(edge.id, additive: NSEvent.modifierFlags.contains(.shift))
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(env.routing.node(edge.from)?.label ?? "") ↔ \(env.routing.node(edge.to)?.label ?? "")")
+                                    Text("\(nodes[edge.from]?.label ?? "") ↔ \(nodes[edge.to]?.label ?? "")")
                                         .lineLimit(2)
-                                    Text(env.routing.edgeGroup(edge.groupID).map(label) ?? "미배정")
+                                    Text(graph.edgeGroup(edge.groupID).map(label) ?? "미배정")
                                         .foregroundStyle(.secondary)
                                 }
                                 .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
@@ -75,7 +78,7 @@ struct RoutingEdgeGroupsPanel: View {
                 }.frame(maxHeight: 180)
             }
         }
-        .onChange(of: env.routing.edgeGroups) { _, groups in
+        .onChange(of: graph.edgeGroups) { _, groups in
             if let id = assignmentID, !(groups ?? []).contains(where: { $0.id == id }) { assignmentID = nil }
         }
     }
