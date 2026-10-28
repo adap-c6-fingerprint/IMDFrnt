@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 enum NavigationDatasetSelfTest {
-    static func run(check: (String, Bool) -> Void) {
+    static func run(check: (String, Bool) -> Void) async {
         func rejects(_ name: String, _ action: () throws -> Void) {
             do { try action(); check(name, false) } catch { check(name, true) }
         }
@@ -59,6 +59,32 @@ enum NavigationDatasetSelfTest {
             try ClientDataset.write(output.files, to: target, replacing: false)
             check("#99 실제 폴더 파일·바이트 유지", try output.files.allSatisfy { try Data(contentsOf: target.appendingPathComponent($0.key)) == $0.value })
             rejects("#99 기존 결과를 확인 없이 덮어쓰지 않음") { try ClientDataset.write(output.files, to: target, replacing: false) }
+            let env = AppEnvironment()
+            env.buildingProject = project
+            let asyncTarget = folder.appendingPathComponent("async-navigation")
+            let saving = env.saveNavigationDataset(to: asyncTarget, replacing: false)
+            check("#99 비동기 저장 시작 즉시 중복 실행 차단", saving != nil && env.isProjectBusy && env.longTask != nil && env.saveNavigationDataset(to: asyncTarget, replacing: false) == nil)
+            await saving?.value
+            let asyncBytesMatch = try output.files.allSatisfy { try Data(contentsOf: asyncTarget.appendingPathComponent($0.key)) == $0.value }
+            check("#99 비동기 저장 바이트·성공 후 UUID 반영·잠금 해제", asyncBytesMatch && env.buildingProject.levels[0].editing.ids.peek(unit.id) == unit.id && !env.isProjectBusy && env.longTask == nil)
+            env.buildingProject = project
+            await env.saveNavigationDataset(to: asyncTarget, replacing: false)?.value
+            check("#99 비동기 저장 실패 시 UUID 불변·잠금 해제", env.buildingProject == project && !env.isProjectBusy && env.longTask == nil)
+            await env.saveNavigationDataset(to: asyncTarget, replacing: true)?.value
+            check("#99 확인한 비동기 교체 성공 후 UUID 반영", env.buildingProject.levels[0].editing.ids.peek(unit.id) == unit.id && !env.isProjectBusy && env.longTask == nil)
+            env.buildingProject = project
+            env.buildingProject.levels[0].info.anchors = AnchorStore()
+            let invalidProject = env.buildingProject
+            await env.saveNavigationDataset(to: asyncTarget, replacing: true)?.value
+            let previousBytesMatch = try output.files.allSatisfy { try Data(contentsOf: asyncTarget.appendingPathComponent($0.key)) == $0.value }
+            check("#99 생성 실패 시 기존 파일·UUID 불변·잠금 해제", previousBytesMatch && env.buildingProject == invalidProject && !env.isProjectBusy && env.longTask == nil)
+            env.buildingProject = project
+            let staleTarget = folder.appendingPathComponent("snapshot-navigation")
+            let staleSaving = env.saveNavigationDataset(to: staleTarget, replacing: false)
+            env.buildingProject = BuildingProject()
+            await staleSaving?.value
+            let snapshotBytesMatch = try output.files.allSatisfy { try Data(contentsOf: staleTarget.appendingPathComponent($0.key)) == $0.value }
+            check("#99 저장 중 프로젝트 교체 시 스냅샷 출력·오래된 UUID 미반영", snapshotBytesMatch && env.buildingProject == BuildingProject() && !env.isProjectBusy && env.longTask == nil)
             var changed = project; changed.levels[0].nodes[1].featureLinks = [u]
             rejects("#99 중복 장소 배정 차단") { _ = try NavigationDataset.build(project: changed) }
             changed = project; changed.levels[0].editing.features.remove(unit.id)
@@ -73,6 +99,19 @@ enum NavigationDatasetSelfTest {
             changed.levels[0].nodes[0].featureLinks = [RoutingFeatureReference(kind: .unit, featureID: unit.id, source: .imported), f]
             let imported = try NavigationDataset.build(project: changed)
             check("#99 가져온 장소는 도형 변환 없이 원본 UUID 유지", try ProjectJSON.parse(imported.files[NavigationFeatureLinks.fileName]!)["features"]!.array.contains { $0["feature_id"]?.uuid == unit.id })
+            changed.levels[0].geoJSON["unit.geojson"]![0]["properties"] = .object(["level_id": .string(upper.id.uuidString)])
+            rejects("#99 local imported Unit의 다른 층 참조 차단") { _ = try NavigationDataset.build(project: changed) }
+            changed.levels[0].geoJSON["unit.geojson"]![0]["properties"] = .object([:])
+            rejects("#99 local imported 장소의 층 참조 누락 차단") { _ = try NavigationDataset.build(project: changed) }
+            changed = project
+            changed.levels[0].editing.features.remove(fixture.id)
+            changed.levels[0].nodes[0].featureLinks = [u, RoutingFeatureReference(kind: .fixture, featureID: legacy, source: .imported)]
+            changed.levels[0].geoJSON["fixture.geojson"] = [.object(["id": .string(legacy.uuidString), "geometry": .null,
+                "properties": .object(["level_ids": .array([.string(ground.id.uuidString), .string(upper.id.uuidString)])])])]
+            let sharedFixture = try NavigationDataset.build(project: changed)
+            check("#99 imported Fixture의 현재 층 포함 다중 층 참조 허용", sharedFixture.linkCount == 2)
+            changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["level_ids": .array([.string(upper.id.uuidString)])])
+            rejects("#99 local imported Fixture의 다른 층 참조 차단") { _ = try NavigationDataset.build(project: changed) }
             changed = project
             changed.levels[0].editing.ids.adopt(unit.id, id: unit.id); changed.levels[0].editing.ids.retire(unit.id)
             let retired = try NavigationDataset.build(project: changed)

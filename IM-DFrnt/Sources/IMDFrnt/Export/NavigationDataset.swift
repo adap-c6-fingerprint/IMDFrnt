@@ -23,6 +23,10 @@ enum NavigationDataset {
             for node in level.nodes {
                 for ref in node.featureLinks ?? [] {
                     if let feature = ref.authored(in: level) { _ = assigner.id(for: feature.id) }
+                    else if let imported = ref.imported(in: project, levelID: level.id),
+                            !BuildingProject.levelReferences(imported).contains(level.id) {
+                        throw ClientDataset.Blocked(messages: ["\(level.info.name) · \(node.label): 연결한 \(ref.kind.title)의 층 참조가 노드의 층과 다릅니다."])
+                    }
                 }
             }
             ids[level.id] = assigner
@@ -70,16 +74,36 @@ extension AppEnvironment {
             guard alert.runModal() == .alertSecondButtonReturn else { return }
             replacing = true
         }
-        let output: NavigationDataset.Output
-        do { output = try NavigationDataset.build(project: projectContents) }
-        catch let blocked as ClientDataset.Blocked { notify(blocked.messages.joined(separator: "\n"), isError: true); return }
-        catch { notify("길안내 데이터 내보내기 실패: \(error.localizedDescription)", isError: true); return }
-        do {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            try ClientDataset.write(output.files, to: url, replacing: replacing)
-            adoptExportedIDs(output.ids)
-            notify("길안내 데이터 저장 완료 — 노드 \(output.nodeCount)개 · 엣지 \(output.edgeCount)개 · 장소 연결 \(output.linkCount)개")
-        } catch { notify("저장 실패: \(error.localizedDescription)", isError: true) }
+        saveNavigationDataset(to: url, replacing: replacing)
+    }
+
+    /// Capture once; generation and disk I/O must not block the editor's main actor.
+    @discardableResult
+    func saveNavigationDataset(to url: URL, replacing: Bool) -> Task<Void, Never>? {
+        guard !isProjectBusy else { return nil }
+        let project = projectContents, replace = replacing
+        isProjectActionInProgress = true
+        let task = beginLongTask("길안내 데이터 저장 중", detail: "노드·엣지·장소 연결 생성 및 저장", fraction: nil)
+        return Task {
+            defer { isProjectActionInProgress = false; endLongTask(task) }
+            do {
+                let output = try await Task.detached(priority: .userInitiated) {
+                    let built = try NavigationDataset.build(project: project)
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    try ClientDataset.write(built.files, to: url, replacing: replace)
+                    return built
+                }.value
+                // Menu commands can still change state while the disabled editor is waiting.
+                guard projectContents == project else {
+                    notify("길안내 데이터는 시작 시점의 상태로 저장했습니다. 그사이 프로젝트가 바뀌어 UUID 대장은 반영하지 않았습니다. 현재 상태를 다시 내보내세요.", isError: true)
+                    return
+                }
+                adoptExportedIDs(output.ids)
+                notify("길안내 데이터 저장 완료 — 노드 \(output.nodeCount)개 · 엣지 \(output.edgeCount)개 · 장소 연결 \(output.linkCount)개")
+            } catch let blocked as ClientDataset.Blocked {
+                notify(blocked.messages.joined(separator: "\n"), isError: true)
+            } catch { notify("길안내 데이터 내보내기 실패: \(error.localizedDescription)", isError: true) }
+        }
     }
 }
