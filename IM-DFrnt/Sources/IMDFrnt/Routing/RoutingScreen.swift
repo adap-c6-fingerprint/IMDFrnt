@@ -24,7 +24,7 @@ struct RoutingScreen: View {
                 Button("출입구 노드 자동 배치") { env.placeEntranceNodes() }
                     .disabled(!env.hasOpeningFeatures || env.isImportingIMDF)
                     .help("IMDF opening 중앙에 출입구(entrance) 노드를 놓습니다. 다시 실행해도 중복되지 않습니다.")
-                Button("길찾기 내보내기…") { env.exportRoutingGraph() }
+                Button("노드/엣지 내보내기…") { env.exportNavigationDataset() }
                     .buttonStyle(.borderedProminent)
             }
             .padding(12)

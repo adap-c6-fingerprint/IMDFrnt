@@ -1,5 +1,24 @@
 # 클라이언트용 지도·길찾기 데이터 묶음
 
+## 지도 없이 길안내 데이터만 내보내기 (#99 / IMD-80)
+
+**파일 → 노드/엣지 내보내기…** 또는 노드 화면의 같은 버튼을 누르고 저장할 폴더를 고른다. 다음 세 파일만 생성한다. 한글 폴더 이름도 가능하며 dataset_id 입력이나 IMDF/AIMP 검사는 없다.
+
+- `routing-graph.geojson`: 기존 schema1 그대로 모든 층의 노드·엣지·WGS84 좌표·이름/카테고리/메타데이터·층간/수직 그룹·접근성·엣지 그룹 UUID/이름.
+- `navigation-feature-links.json`: 아래의 schema1 양방향 **별도 JSON 관계 DB**. Unit/Fixture UUID ↔ 도착 노드 UUID·층 UUID·종류만 담고 도형/좌표/속성은 복제하지 않는다. 연결이 없으면 빈 두 인덱스를 제공한다.
+- `navigation.json`: schema_version1, kind=`navigation-only`, layout_version, `levels`(id/name/ordinal/short_name), `edge_groups`(id/name, 미사용 그룹 포함), routing_file/routing_sha256, feature_links_file/feature_links_sha256.
+
+`IMDFData/`, `dataset.json`, Unit/Fixture/Level 다각형·SVG·이미지는 **없다**. IMDF가 미완성이고 level/venue/도형 속성이 잘못돼도 길안내 데이터가 유효하면 저장된다. 그래프 좌표·노드/그룹 참조·장소 유일 배정·삭제된 장소 연결 및 안전한 덮어쓰기 보호만 유지한다. 미확정 드래그·아직 적용하지 않은 입력이 아니라 확정된 노드와 연결을 내보낸다. 연결된 장소의 UUID만 기존 대장에서 재사용/발급하고 저장 성공 후 프로젝트에 반영한다. 원본 도형이나 편집 저장 형식 v9는 바꾸지 않는다.
+
+생성과 디스크 쓰기는 시작 시점의 프로젝트 스냅샷으로 백그라운드에서 실행하며 중복 내보내기는 막는다. 저장 중 메뉴 명령 등으로 프로젝트가 바뀌면 파일은 시작 상태로 저장하지만 오래된 UUID 대장을 현재 상태에 덮어쓰지 않고 재출력을 안내한다.
+
+가져온 장소의 층은 직접 `level_id`/`level_ids` 또는 `unit_id`/`unit_ids`가 가리키는 Unit의 `level_id`로 확인한다. 저장된 배열 위치만 보고 다른 층의 장소를 현재 층이라고 추정하지 않는다. 이 확인도 다각형·IMDF 아카이브 생성 없이 수행한다.
+여러 층을 참조해 공통 저장소에 있는 Fixture도 같은 원본 Unit 층 조회를 사용한다. 이 사전은 조회 시 계산하며 프로젝트에 저장하거나 새 캐시로 유지하지 않는다.
+
+소비 앱은 `navigation.json`의 kind/schema와 두 파일 해시를 확인하고 그래프·관계 DB를 읽는다. `(feature_type, feature_id)`로 출발/도착 장소의 node_id를 찾은 뒤 기존 노드 경로 탐색에 넘긴다. 연속 엣지의 비어 있지 않은 group_id가 같으면 같은 직진 구간이며 그룹 변경은 안내 판단 지점이다. 층 전환/도착/안전 안내는 유지한다. Unit/Fixture가 미연결이면 임의의 가까운 노드로 추정하지 않는다.
+
+지도는 소비 앱이 별도로 보유해야 한다. 이 형식은 기존 지도+길찾기 `dataset.json` 묶음과 다르므로 그 로더에 그대로 넣지 말고 세 JSON을 읽는 adapter가 필요하다. 이 작업은 편집기 내보내기까지이며 iOS 로더/실제 안내 엔진·Apple 업로드는 변경하지 않는다. 기존 지도+길찾기 묶음과 단독 `길찾기 GeoJSON 내보내기…`는 아래 동작을 유지한다.
+
 이슈: [#54](https://github.com/adap-c6-fingerprint/IMDFrnt/issues/54). 요구사항: `IM-DFrnt 클라이언트용 지도·길찾기 데이터 Export 요구사항`(2026-10-18 초안).
 
 `도구 → 클라이언트용 묶음 내보내기… (지도+길찾기)` 또는 상단 파일 메뉴에서 실행한다. 한 프로젝트의 **모든 층**의 IMDF와 길찾기 그래프를 같은 순간의 프로젝트 데이터 하나에서 만들어 폴더 하나로 저장한다. 기존 `IMDF 아카이브 내보내기`(ZIP, #38)와 `길찾기 내보내기`(그래프 단독)는 그대로 있다.

@@ -4,7 +4,7 @@ import Foundation
 enum NavigationFeatureLinks {
     static let fileName = "navigation-feature-links.json"
 
-    private static func records(project: BuildingProject, ids: [UUID: IDAssigner]) throws -> [ProjectJSON] {
+    static func records(project: BuildingProject, ids: [UUID: IDAssigner]) throws -> [ProjectJSON] {
         try RoutingFeatureLinks.validateUnique(in: project)
         var records: [ProjectJSON] = []
         for level in project.levels {
@@ -33,20 +33,25 @@ enum NavigationFeatureLinks {
 
     static func build(project: BuildingProject, ids: [UUID: IDAssigner], files: [String: Data]) throws -> Data {
         let records = try records(project: project, ids: ids)
+        let data = try encoded(records: records, layoutVersion: project.layoutVersion)
+        var finalFiles = files; finalFiles[fileName] = data
+        let errors = problems(files: finalFiles, project: project, ids: ids)
+        guard errors.isEmpty else { throw ClientDataset.Blocked(messages: errors) }
+        return data
+    }
+
+    /// Shared wire format; routing-only export has no IMDF files to cross-check.
+    static func encoded(records: [ProjectJSON], layoutVersion: String) throws -> Data {
         let nodeIDs = Set(records.compactMap { $0["node_id"]?.string })
         let nodes: [ProjectJSON] = nodeIDs.sorted().map { nodeID in
             .object(["node_id": .string(nodeID), "features": .array(records.filter { $0["node_id"]?.string == nodeID }.map { record in
                 var ref = record; ref["node_id"] = nil; return ref
             })])
         }
-        let data = try ProjectJSON.object([
-            "schema_version": .number(1), "layout_version": .string(project.layoutVersion),
+        return try ProjectJSON.object([
+            "schema_version": .number(1), "layout_version": .string(layoutVersion),
             "features": .array(records), "nodes": .array(nodes)
         ]).data()
-        var finalFiles = files; finalFiles[fileName] = data
-        let errors = problems(files: finalFiles, project: project, ids: ids)
-        guard errors.isEmpty else { throw ClientDataset.Blocked(messages: errors) }
-        return data
     }
 
     /// 최종 IMDF/그래프 바이트와 대조해 층·UUID·1:N 제한·양방향 인덱스 일치를 검사한다.

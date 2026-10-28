@@ -14,6 +14,8 @@ struct ProjectFileToolbar: View {
                 Button(".imdfrnt 불러오기…") { env.openProject() }
                 Button("도면 열기…") { env.openFile() }
                 Divider()
+                Button("노드/엣지 내보내기…") { env.exportNavigationDataset() }
+                    .disabled(env.buildingProject.levels.isEmpty)
                 Button("IMDF 아카이브 내보내기… (모든 층)") { env.exportIMDFArchive() }
                     .disabled(env.buildingProject.levels.isEmpty)
                 Button("Sandbox 검사용 내보내기… (Opening 경계 오류만 우회)") { env.exportIMDFForSandbox() }

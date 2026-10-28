@@ -204,6 +204,7 @@ enum RoutingSelfTest {
         RoutingMapLayersSelfTest.run(check: check)
         await RoutingFeatureLinksSelfTest.run(check: check)
         RoutingPerformanceSelfTest.run(check: check)
+        await NavigationDatasetSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

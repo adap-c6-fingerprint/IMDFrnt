@@ -73,6 +73,8 @@ struct IMDFrntApp: App {
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("길찾기 GeoJSON 내보내기…") { env.exportRoutingGraph() }
                     .disabled(env.routing.nodes.isEmpty)
+                Button("노드/엣지 내보내기…") { env.exportNavigationDataset() }
+                    .disabled(env.isProjectBusy || env.buildingProject.levels.isEmpty)
                 Divider()
                 Button("Anchor 지정 화면") { env.enterAnchorScreen() }
                     .keyboardShortcut("k")
