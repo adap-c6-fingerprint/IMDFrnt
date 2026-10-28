@@ -45,6 +45,7 @@ struct RoutingScreen: View {
         .onDisappear {
             keyMonitor?.stop(); keyMonitor = nil
             env.routingConnectionDrag = nil
+            env.clearRoutingFeatureSelection()
             env.routingContextMenuIsOpen = false
         }
         .alert("길찾기 파일을 내보낼 수 없습니다", isPresented: Binding(
@@ -52,6 +53,12 @@ struct RoutingScreen: View {
         )) {
             Button("확인", role: .cancel) { env.routingExportError = nil }
         } message: { Text(env.routingExportError ?? "") }
+        .alert("기존 장소 연결을 교체할까요?", isPresented: Binding(
+            get: { env.routingFeatureReplacement != nil }, set: { if !$0 { env.routingFeatureReplacement = nil } }
+        ), presenting: env.routingFeatureReplacement) { request in
+            Button("취소", role: .cancel) { env.routingFeatureReplacement = nil }
+            Button("노드 연결 교체") { env.confirmRoutingFeatureReplacement(request) }
+        } message: { _ in Text("이 장소에 이미 연결된 노드를 해제하고 방금 선택한 노드로 교체합니다. 도형·노드·엣지는 삭제하지 않습니다.") }
     }
 
     private var floors: some View {
@@ -111,6 +118,8 @@ struct RoutingScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 RoutingEdgeGroupsPanel()
+                Divider()
+                RoutingFeatureLinksPanel()
                 Divider()
                 if let floor = env.currentRoutingFloor {
                     RoutingFloorEditor(floor: floor).id(floor.id)
@@ -408,13 +417,14 @@ final class RoutingKeyMonitor {
     func handle(keyCode: UInt16, modifiers: NSEvent.ModifierFlags = [], textIsEditing: Bool = false,
                 hasModal: Bool = false) -> Bool {
         guard let env, env.showRoutingScreen, !env.routingContextMenuIsOpen,
-              env.pendingDeletion == nil, !hasModal, !textIsEditing,
+              env.pendingDeletion == nil, env.routingFeatureReplacement == nil, !hasModal, !textIsEditing,
               modifiers.intersection([.command, .control]).isEmpty else { return false }
         if keyCode == 53 {
             env.routingConnectionDrag = nil
             env.routingConnectStart = nil
             env.routingPendingAnchor = nil
             env.selectRoutingNode(nil)
+            env.clearRoutingFeatureSelection()
             return true
         }
         guard !modifiers.contains(.option) else { return false }

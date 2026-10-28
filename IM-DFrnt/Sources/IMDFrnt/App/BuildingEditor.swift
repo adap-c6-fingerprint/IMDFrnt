@@ -162,6 +162,7 @@ extension AppEnvironment {
     }
 
     func clearLevelInteraction() {
+        clearRoutingFeatureSelection()
         selection = SelectionStore(); expandedFeature = nil; faceSelection = []
         auxiliarySelection = []; focusedTwinKey = nil
         moves.reset(nil); isMoveEnabled = false; mode = .idle

@@ -284,6 +284,11 @@ struct CanvasView: View {
                                  backgroundColors: env.canvasBackground, scale: s, visible: visible) { reference in
                         drawReferenceLayers(in: reference, canvasSize: doc.canvasSize, scale: s, routing: true)
                     }
+                    if let selected = env.routingSelectedFeature, env.currentRoutingMapLayerSettings[selected.kind.layer] > 0 {
+                        for shape in drawing.shapes[selected.kind.layer] ?? [] where shape.reference == selected {
+                            ctx.stroke(shape.path, with: .color(.orange), lineWidth: 2 / s)
+                        }
+                    }
                 }
                 drawRouting(in: &ctx, scale: s)
                 return

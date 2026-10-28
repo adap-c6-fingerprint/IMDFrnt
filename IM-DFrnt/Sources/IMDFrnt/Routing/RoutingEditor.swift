@@ -76,6 +76,7 @@ extension AppEnvironment {
         if tool == .calibrate && currentRoutingFloor?.imdfCoordinates != nil { return }
         guard routingTool != tool else { return }
         routingTool = tool
+        clearRoutingFeatureSelection()
         routingConnectionDrag = nil
         routingConnectStart = nil
         routingPendingAnchor = nil
@@ -171,6 +172,7 @@ extension AppEnvironment {
     }
 
     func selectRoutingNode(_ id: UUID?) {
+        routingFeatureCandidates = []
         routingSelectedNodeID = id
         routingSelectedEdgeID = nil
         routingSelectedEdgeIDs = []
@@ -215,6 +217,11 @@ extension AppEnvironment {
         guard !isImportingIMDF, let floor = currentRoutingFloor, let doc = routingDocument,
               modifiers.intersection([.option, .control]).isEmpty else { return }
         let addingNode = modifiers.contains(.command)
+        if routingTool == .featureLinks && !addingNode {
+            guard !modifiers.contains(.shift) else { return }
+            handleRoutingFeatureClick(at: point, tolerance: tolerance)
+            return
+        }
         if addingNode {
             routingConnectStart = nil
             routingPendingAnchor = nil

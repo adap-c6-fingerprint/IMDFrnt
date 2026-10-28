@@ -94,10 +94,13 @@ enum ClientDataset {
             files[imdfDirectory + "/" + name] = data
         }
         files[routingFile] = try encode(routing)
+        if project.levels.contains(where: { $0.nodes.contains { $0.featureLinks?.isEmpty == false } }) {
+            files[NavigationFeatureLinks.fileName] = try NavigationFeatureLinks.build(project: project, ids: archive.ids, files: files)
+        }
 
         // 2. 통합 검증 — 최종 바이트를 다시 읽는다.
         var warnings = archive.warnings.map { "지도: \($0)" }
-        let check = verify(files: files, project: project)
+        let check = verify(files: files, project: project, ids: archive.ids)
         blockers += check.blockers
         warnings += check.warnings
         guard blockers.isEmpty else { throw Blocked(messages: blockers) }
@@ -108,7 +111,7 @@ enum ClientDataset {
             let name = String(path.dropFirst(imdfDirectory.count + 1))
             if mapFiles.contains(name) { mapHashes[name] = sha256(data) } else { extraHashes[name] = sha256(data) }
         }
-        let dataset: [String: Any] = [
+        var dataset: [String: Any] = [
             "schema_version": schemaVersion,
             "dataset_id": datasetID,
             "layout_version": graph.layoutVersion,
@@ -119,6 +122,10 @@ enum ClientDataset {
             // 명시적인 서가 매핑이 없다. null은 '미제공'이며 가짜 매핑을 만들지 않았다는 뜻이다.
             "generated_by": "IM-DFrnt"
         ]
+        if let mapping = files[NavigationFeatureLinks.fileName] {
+            dataset["feature_links_file"] = NavigationFeatureLinks.fileName
+            dataset["feature_links_sha256"] = sha256(mapping)
+        }
         files[datasetFile] = try encode(dataset)
         reporter?.report(1, "완료")
         return Output(files: files, ids: archive.ids, levelCount: project.levels.count,
@@ -129,8 +136,9 @@ enum ClientDataset {
 
     struct Check { var blockers: [String] = []; var warnings: [String] = [] }
 
-    static func verify(files: [String: Data], project: BuildingProject) -> Check {
+    static func verify(files: [String: Data], project: BuildingProject, ids: [UUID: IDAssigner] = [:]) -> Check {
         var result = Check()
+        result.blockers += NavigationFeatureLinks.problems(files: files, project: project, ids: ids)
         func object(_ path: String) -> [String: Any]? {
             files[path].flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
         }

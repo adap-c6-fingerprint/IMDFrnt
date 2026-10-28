@@ -128,6 +128,7 @@ struct BuildingProject: Equatable, Codable {
 
     func validate() throws {
         try routingGraph.validateEdgeGroups()
+        try RoutingFeatureLinks.validateUnique(in: self)
         guard Set(levels.map(\.id)).count == levels.count else {
             throw IMDFImporter.Failure(message: "프로젝트의 층 ID가 중복됩니다.")
         }

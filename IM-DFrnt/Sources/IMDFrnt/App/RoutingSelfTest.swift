@@ -197,6 +197,7 @@ enum RoutingSelfTest {
         RoutingEdgeGroupSelfTest.run(check: check)
         RoutingViewportSelfTest.run(check: check)
         RoutingMapLayersSelfTest.run(check: check)
+        await RoutingFeatureLinksSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

@@ -83,6 +83,11 @@ enum LevelImportIdentity {
         }
         level.geoJSON = level.geoJSON.mapValues { $0.map { record($0, ids: exports) } }
         for i in level.nodes.indices {
+            level.nodes[i].featureLinks = level.nodes[i].featureLinks?.map { ref in
+                var copy = ref
+                copy.featureID = (ref.source == .authored ? internals[ref.featureID] : exports[ref.featureID]) ?? ref.featureID
+                return copy
+            }
             if let text = level.nodes[i].sourceOpeningID, let id = UUID(uuidString: text), let replacement = exports[id] {
                 level.nodes[i].sourceOpeningID = replacement.uuidString.lowercased()
             }

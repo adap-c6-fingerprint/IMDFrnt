@@ -151,6 +151,9 @@ final class AppEnvironment: ObservableObject {
     }
     @Published var showRoutingScreen = false
     @Published var routingFloorID: UUID?
+    @Published var routingSelectedFeature: RoutingFeatureReference?
+    @Published var routingFeatureCandidates: [RoutingFeatureReference] = []
+    @Published var routingFeatureReplacement: RoutingFeatureReplacement?
     @Published var routingMapLayerSettings: [UUID: RoutingMapLayerSettings] = [:]
     let routingMapDrawingCache = RoutingMapDrawingCache()
     @Published var routingSelectedNodeID: UUID?
@@ -623,6 +626,7 @@ final class AppEnvironment: ObservableObject {
         buildingProject = BuildingProject()
         showBuildingManager = false
         routingFloorID = nil
+        clearRoutingFeatureSelection()
         routingMapLayerSettings = [:]
         routingMapDrawingCache.reset()
         routingSelectedNodeID = nil
