@@ -112,6 +112,39 @@ enum NavigationDatasetSelfTest {
             check("#99 imported Fixture의 현재 층 포함 다중 층 참조 허용", sharedFixture.linkCount == 2)
             changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["level_ids": .array([.string(upper.id.uuidString)])])
             rejects("#99 local imported Fixture의 다른 층 참조 차단") { _ = try NavigationDataset.build(project: changed) }
+            changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["unit_id": .string(unit.id.uuidString.lowercased())])
+            changed.levels[0].geoJSON["unit.geojson"] = [.object(["id": .string(unit.id.uuidString.uppercased()), "geometry": .null,
+                "properties": .object(["level_id": .string(ground.id.uuidString)])])]
+            let indirect = try NavigationDataset.build(project: changed)
+            let indirectLinks = try ProjectJSON.parse(indirect.files[NavigationFeatureLinks.fileName]!)["features"]!.array
+            check("#99 unit_id 간접 층 Fixture·UUID 대소문자·관계 보존", indirect.linkCount == 2 && indirectLinks.contains { $0["feature_id"]?.uuid == legacy && $0["level_id"]?.uuid == ground.id && $0["node_id"]?.uuid == a.id })
+            let unitLinked = changed
+            let importedInput = ImportedIMDF(sourceName: "unit-linked-fixture", layoutVersion: "layout-1",
+                coordinates: IMDFCoordinateSpace(west: 129, north: 36, unitsPerLongitudeDegree: 1_000, unitsPerLatitudeDegree: 1_000, padding: 0),
+                floors: [ImportedIMDFFloor(id: ground.id, name: "1층", ordinal: 0, svg: "")], files: [
+                    "unit.geojson": .object(["type": .string("FeatureCollection"), "features": .array(changed.levels[0].geoJSON["unit.geojson"]!)]),
+                    "fixture.geojson": .object(["type": .string("FeatureCollection"), "features": .array(changed.levels[0].geoJSON["fixture.geojson"]!)])])
+            var fromIMDF = try BuildingProject.importing(importedInput)
+            fromIMDF.levels[0].nodes = [RoutingNode(floorID: ground.id, point: LocalPoint(100, 100),
+                featureLinks: [RoutingFeatureReference(kind: .fixture, featureID: legacy, source: .imported)])]
+            let importedOutput = try NavigationDataset.build(project: fromIMDF)
+            check("#99 실제 프로젝트 가져오기 후 unit_id Fixture 내보내기", fromIMDF.levels[0].geoJSON["fixture.geojson"]?.count == 1 && importedOutput.linkCount == 1)
+            let upperUnit = UUID()
+            changed.levels[1].geoJSON["unit.geojson"] = [.object(["id": .string(upperUnit.uuidString),
+                "properties": .object(["level_id": .string(upper.id.uuidString)])])]
+            changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["unit_ids": .array([.string(unit.id.uuidString), .string(upperUnit.uuidString)])])
+            check("#99 unit_ids 간접 다중 층 Fixture 허용", try NavigationDataset.build(project: changed).linkCount == 2)
+            changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["unit_id": .string(upperUnit.uuidString)])
+            rejects("#99 다른 층 Unit만 참조하는 Fixture 차단") { _ = try NavigationDataset.build(project: changed) }
+            changed = unitLinked
+            changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["unit_id": .string(UUID().uuidString)])
+            rejects("#99 없는 Unit으로 층을 추정하지 않음") { _ = try NavigationDataset.build(project: changed) }
+            changed = unitLinked
+            changed.levels[0].geoJSON["unit.geojson"]![0]["properties"] = .object(["level_id": .string(upper.id.uuidString)])
+            rejects("#99 Unit 저장 위치 대신 실제 층 참조 사용") { _ = try NavigationDataset.build(project: changed) }
+            changed = unitLinked
+            changed.globalGeoJSON["unit.geojson"] = changed.levels[0].geoJSON.removeValue(forKey: "unit.geojson")
+            check("#99 공통 Unit의 실제 층 참조도 간접 해석", try NavigationDataset.build(project: changed).linkCount == 2)
             changed = project
             changed.levels[0].editing.ids.adopt(unit.id, id: unit.id); changed.levels[0].editing.ids.retire(unit.id)
             let retired = try NavigationDataset.build(project: changed)

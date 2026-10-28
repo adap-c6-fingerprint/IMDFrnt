@@ -9,6 +9,8 @@
 - 새 전용 형식을 읽는 소비 앱 adapter와 실제 iOS 길안내/Apple 업로드는 범위 밖이다. GUI 저장 패널·실제 큰 프로젝트 저장은 사람 최종 검수로 남긴다. 검증·커밋 후 누적 ponytail/팀 셀프 리뷰·PR·CodeRabbit을 진행하고 자동 승인/merge하지 않는다.
 - PR100 CodeRabbit Major2건 후속: 생성·쓰기만 `Task.detached`로 옮기고 시작 스냅샷·중복 실행 잠금·기존 진행 UI/안전 writer를 재사용했다. 실패 때 대장은 유지하고 성공 후 메인 액터에서 반영한다. 메뉴 명령 등으로 프로젝트가 바뀌면 오래된 대장을 덮어쓰지 않고 재출력을 안내한다. local imported 장소의 다른 층/누락 참조는 새 전용 출력에서만 차단하고 현재 층을 포함한 다중 층 Fixture는 허용한다. 기존 장소 조회/편집·IMDF 경로는 바꾸지 않았다.
 - 최종 Debug/Release 전체8/8, Routing333/333(최초 대비 추가29), strict 서명·diff 검사 통과. 비동기 성공/실패/확인 교체/중복 실행/생성 실패 시 기존 파일 보존/저장 중 상태 교체와 imported 층 참조 회귀10개를 추가했다. 로그 `imdfrnt-self-tests.mGd5iH`/`imdfrnt-self-tests.Uqs2RC`, 최신 검수 앱 `IM-DFrnt/.build/IMD80-navigation-only-reviewed/IM-DFrnt.app`. Minor인 같은 층 길이0 엣지 추가 검사와 docstring coverage 경고는 Major/Critical만 처리하는 범위에 따라 보류한다. 해당 엣지는 기존 그래프 exporter처럼 출력될 수 있으므로 소비 측에서 구분해야 한다. 실제 GUI·큰 프로젝트·소비 앱 통합은 여전히 미검증이다.
+- 후속 Major4396503225: `unit_id`만 가진 정상 imported Fixture가 직접 층 참조만 보던 검사에 차단되는 것을 수정 전 검사에서 재현했다. 새 내보내기에서만 원본 Unit UUID→`level_id` 사전을 한 번 만들고 기존 `BuildingProject.levelReferences`에 전달한다. `unit_id`/`unit_ids` 간접 참조를 허용하면서 다른 층/없는 Unit을 현재 층으로 추정하지 않으며 기존 가져오기·조회·IMDF 경로는 수정하지 않았다.
+- 최종 Debug/Release 전체8/8, Routing340/340(최초 대비 추가36), strict 서명·diff 검사 통과. 간접 단일/복수 참조·UUID 대소문자·실제 가져오기 후 출력·다른 층/없는 Unit·Unit 실제 층 참조·공통 Unit을 검사하는 회귀7개 추가. 로그 `imdfrnt-self-tests.nNoxH8`/`imdfrnt-self-tests.iFgcn9`, 최신 검수 앱 `IM-DFrnt/.build/IMD80-navigation-unit-links/IM-DFrnt.app`. Minor 보류와 사람 GUI/소비 앱 검수 제한은 그대로다.
 
 ## 2026-10-28 — #97 / IMD-79 노드·엣지 화면 성능
 

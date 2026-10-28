@@ -17,6 +17,13 @@ enum NavigationDataset {
         try project.validate()
         let graph = project.routingGraph
         let routing = try RoutingExporter.encoded(graph)
+        var unitLevels: [String: UUID] = [:]
+        let units = (project.globalGeoJSON["unit.geojson"] ?? []) + project.levels.flatMap { $0.geoJSON["unit.geojson"] ?? [] }
+        for unit in units {
+            if let id = unit["id"]?.string, let level = unit["properties"]?["level_id"]?.uuid {
+                unitLevels[id.lowercased()] = level
+            }
+        }
         var ids: [UUID: IDAssigner] = [:]
         for level in project.levels {
             var assigner = level.editing.ids
@@ -24,7 +31,7 @@ enum NavigationDataset {
                 for ref in node.featureLinks ?? [] {
                     if let feature = ref.authored(in: level) { _ = assigner.id(for: feature.id) }
                     else if let imported = ref.imported(in: project, levelID: level.id),
-                            !BuildingProject.levelReferences(imported).contains(level.id) {
+                            !BuildingProject.levelReferences(imported, unitLevels: unitLevels).contains(level.id) {
                         throw ClientDataset.Blocked(messages: ["\(level.info.name) · \(node.label): 연결한 \(ref.kind.title)의 층 참조가 노드의 층과 다릅니다."])
                     }
                 }
