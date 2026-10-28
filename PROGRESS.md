@@ -1,5 +1,13 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-28 — #99 / IMD-80 길안내 전용 내보내기
+
+- PR98이 merge된 최신 develop `9c6b841`에서 `feat/#99-navigation-only-export`를 만들고 기존 IMD-80/#99를 재사용했다. 이후 개발에도 ponytail을 기본 적용한다. 기존 그래프 exporter·관계 JSON 인코더·안전한 폴더 writer를 재사용하며 SQLite/새 의존성·일반 검증 우회 플래그는 넣지 않는다.
+- 파일 → 노드/엣지 내보내기…와 노드 화면 버튼에서 `routing-graph.geojson`·`navigation-feature-links.json`·`navigation.json` 세 파일만 저장한다. 모든 층/노드/엣지/메타데이터·양방향 관계·층/그룹 목록/해시를 보존한다. 장소 UUID는 기존 대장을 따르고 신규 발급은 저장 성공 후에만 반영한다.
+- IMDFData/도형·SVG·이미지 생성/파싱 및 IMDFArchive/AIMP 검사는 하지 않는다. 좌표·참조·유일 배정과 저장 손상/덮어쓰기 보호는 유지한다. v9 저장·원본 지도·기존 IMDF·그래프 단독/지도+길찾기 묶음의 계약은 그대로다. 관계 인코더만 공유하며 기존 묶음의 IMDF 대조 검사는 유지한다.
+- Debug/Release 앱 전체8/8·Release 서명 검증 통과: Self ALL PASS, Building61, Project24, Document23, Routing323(추가19), Drawing56, Footprint93, Compliance169. 로그 `imdfrnt-self-tests.bEqFGP`/`imdfrnt-self-tests.3dU4hu`. 불완전 IMDF/SVG와 무관한 출력, 신규/기존/가져온/폐기 UUID, 관계 1:N·빈 DB, 실제 파일/해시·덮어쓰기, 저장 v9 왕복과 기존 묶음 검사 유지를 확인했다. 검수 앱 `IM-DFrnt/.build/IMD80-navigation-only/IM-DFrnt.app`.
+- 새 전용 형식을 읽는 소비 앱 adapter와 실제 iOS 길안내/Apple 업로드는 범위 밖이다. GUI 저장 패널·실제 큰 프로젝트 저장은 사람 최종 검수로 남긴다. 검증·커밋 후 누적 ponytail/팀 셀프 리뷰·PR·CodeRabbit을 진행하고 자동 승인/merge하지 않는다.
+
 ## 2026-10-28 — #97 / IMD-79 노드·엣지 화면 성능
 
 - 이전 PR96 병합 후 최신 develop `1554688`에서 `fix/#97-routing-performance`를 만들고 기존 GitHub #97/Linear IMD-79를 재사용했다. 공식 ponytail `09c434ab`의 ponytail/ponytail-review를 설치·읽고 새 캐시 계층 대신 기존 읽기 경로의 중복 계산만 제거했다.
