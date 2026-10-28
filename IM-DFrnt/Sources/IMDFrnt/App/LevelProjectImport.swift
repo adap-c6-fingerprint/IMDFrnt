@@ -83,7 +83,8 @@ extension AppEnvironment {
         let mergedRecords: [String: [ProjectJSON]]?
         let mergedEdgeGroups: [RoutingEdgeGroup]?
         do {
-            let grouped = try RoutingEdgeGroupImport.prepare(original, source: originalMetadata, target: projectContents)
+            let linked = RoutingFeatureLinks.preparingImport(original, metadata: originalMetadata)
+            let grouped = try RoutingEdgeGroupImport.prepare(linked, source: originalMetadata, target: projectContents)
             mergedEdgeGroups = grouped.groups
             let prepared = try LevelImportIdentity.prepare(grouped.level, targetID: targetID,
                 project: projectContents, metadata: originalMetadata)

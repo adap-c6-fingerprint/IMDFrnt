@@ -41,10 +41,11 @@ struct RoutingMapLayerSettings: Equatable {
 struct RoutingMapShape {
     var path: Path
     var style: VectorStyle
+    var reference: RoutingFeatureReference?
     let bounds: CGRect
 
-    init(path: Path, style: VectorStyle) {
-        self.path = path; self.style = style; bounds = path.boundingRect
+    init(path: Path, style: VectorStyle, reference: RoutingFeatureReference? = nil) {
+        self.path = path; self.style = style; self.reference = reference; bounds = path.boundingRect
     }
 }
 
@@ -53,6 +54,17 @@ struct RoutingMapDrawing {
     var background: DrawingDocument
     var shapes: [RoutingMapLayer: [RoutingMapShape]]
     var warnings: [String] = []
+
+    /// 숨긴 레이어와 구멍 안은 제외한다. 겹친 면은 모두 반환해 사용자가 고른다.
+    func features(at point: LocalPoint, settings: RoutingMapLayerSettings) -> [RoutingFeatureReference] {
+        var seen = Set<RoutingFeatureReference>()
+        return RoutingMapLayer.allCases.reversed().filter { settings[$0] > 0 }.flatMap { layer in
+            (shapes[layer] ?? []).reversed().compactMap { shape in
+                guard let ref = shape.reference, shape.path.contains(point.cg, eoFill: true), seen.insert(ref).inserted else { return nil }
+                return ref
+            }
+        }
+    }
 
     func draw(in context: GraphicsContext, settings: RoutingMapLayerSettings,
               backgroundColors: CanvasBackground, scale: CGFloat, visible: CGRect,
@@ -130,7 +142,8 @@ final class RoutingMapDrawingCache {
                 let fill = type == .unit ? RGBAColor(r: 0.35, g: 0.65, b: 0.9, a: 1)
                                         : RGBAColor(r: 0.9, g: 0.6, b: 0.25, a: 1)
                 var style = VectorStyle.default; style.fill = fill
-                result.shapes[layer, default: []].append(RoutingMapShape(path: path, style: style))
+                let ref = RoutingFeatureReference(kind: type == .unit ? .unit : .fixture, featureID: feature.id, source: .authored)
+                result.shapes[layer, default: []].append(RoutingMapShape(path: path, style: style, reference: ref))
             }
         }
         if let coordinates = level.info.imdfCoordinates, !level.geoJSON.isEmpty {
@@ -143,6 +156,7 @@ final class RoutingMapDrawingCache {
                 }
             }
             var elements: [RoutingMapLayer: [String]] = [:]
+            var references: [RoutingMapLayer: [RoutingFeatureReference?]] = [:]
             for type in ["level", "unit", "section", "fixture", "kiosk", "detail", "opening", "amenity", "anchor"] {
                 let layer: RoutingMapLayer = type == "unit" ? .unit : (type == "fixture" ? .fixture : .background)
                 let name = type + ".geojson"
@@ -156,6 +170,11 @@ final class RoutingMapDrawingCache {
                         guard let object = try JSONSerialization.jsonObject(with: geometry.data()) as? [String: Any] else { continue }
                         elements[layer, default: []].append(try IMDFImporter.svgElement(object, type: type,
                             category: feature["properties"]?["category"]?.string ?? "", coordinates: coordinates))
+                        let ref: RoutingFeatureReference?
+                        if let id = feature["id"]?.uuid, let kind = RoutingFeatureKind(rawValue: type) {
+                            ref = RoutingFeatureReference(kind: kind, featureID: id, source: .imported)
+                        } else { ref = nil }
+                        references[layer, default: []].append(ref)
                     } catch { result.warnings.append("\(type): \(error.localizedDescription)") }
                 }
             }
@@ -167,8 +186,13 @@ final class RoutingMapDrawingCache {
                 do {
                     let parsed = try SVGParser.parse(data: Data(svg.utf8), sourceName: "routing-\(layer.rawValue)")
                     if layer == .background { result.background = parsed }
-                    result.shapes[layer, default: []] += parsed.objects.map {
-                        RoutingMapShape(path: $0.geometry.swiftUIPath, style: $0.style)
+                    let refs = references[layer] ?? []
+                    if layer != .background, refs.count != parsed.objects.count {
+                        result.warnings.append("\(layer.title): 도형과 UUID를 대응하지 못해 장소 선택을 제한합니다.")
+                    }
+                    result.shapes[layer, default: []] += parsed.objects.enumerated().map { i, object in
+                        RoutingMapShape(path: object.geometry.swiftUIPath, style: object.style,
+                                        reference: refs.count == parsed.objects.count ? refs[i] : nil)
                     }
                 } catch { result.warnings.append("\(layer.title): \(error.localizedDescription)") }
             }

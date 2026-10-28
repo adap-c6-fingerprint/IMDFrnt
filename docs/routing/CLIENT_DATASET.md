@@ -14,6 +14,7 @@
     unit.geojson fixture.geojson opening.geojson amenity.geojson   ← 항상 있음(비면 빈 FeatureCollection)
     address.geojson building.geojson …                              ← 프로젝트가 가진 그 밖의 IMDF 파일
   routing-graph.geojson
+  navigation-feature-links.json   ← 명시적 Unit/Fixture 연결이 있을 때만
 ```
 
 - dataset_id는 영문 소문자·숫자·`.` `_` `-`로 64자 이내다. 한글 프로젝트 이름이면 기본값이 `dataset`이므로 저장 창에서 바꾼다(예: `postech-library`).
@@ -29,11 +30,37 @@
 | `map_files_sha256` | 위 8종 파일 이름 → SHA-256(앱의 `BundledIndoorNavigationLoader.mapFiles`와 같은 목록) |
 | `additional_map_files_sha256` | 그 밖의 `IMDFData/` 파일 → SHA-256 |
 | `routing_sha256` | `routing-graph.geojson`의 SHA-256 |
+| `feature_links_file` | 연결이 있을 때만 `"navigation-feature-links.json"` |
+| `feature_links_sha256` | 연결이 있을 때만 위 파일의 최종 바이트 SHA-256 |
 | `shelves_sha256` | `null` — 명시적인 서가 매핑이 없어 `shelves.json`을 만들지 않았다는 뜻 |
 | `generated_by` | `"IM-DFrnt"` |
 
 - 해시는 최종 바이트로 계산하고 그 뒤 파일을 바꾸지 않는다. 해시 일치는 좌표 정확도나 보행 가능성을 보장하지 않는다.
 - **현재 앱(schema 1)과 호환되지 않는다.** 앱은 `shelves.json`·`shelves_sha256`을 필수로 읽는다. 가짜 매핑을 만들지 않기 위해 별도 버전을 붙였다. 앱 쪽에서 그래프 로딩과 서가 매핑 로딩을 분리하거나 schema 2 adapter를 추가해야 한다(요구사항 4장 경로 2). 최종 schema는 양쪽 담당자가 확정한다.
+
+## 장소-노드 매핑 (#95 / IMD-78)
+
+명시적 연결이 있으면 `navigation-feature-links.json`을 추가한다. `dataset.json`의 schema 2에는 선택적 파일 이름/해시만 추가하며 기존 IMDF 파일·`routing-graph.geojson` 구조/내용은 바꾸지 않는다. 연결이 없으면 두 선택 키와 파일을 모두 생략해 기존 묶음 구조를 유지한다. 기존 `shelves.json` 형식과는 다른 파일이며 `shelves_sha256`은 여전히 null이다.
+
+```json
+{
+  "schema_version": 1,
+  "layout_version": "layout-1",
+  "features": [
+    {"feature_type": "fixture", "feature_id": "<IMDF UUID>", "level_id": "<층 UUID>", "node_id": "<노드 UUID>"}
+  ],
+  "nodes": [
+    {"node_id": "<노드 UUID>", "features": [
+      {"feature_type": "fixture", "feature_id": "<IMDF UUID>", "level_id": "<층 UUID>"}
+    ]}
+  ]
+}
+```
+
+- UUID는 소문자 문자열이며 `feature_type`은 `unit`/`fixture`만 가능하다. `feature_id`는 함께 낸 IMDF의 실제 UUID이지 편집기 내부 ID가 아니다. `node_id`는 그래프의 노드 UUID다. 장소는 같은 층 노드를 대표한다.
+- `features`는 장소→노드의 유일 배정 목록, `nodes`는 같은 배정을 노드→장소 목록으로 묶은 역인덱스다. 장소 하나에 노드 하나만, 노드 하나에는 여러 장소를 허용한다. 공통 Fixture도 프로젝트 전체에서 중복 배정하지 않는다.
+- 최종 바이트의 IMDF 종류/UUID/층·그래프 노드/층·프로젝트 배정과 두 인덱스를 대조한다. 삭제/휴지통 도형·없는 참조·중복 배정·역인덱스 불일치 시 묶음을 차단하고 수정을 안내한다. 좌표/근접도/이름으로 자동 추정하지 않는다.
+- iOS 소비 앱은 해당 파일·해시를 읽는 adapter를 별도로 구현해야 한다. 선택한 출발/도착 Unit/Fixture를 `features`의 `node_id`로 바꾼 뒤 기존 노드 경로 탐색을 호출하면 된다. 매핑되지 않은 장소는 자동 추정하지 말고 미연결로 안내한다. 이 PR에서 실제 iOS 경로 탐색/안내 엔진은 변경하지 않는다.
 
 ## 좌표·ID·그래프
 

@@ -1,5 +1,16 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-28 — #95 / IMD-78 Unit·Fixture와 도착 노드 연결
+
+- 최신 develop `bdd2991`에서 `feat/#95-routing-feature-links`를 만들고 기존 IMD-78/#95를 재사용했다. 사용자 정정대로 엣지가 아닌 노드를 연결하며, 장소 하나에는 노드 하나 / 노드 하나에는 여러 장소를 허용한다.
+- 장소 연결 도구에서 노드→현재 층의 Unit/Fixture 면을 클릭한다. 겹친 면은 직접 고르고 구멍·0% 레이어는 제외한다. 선택 외곽선·양쪽 조회/해제를 제공한다. 기존 배정은 확인 후 교체하며 Undo/Redo를 지원한다. 확인 중 소유 노드·층/프로젝트/도면 요청이 바뀌면 오래된 요청을 적용하지 않는다.
+- 노드의 선택적 `featureLinks`를 정본으로 저장하고 장소 역조회는 파생한다. v9 저장으로 구버전의 조용한 유실을 막고 v2~v8 읽기를 유지한다. 기존 버전 고정 검사 기대값만 갱신했다. 층 복사 시 내부/출력 ID 재발급을 따라가며 연결된 공통 도형도 선택 층의 사본으로 가져온다. 노드/층 삭제는 해당 연결을 함께 없애고 Undo로 복구한다.
+- 기존 IMDF 원본·그래프 단독 출력·좌표·노드/엣지 관리 로직은 유지한다. 클라이언트 묶음에만 `navigation-feature-links.json`의 양방향 인덱스와 선택적 파일명/SHA-256을 추가한다. 실제 출력 IMDF UUID·층·노드·프로젝트 배정·역인덱스를 검증한다. 연결이 없으면 기존 묶음 구성을 유지한다. 삭제/휴지통 연결은 복원/해제를 안내하고 묶음만 차단한다.
+- Debug/Release 빌드·서명 검증·최종 전체 CLI8/8 통과: Self ALL PASS, Building61, Project24, Document23, Routing287(추가39), Drawing56, Footprint93, Compliance169. `LC_ALL=C bash run-self-tests.sh .build/IMD78-node-feature-links-verified/IM-DFrnt.app`, 로그 `imdfrnt-self-tests.hXGriU`. 이전 검증도8/8이었으며 최종본은 같은 프로젝트 재열기 후 오래된 확인 요청 방지를 추가했다.
+- 검수 앱 `IM-DFrnt/.build/IMD78-node-feature-links-verified/IM-DFrnt.app`. 현재 열린 앱·사용자 프로젝트·무관한 실행 권한 변경은 보존했다. 실제 GUI 클릭/확인창/좁은 창/확대·팬·PNG/JPG 및 실제 iOS 로더/경로 탐색 연동은 미검증이며 사람 최종 검수/후속 작업이다. 새 파일은 v9 지원 앱에서 연다.
+- 영향도 L: 노드 저장 형식·버전 및 클라이언트 묶음의 선택적 데이터 계약과 UI/가져오기/검증이 연결된다. 커밋 후 전체 누적 셀프 리뷰·PR·CodeRabbit Major/Critical 확인 뒤 In Review로 넘기며 AI 승인/자동 merge는 하지 않는다.
+- PR #96 첫 CodeRabbit 검토에서 Major/Critical은 없고 선형 조회 최적화 Trivial 1건만 있었다(비차단임을 봇도 확인). 후속 로컬 UI 리소스 검사에서 `NSImage(systemSymbolName: "link.badge.minus", ...)`가 nil임을 확인해, 해제 액션이 보이도록 텍스트 `연결 해제` 버튼으로 바꿨다. 연결/저장/출력 로직은 변경하지 않는다. 최종 검증과 최신 head 리뷰를 갱신한다.
+
 ## 2026-10-28 — #92 / IMD-76 노드 화면 층별 레이어 불투명도
 
 - PR #91이 머지된 최신 develop `a1c89ec`에서 `feat/#92-routing-map-layers`를 만들고 IMD-76/GitHub #92에 범위·완료 조건을 기록했다.

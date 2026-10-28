@@ -58,6 +58,8 @@ struct RoutingNode: Identifiable, Equatable, Codable {
     /// 자동 배치한 출입구 노드가 나온 IMDF opening의 id(소문자). 재실행 때 중복을 막는 열쇠(#69).
     /// 선택 항목이라 이전 프로젝트 파일도 그대로 읽힌다.
     var sourceOpeningID: String?
+    /// Unit/Fixture → 이 노드. 반대 방향 목록은 여기서 파생해 양쪽 정보가 어긋나지 않게 한다.
+    var featureLinks: [RoutingFeatureReference]?
 
     var shortID: String { String(id.uuidString.prefix(8)) }
     var label: String { name.isEmpty ? "노드 \(shortID)" : name }
@@ -192,13 +194,14 @@ struct RoutingGraph: Equatable, Codable {
 }
 
 enum RoutingTool: String, CaseIterable {
-    case place, select, edges, connect, calibrate
+    case place, select, edges, connect, featureLinks, calibrate
     var title: String {
         switch self {
         case .place: "노드 찍기"
         case .select: "선택·이동"
         case .edges: "엣지 선택"
         case .connect: "노드 연결"
+        case .featureLinks: "장소 연결"
         case .calibrate: "좌표 기준점"
         }
     }
@@ -208,6 +211,7 @@ enum RoutingTool: String, CaseIterable {
         case .select: "⌘ Command + 클릭으로 노드 추가 · 핀·연결선 선택 · Delete로 삭제 · ⌥ Option + 드래그로 연결"
         case .edges: "엣지 클릭 · Shift + 클릭으로 추가/해제 · 드래그로 사각형 선택 · Shift + 드래그로 추가 선택"
         case .connect: "⌘ Command + 클릭으로 노드 추가 · 핀 드래그로 연결 · 층간 연결은 두 핀을 차례로 클릭"
+        case .featureLinks: "노드 클릭 → Unit/Fixture 클릭 · 장소 하나당 노드 하나 · 겹친 면은 오른쪽에서 선택 · Escape로 취소"
         case .calibrate: "기준점 클릭 후 실제 경도·위도 입력 (최소 3점) · ⌘ Command + 클릭으로 노드 추가"
         }
     }

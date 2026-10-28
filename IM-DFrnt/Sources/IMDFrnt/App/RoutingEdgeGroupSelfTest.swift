@@ -82,7 +82,7 @@ enum RoutingEdgeGroupSelfTest {
             let file = try ProjectFile.decoded(from: data)
             let reopened = AppEnvironment()
             try reopened.adopt(file, from: nil)
-            check("#88 v8 저장·재열기 그룹/배정 보존", file.version == 8 && reopened.routing == env.routing)
+            check("#88 현재 버전 저장·재열기 그룹/배정 보존", file.version == ProjectFile.currentVersion && reopened.routing == env.routing)
             check("#88 기존 IMDF 데이터·도형 불변", original.imdfFiles() == reopened.projectContents.imdfFiles())
             var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
             legacy["version"] = 7
