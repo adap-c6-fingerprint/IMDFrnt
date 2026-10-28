@@ -124,7 +124,8 @@ struct RoutingFeatureLinksPanel: View {
                             }
                         }
                         Spacer()
-                        Button { env.unlinkRoutingFeature(ref, from: node.id) } label: { Image(systemName: "link.badge.minus") }
+                        Button("연결 해제") { env.unlinkRoutingFeature(ref, from: node.id) }
+                            .fixedSize()
                             .help("장소 연결 해제 (도형·노드는 유지)")
                     }
                 }

@@ -9,6 +9,7 @@
 - Debug/Release 빌드·서명 검증·최종 전체 CLI8/8 통과: Self ALL PASS, Building61, Project24, Document23, Routing287(추가39), Drawing56, Footprint93, Compliance169. `LC_ALL=C bash run-self-tests.sh .build/IMD78-node-feature-links-verified/IM-DFrnt.app`, 로그 `imdfrnt-self-tests.hXGriU`. 이전 검증도8/8이었으며 최종본은 같은 프로젝트 재열기 후 오래된 확인 요청 방지를 추가했다.
 - 검수 앱 `IM-DFrnt/.build/IMD78-node-feature-links-verified/IM-DFrnt.app`. 현재 열린 앱·사용자 프로젝트·무관한 실행 권한 변경은 보존했다. 실제 GUI 클릭/확인창/좁은 창/확대·팬·PNG/JPG 및 실제 iOS 로더/경로 탐색 연동은 미검증이며 사람 최종 검수/후속 작업이다. 새 파일은 v9 지원 앱에서 연다.
 - 영향도 L: 노드 저장 형식·버전 및 클라이언트 묶음의 선택적 데이터 계약과 UI/가져오기/검증이 연결된다. 커밋 후 전체 누적 셀프 리뷰·PR·CodeRabbit Major/Critical 확인 뒤 In Review로 넘기며 AI 승인/자동 merge는 하지 않는다.
+- PR #96 첫 CodeRabbit 검토에서 Major/Critical은 없고 선형 조회 최적화 Trivial 1건만 있었다(비차단임을 봇도 확인). 후속 로컬 UI 리소스 검사에서 `NSImage(systemSymbolName: "link.badge.minus", ...)`가 nil임을 확인해, 해제 액션이 보이도록 텍스트 `연결 해제` 버튼으로 바꿨다. 연결/저장/출력 로직은 변경하지 않는다. 최종 검증과 최신 head 리뷰를 갱신한다.
 
 ## 2026-10-28 — #92 / IMD-76 노드 화면 층별 레이어 불투명도
 
