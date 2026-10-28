@@ -17,13 +17,7 @@ enum NavigationDataset {
         try project.validate()
         let graph = project.routingGraph
         let routing = try RoutingExporter.encoded(graph)
-        var unitLevels: [String: UUID] = [:]
-        let units = (project.globalGeoJSON["unit.geojson"] ?? []) + project.levels.flatMap { $0.geoJSON["unit.geojson"] ?? [] }
-        for unit in units {
-            if let id = unit["id"]?.string, let level = unit["properties"]?["level_id"]?.uuid {
-                unitLevels[id.lowercased()] = level
-            }
-        }
+        let unitLevels = project.unitLevelReferences
         var ids: [UUID: IDAssigner] = [:]
         for level in project.levels {
             var assigner = level.editing.ids

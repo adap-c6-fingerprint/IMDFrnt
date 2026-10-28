@@ -134,6 +134,35 @@ enum NavigationDatasetSelfTest {
                 "properties": .object(["level_id": .string(upper.id.uuidString)])])]
             changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["unit_ids": .array([.string(unit.id.uuidString), .string(upperUnit.uuidString)])])
             check("#99 unit_ids 간접 다중 층 Fixture 허용", try NavigationDataset.build(project: changed).linkCount == 2)
+            var commonInput = importedInput
+            let unrelated = UUID()
+            commonInput.floors += [ImportedIMDFFloor(id: upper.id, name: "2층", ordinal: 1, svg: ""),
+                ImportedIMDFFloor(id: unrelated, name: "3층", ordinal: 2, svg: "")]
+            commonInput.files["unit.geojson"]?["features"] = .array(changed.levels[0].geoJSON["unit.geojson"]! + changed.levels[1].geoJSON["unit.geojson"]!)
+            var commonFixture = changed.levels[0].geoJSON["fixture.geojson"]![0]
+            commonFixture["properties"]?["name"] = .object(["ko": .string("공통 서가")])
+            commonInput.files["fixture.geojson"]?["features"] = .array([commonFixture])
+            var commonProject = try BuildingProject.importing(commonInput)
+            let commonRef = RoutingFeatureReference(kind: .fixture, featureID: legacy, source: .imported)
+            commonProject.levels[0].nodes = [RoutingNode(floorID: ground.id, point: LocalPoint(100, 100), featureLinks: [commonRef])]
+            check("#99 실제 공통 Fixture 가져오기·참조 층 가용성·이름", commonProject.globalGeoJSON["fixture.geojson"]?.count == 1 && commonProject.levels[0].geoJSON["fixture.geojson"] == nil && commonRef.isAvailable(in: commonProject, levelID: ground.id) && commonRef.isAvailable(in: commonProject, levelID: upper.id) && !commonRef.isAvailable(in: commonProject, levelID: unrelated) && commonRef.label(in: commonProject, levelID: ground.id).contains("공통 서가"))
+            let commonOutput = try NavigationDataset.build(project: commonProject)
+            let commonLinks = try ProjectJSON.parse(commonOutput.files[NavigationFeatureLinks.fileName]!)["features"]!.array
+            check("#99 unit_ids 공통 Fixture의 노드·층·UUID 출력", commonOutput.linkCount == 1 && commonLinks.first?["feature_id"]?.uuid == legacy && commonLinks.first?["level_id"]?.uuid == ground.id)
+            var commonFile = ProjectFile.empty(); commonFile.buildingProject = commonProject
+            let reopenedCommon = try ProjectFile.decoded(from: commonFile.encoded()).commonProject()
+            check("#99 공통 간접 Fixture 재열기·출력 불변", try NavigationDataset.build(project: reopenedCommon).files == commonOutput.files)
+            let preparedCommon = RoutingFeatureLinks.preparingImport(commonProject.levels[0], metadata: commonProject)
+            check("#99 층 가져오기 준비에도 연결된 공통 Fixture 보존", preparedCommon.geoJSON["fixture.geojson"]?.first?["id"]?.uuid == legacy)
+            var invalidCommon = commonProject
+            invalidCommon.levels[1].nodes = [RoutingNode(floorID: upper.id, point: LocalPoint(100, 100), featureLinks: [commonRef])]
+            rejects("#99 공통 간접 Fixture에도 장소당 노드1개 유지") { _ = try NavigationDataset.build(project: invalidCommon) }
+            invalidCommon = commonProject
+            invalidCommon.globalGeoJSON["fixture.geojson"]![0]["properties"] = .object(["unit_ids": .array([.string(UUID().uuidString)])])
+            rejects("#99 공통 Fixture의 없는 Unit 참조 차단") { _ = try NavigationDataset.build(project: invalidCommon) }
+            invalidCommon = commonProject
+            invalidCommon.globalGeoJSON["fixture.geojson"]![0]["properties"] = .object(["level_ids": .array([.string(ground.id.uuidString), .string(upper.id.uuidString)])])
+            check("#99 기존 직접 층 참조 공통 Fixture 출력 유지", try NavigationDataset.build(project: invalidCommon).linkCount == 1)
             changed.levels[0].geoJSON["fixture.geojson"]![0]["properties"] = .object(["unit_id": .string(upperUnit.uuidString)])
             rejects("#99 다른 층 Unit만 참조하는 Fixture 차단") { _ = try NavigationDataset.build(project: changed) }
             changed = unitLinked

@@ -11,6 +11,8 @@
 - 최종 Debug/Release 전체8/8, Routing333/333(최초 대비 추가29), strict 서명·diff 검사 통과. 비동기 성공/실패/확인 교체/중복 실행/생성 실패 시 기존 파일 보존/저장 중 상태 교체와 imported 층 참조 회귀10개를 추가했다. 로그 `imdfrnt-self-tests.mGd5iH`/`imdfrnt-self-tests.Uqs2RC`, 최신 검수 앱 `IM-DFrnt/.build/IMD80-navigation-only-reviewed/IM-DFrnt.app`. Minor인 같은 층 길이0 엣지 추가 검사와 docstring coverage 경고는 Major/Critical만 처리하는 범위에 따라 보류한다. 해당 엣지는 기존 그래프 exporter처럼 출력될 수 있으므로 소비 측에서 구분해야 한다. 실제 GUI·큰 프로젝트·소비 앱 통합은 여전히 미검증이다.
 - 후속 Major4396503225: `unit_id`만 가진 정상 imported Fixture가 직접 층 참조만 보던 검사에 차단되는 것을 수정 전 검사에서 재현했다. 새 내보내기에서만 원본 Unit UUID→`level_id` 사전을 한 번 만들고 기존 `BuildingProject.levelReferences`에 전달한다. `unit_id`/`unit_ids` 간접 참조를 허용하면서 다른 층/없는 Unit을 현재 층으로 추정하지 않으며 기존 가져오기·조회·IMDF 경로는 수정하지 않았다.
 - 최종 Debug/Release 전체8/8, Routing340/340(최초 대비 추가36), strict 서명·diff 검사 통과. 간접 단일/복수 참조·UUID 대소문자·실제 가져오기 후 출력·다른 층/없는 Unit·Unit 실제 층 참조·공통 Unit을 검사하는 회귀7개 추가. 로그 `imdfrnt-self-tests.nNoxH8`/`imdfrnt-self-tests.iFgcn9`, 최신 검수 앱 `IM-DFrnt/.build/IMD80-navigation-unit-links/IM-DFrnt.app`. Minor 보류와 사람 GUI/소비 앱 검수 제한은 그대로다.
+- 후속 Major4396580379: 실제 importing으로 공통 저장소에 분류된 다중 층 Unit 참조 Fixture의 조회/가용성·출력 실패를 재현했다. 원본 Unit 층 사전은 저장되지 않는 `unitLevelReferences` 계산 속성으로 옮겨 재사용하고, 공통 `imported` 조회가 직접 층 참조로 못 찾은 경우에만 간접 참조를 해석한다. 로컬/일반 직접 참조는 기존 빠른 경로를 유지한다. 조회 수정은 가용성·이름 표시·층 가져오기 준비에도 적용되며 원본/저장v9/IMDF 생성·기존 묶음의 엄격한 대조는 바꾸지 않는다.
+- 최종 Debug/Release 전체8/8, Routing347/347(최초 대비 추가43), strict 서명·diff 검사 통과. 실제 공통 분류·층별 가용성/이름·출력 UUID/층·v9 재열기·층 가져오기 준비·1:N·잘못된 참조·직접 참조 유지 회귀7개 추가. 로그 `imdfrnt-self-tests.p2qcCM`/`imdfrnt-self-tests.xTsbr4`, 최신 검수 앱 `IM-DFrnt/.build/IMD80-navigation-shared-fixtures/IM-DFrnt.app`. Minor 보류·실제 GUI/큰 프로젝트/소비 앱 통합 검수 제한은 유지한다.
 
 ## 2026-10-28 — #97 / IMD-79 노드·엣지 화면 성능
 

@@ -106,6 +106,18 @@ struct BuildingProject: Equatable, Codable {
     /// Recovery copies include editor-only state (old selections, trash, dates and local display points).
     var legacyMetadataGroups: [String: FeatureGroup]?
 
+    /// Read-only lookup for direct and Unit-based place floor references; never persisted.
+    var unitLevelReferences: [String: UUID] {
+        var result: [String: UUID] = [:]
+        let units = (globalGeoJSON["unit.geojson"] ?? []) + levels.flatMap { $0.geoJSON["unit.geojson"] ?? [] }
+        for unit in units {
+            if let id = unit["id"]?.string, let level = unit["properties"]?["level_id"]?.uuid {
+                result[id.lowercased()] = level
+            }
+        }
+        return result
+    }
+
     /// Older projects stored footprint features under each level.  Footprints
     /// are building-wide IMDF features, so normalize that legacy shape at the
     /// project boundary before the editor/exporter sees it.

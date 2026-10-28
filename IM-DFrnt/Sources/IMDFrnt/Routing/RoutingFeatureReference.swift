@@ -31,8 +31,13 @@ struct RoutingFeatureReference: Hashable, Codable, Identifiable {
         guard source == .imported, let level = project.levels.first(where: { $0.id == levelID }) else { return nil }
         let name = kind.rawValue + ".geojson"
         if let local = level.geoJSON[name]?.first(where: { $0["id"]?.uuid == featureID }) { return local }
-        return project.globalGeoJSON[name]?.first {
-            $0["id"]?.uuid == featureID && BuildingProject.levelReferences($0).contains(levelID)
+        let shared = (project.globalGeoJSON[name] ?? []).filter { $0["id"]?.uuid == featureID }
+        if let direct = shared.first(where: { BuildingProject.levelReferences($0).contains(levelID) }) { return direct }
+        guard !shared.isEmpty else { return nil }
+        // Only indirect shared references need the Unit index; ordinary lookups stay cheap.
+        let unitLevels = project.unitLevelReferences
+        return shared.first {
+            BuildingProject.levelReferences($0, unitLevels: unitLevels).contains(levelID)
         }
     }
 
