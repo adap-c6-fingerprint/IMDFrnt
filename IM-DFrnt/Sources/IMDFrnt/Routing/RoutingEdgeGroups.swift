@@ -4,11 +4,7 @@ import Foundation
 extension AppEnvironment {
     /// Shared by drawing, hit testing, the edge list and selection commands.
     var visibleRoutingEdges: [RoutingEdge] {
-        let graph = routing, floorID = currentRoutingFloor?.id
-        return graph.edges.filter {
-            routingEdgeFilter.includes($0) &&
-                (graph.node($0.from)?.floorID == floorID || graph.node($0.to)?.floorID == floorID)
-        }
+        routing.visibleEdges(on: currentRoutingFloor?.id, filter: routingEdgeFilter)
     }
 
     var selectedRoutingEdges: [RoutingEdge] {
@@ -98,8 +94,9 @@ extension AppEnvironment {
     /// Use screen coordinates, so zoom and rotation do not change the marquee's meaning.
     func selectRoutingEdges(in rect: CGRect, projecting: (LocalPoint) -> CGPoint, additive: Bool) {
         let graph = routing, floorID = currentRoutingFloor?.id
-        let hits = visibleRoutingEdges.compactMap { edge -> UUID? in
-            guard let a = graph.node(edge.from), let b = graph.node(edge.to),
+        let nodes = graph.nodesByID
+        let hits = graph.visibleEdges(on: floorID, filter: routingEdgeFilter).compactMap { edge -> UUID? in
+            guard let a = nodes[edge.from], let b = nodes[edge.to],
                   a.floorID == floorID, b.floorID == floorID,
                   RoutingEdgeSelection.intersects(rect, from: projecting(a.point), to: projecting(b.point)) else { return nil }
             return edge.id

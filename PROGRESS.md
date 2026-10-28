@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-10-28 — #97 / IMD-79 노드·엣지 화면 성능
+
+- 이전 PR96 병합 후 최신 develop `1554688`에서 `fix/#97-routing-performance`를 만들고 기존 GitHub #97/Linear IMD-79를 재사용했다. 공식 ponytail `09c434ab`의 ponytail/ponytail-review를 설치·읽고 새 캐시 계층 대신 기존 읽기 경로의 중복 계산만 제거했다.
+- 엣지마다 `env.routing.node`를 읽으면 매번 `projectContents` 구성/Footprint 동기화/그래프 평탄화를 반복했고 표시 대상도 엣지마다 노드를 선형 검색했다. 렌더링·히트테스트·사각형 선택·접근성·엣지 목록이 한 번 읽은 그래프와 임시 UUID 사전을 재사용하도록 했다. 층 통계도 같은 평가에서 한 번만 구하고 노드 Canvas가 쓰지 않는 도면 편집용 renderStates는 일반 편집 분기로 옮겼다.
+- UI·기존 선택 거리/순서·층간/그룹 필터·노드/엣지/장소 연결·Undo/Redo와 IMDF·그래프·클라이언트 묶음 출력 및 저장 v9는 유지한다. 사전은 저장하지 않고 매번 최신 값에서 만들므로 무효화 규칙·새 의존성·파일 모델은 추가하지 않았다. 기존 사용자 파일·열린 앱·32개 모드 전용 로컬 변경도 보존한다.
+- 변경 전 경로를 독립 기준으로 비교하는 회귀 검사17개를 추가했다(Debug Routing304/304, 전체8/8). 1,000노드/999엣지 Release 표본3회 중앙값은 기준268.671ms→현재1.104ms, 포스텍 실제 도면/태깅 데이터에 같은 수의 노드를 넣은 조회는740.734ms→1.440ms(각 성능 검사9/9)였다. 모두 같은 엣지를 선택했고 저장 본문·IMDF·그래프 출력 불변 및 이동 Undo/Redo를 확인했다. 초기 저장 바이트 비교의 실패는 savedAt 차이였으며 검사에서 시각만 고정했다. Release 서명 검증 통과, 최종 전체 검사 로그는 PR/이슈에 기록한다.
+- 최종 Debug/Release 앱 전체8/8·Release 서명 검증 통과(Self ALL PASS, Building61, Project24, Document23, Routing304, Drawing56, Footprint93, Compliance169). 로그 `imdfrnt-self-tests.92kZfe`/`imdfrnt-self-tests.ixUUki`, 성능 로그 `/tmp/imd79-qa.nuU2bj`.
+- 검수 앱은 `IM-DFrnt/.build/IMD79-routing-performance/IM-DFrnt.app`. 별도 성능 플래그는 실제 프로젝트를 읽기만 하고 메모리에서 그래프를 구성한다. 수치는 최근접 엣지 조회 단위이며 실제 화면/GPU 드래그 지연·VoiceOver·좁은 창 검증을 대신하지 않는다. 영향도 M: 노드 편집 화면의 연결된 렌더링/선택 경로 내 최적화이며 데이터 계약은 불변. 커밋 후 누적 ponytail/팀 셀프 리뷰와 CodeRabbit 확인, In Review에서 사람 검수·승인·merge를 기다린다.
+
 ## 2026-10-28 — #95 / IMD-78 Unit·Fixture와 도착 노드 연결
 
 - 최신 develop `bdd2991`에서 `feat/#95-routing-feature-links`를 만들고 기존 IMD-78/#95를 재사용했다. 사용자 정정대로 엣지가 아닌 노드를 연결하며, 장소 하나에는 노드 하나 / 노드 하나에는 여러 장소를 허용한다.

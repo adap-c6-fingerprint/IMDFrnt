@@ -125,6 +125,19 @@ struct RoutingGraph: Equatable, Codable {
     func nodes(on floorID: UUID?) -> [RoutingNode] { nodes.filter { $0.floorID == floorID } }
     func connections(of id: UUID) -> [RoutingEdge] { edges.filter { $0.from == id || $0.to == id } }
 
+    /// A read-local index: no persisted cache or invalidation state. Match node(_:) on duplicate IDs.
+    var nodesByID: [UUID: RoutingNode] {
+        Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Preserve edge order and cross-floor visibility without scanning nodes for each endpoint.
+    func visibleEdges(on floorID: UUID?, filter: RoutingEdgeFilter) -> [RoutingEdge] {
+        let nodes = nodesByID
+        return edges.filter {
+            filter.includes($0) && (nodes[$0.from]?.floorID == floorID || nodes[$0.to]?.floorID == floorID)
+        }
+    }
+
     /// Extend only colliding prefixes so every canvas label distinguishes its node.
     var nodeDisplayIDs: [UUID: String] {
         var result: [UUID: String] = [:]

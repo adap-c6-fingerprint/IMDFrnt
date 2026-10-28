@@ -90,6 +90,19 @@ SVG·PNG·JPG 원본을 쓰는 기존 흐름도 유지한다. `도면 열기…`
 
 현재 저장 형식은 버전 9이며 기존 v2~v8 파일도 읽을 수 있다. 공통 건물·층·지도/내장 이미지·태깅·좌표 기준·노드·연결·메타데이터는 `buildingProject`에 저장하며 `RoutingGraph`는 호환 뷰다. v8의 엣지 그룹에 이어 v9는 노드의 선택적 `featureLinks`(Unit/Fixture 참조)를 추가한다. 구버전 앱이 장소 연결을 조용히 버리지 않도록 v9 파일을 거절하므로 새 작업은 v9 지원 앱에서 연다. 원본 프로젝트의 별도 백업을 권장한다. 이전과 저장 구조의 자세한 내용은 [건물·Level 관리의 저장 구조](../projects/BUILDING_LEVELS.md#저장-구조)를 참고한다.
 
+## 노드 화면 성능 (#97 / IMD-79)
+
+엣지 렌더링·선택·접근성 이름표·목록은 읽기 한 번의 그래프와 UUID 조회 사전을 재사용한다. 엣지마다 전체 프로젝트를 다시 구성하거나 전체 노드를 검색하지 않는다. 사전은 읽기 단위의 임시 값이므로 저장하지 않으며 이동·Undo·층 전환 후에는 항상 현재 노드를 읽는다. 노드 화면에서 사용하지 않는 도면 편집용 표시 상태도 만들지 않는다. UI·선택 순서/거리·층간/그룹 필터·저장 v9·IMDF/그래프/클라이언트 출력은 그대로다.
+
+```sh
+./IM-DFrnt.app/Contents/MacOS/IM-DFrnt --routing-selftest --routing-performance-only
+# 실제 도면/태깅 데이터를 읽고 메모리 안에서 1,000노드/999엣지를 넣어 같은 경로 비교
+./IM-DFrnt.app/Contents/MacOS/IM-DFrnt --routing-selftest --routing-performance-only \
+  --routing-performance-input /path/to/project.imdfrnt
+```
+
+성능 검사는 변경 전 독립 기준과 현재 최근접 엣지 조회를 같은 실행에서 비교한다. 입력 파일은 읽기만 하며, 노드 추가/이동·저장 인코딩 비교는 메모리 안에서 수행한다. `savedAt`만 고정해 저장 본문을 비교한다. 일반 노드 검사에는 필터·층간·겹친/길이 0인 엣지·동률/빈 공간·중복 UUID 첫 값·이동 Undo/Redo·원본 IMDF/그래프 출력 불변 검사가 포함된다. 시간은 환경에 따라 달라지므로 통과 임계값은 두지 않는다. 이 수치는 클릭 전체 지연이나 SwiftUI/GPU 프레임 속도가 아니며 큰 실제 창에서 드래그·확대/팬·VoiceOver는 별도 GUI 검수가 필요하다.
+
 ## 검사
 
 ```sh

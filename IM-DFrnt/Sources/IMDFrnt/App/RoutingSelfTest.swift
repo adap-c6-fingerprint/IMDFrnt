@@ -14,6 +14,11 @@ enum RoutingSelfTest {
         func expectFailure(_ name: String, _ operation: () throws -> Void) {
             do { try operation(); check(name, false) } catch { check(name, true) }
         }
+        if CommandLine.arguments.contains("--routing-performance-only") {
+            RoutingPerformanceSelfTest.run(check: check)
+            print("== Routing performance: \(count-failures)/\(count) PASS ==")
+            exit(failures == 0 ? 0 : 1)
+        }
         func calibration() -> AnchorStore {
             var anchors = AnchorStore()
             for (point, geo) in [
@@ -198,6 +203,7 @@ enum RoutingSelfTest {
         RoutingViewportSelfTest.run(check: check)
         RoutingMapLayersSelfTest.run(check: check)
         await RoutingFeatureLinksSelfTest.run(check: check)
+        RoutingPerformanceSelfTest.run(check: check)
         print("== Routing: \(count-failures)/\(count) PASS ==")
         exit(failures == 0 ? 0 : 1)
     }

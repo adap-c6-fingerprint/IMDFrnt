@@ -150,13 +150,15 @@ extension AppEnvironment {
     }
 
     func nearestRoutingEdge(to point: LocalPoint, tolerance: Double) -> RoutingEdge? {
+        let graph = routing, floorID = currentRoutingFloor?.id
+        let nodes = graph.nodesByID
         var best: (RoutingEdge, Double)?
-        for edge in visibleRoutingEdges {
-            guard let a = routing.node(edge.from), let b = routing.node(edge.to),
-                  a.floorID == currentRoutingFloor?.id || b.floorID == currentRoutingFloor?.id else { continue }
+        for edge in graph.visibleEdges(on: floorID, filter: routingEdgeFilter) {
+            guard let a = nodes[edge.from], let b = nodes[edge.to],
+                  a.floorID == floorID || b.floorID == floorID else { continue }
             if a.floorID != b.floorID {
                 guard routingTool == .edges else { continue }
-                let local = a.floorID == currentRoutingFloor?.id ? a : b
+                let local = a.floorID == floorID ? a : b
                 let distance = point.distance(to: local.point)
                 if distance <= tolerance && distance < (best?.1 ?? .infinity) { best = (edge, distance) }
                 continue

@@ -219,15 +219,17 @@ struct CanvasView: View {
 
     @ViewBuilder
     private var routingAccessibilityElements: some View {
-        ForEach(env.routing.nodes(on: env.currentRoutingFloor?.id)) { node in
+        let graph = env.routing, floorID = env.currentRoutingFloor?.id
+        let nodes = graph.nodesByID
+        ForEach(graph.nodes(on: floorID)) { node in
             Button(node.label) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 env.selectRoutingNode(node.id)
             }
             .accessibilityValue(env.routingSelectedNodeID == node.id ? "선택됨" : "")
         }
-        ForEach(env.visibleRoutingEdges) { edge in
-            Button("연결 \(env.routing.node(edge.from)?.label ?? "") ↔ \(env.routing.node(edge.to)?.label ?? "")") {
+        ForEach(graph.visibleEdges(on: floorID, filter: env.routingEdgeFilter)) { edge in
+            Button("연결 \(nodes[edge.from]?.label ?? "") ↔ \(nodes[edge.to]?.label ?? "")") {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 env.selectRoutingEdge(edge.id)
             }
@@ -264,8 +266,6 @@ struct CanvasView: View {
         Canvas { ctx, size in
             let s = effectiveScale
             let visible = visibleDocRect(viewport: size)
-            let states = env.renderStates()
-            // 표시 상태는 프레임마다 개체별로 다시 판정하지 않고 **사전 하나**를 받아 쓴다(제안 3).
             let screenCtx = ctx
             // 변환 전의 화면 좌표 붓. 개체 이름표처럼 확대와 무관하게 같은 크기로 그릴 것에 쓴다.
             ctx.translateBy(x: offset.width, y: offset.height)
@@ -293,6 +293,8 @@ struct CanvasView: View {
                 drawRouting(in: &ctx, scale: s)
                 return
             }
+            let states = env.renderStates()
+            // 노드 화면은 별도 레이어를 쓰므로 도면 편집용 개체 상태는 필요할 때만 구한다.
             drawReferenceLayers(in: ctx, canvasSize: doc.canvasSize, scale: s)
             let primary = env.currentRoutingFloor?.imdfCoordinates == nil ? env.primarySVGPresentation : DrawingLayerPresentation(isVisible: true, opacity: 1)
             if primary.isVisible {
@@ -1055,8 +1057,9 @@ struct CanvasView: View {
             node.id == routingDragNode ? (routingDragPoint ?? node.point) : node.point
         }
         let floorID = env.currentRoutingFloor?.id
-        for edge in env.visibleRoutingEdges {
-            guard let a = env.routing.node(edge.from), let b = env.routing.node(edge.to),
+        let graph = env.routing, nodes = graph.nodesByID
+        for edge in graph.visibleEdges(on: floorID, filter: env.routingEdgeFilter) {
+            guard let a = nodes[edge.from], let b = nodes[edge.to],
                   a.floorID == floorID || b.floorID == floorID else { continue }
             let selected = env.routingSelectedEdgeIDs.contains(edge.id)
             let color = selected ? Color.orange : (edge.accessible ? Color.blue : Color.purple)
@@ -1070,13 +1073,13 @@ struct CanvasView: View {
                 let local = a.floorID == floorID ? a : b
                 let other = a.floorID == floorID ? b : a
                 let p = point(local)
-                ctx.draw(Text("↕ \(env.routing.floor(other.floorID)?.name ?? "")")
+                ctx.draw(Text("↕ \(graph.floor(other.floorID)?.name ?? "")")
                     .font(.system(size: 11 / s)).foregroundStyle(color),
                          at: CGPoint(x: p.x, y: p.y + 20 / s))
             }
         }
-        if let drag = env.routingConnectionDrag, let from = env.routing.node(drag.from), drag.floorID == floorID {
-            let destination = env.routing.node(drag.target)?.point ?? drag.pointer
+        if let drag = env.routingConnectionDrag, let from = nodes[drag.from], drag.floorID == floorID {
+            let destination = drag.target.flatMap { nodes[$0]?.point } ?? drag.pointer
             var line = Path()
             line.move(to: from.point.cg)
             line.addLine(to: destination.cg)
@@ -1084,8 +1087,8 @@ struct CanvasView: View {
                        style: StrokeStyle(lineWidth: 1.5 / s, lineCap: .round,
                                           dash: drag.target == nil ? [4 / s, 3 / s] : []))
         }
-        let displayIDs = env.routing.nodeDisplayIDs
-        for node in env.routing.nodes(on: floorID) {
+        let displayIDs = graph.nodeDisplayIDs
+        for node in graph.nodes(on: floorID) {
             let p = point(node)
             let selected = env.routingSelectedNodeID == node.id || env.routingConnectStart == node.id ||
                 env.routingConnectionDrag?.target == node.id
