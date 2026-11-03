@@ -419,7 +419,8 @@ struct PropertySlotRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(field.key).font(.caption.monospaced())
+                Text(feature.featureType == .amenity && field.key == "unit_ids" ? "Unit 선택" : field.key)
+                    .font(.caption.monospaced())
                 if field.isNonStandard {
                     Text("비표준").font(.system(size: 8))
                         .padding(.horizontal, 3)
@@ -457,6 +458,8 @@ struct PropertySlotRow: View {
             Text(env.exportID(for: feature)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
                 .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        } else if feature.featureType == .amenity, field.key == "unit_ids" {
+            AmenityUnitPicker(feature: feature)
         } else if feature.featureType == .venue, field.key == "hours" {
             OpeningHoursEditor(value: Binding(get: {
                 if case .string(let text) = feature.value("hours") { return text }; return ""

@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-11-03 — #113 Amenity Unit 연결 선택
+
+- `develop 2457fa6`에서 `feat/#113-amenity-unit-picker`를 만들었다. #112의 내보내기 경고 전환과 분리하며 이번 작업에서는 검증 조건을 완화하지 않는다.
+- 오른쪽 Amenity의 `unit_ids` 직접 입력 칸을 검색 가능한 복수 Unit 선택으로 바꿨다. 이름(기존 다국어 표시 규칙)·일련번호·층 이름·전체 UUID를 표시하고, 같은 층에서 포함/경계 Unit → 외곽선까지 가까운 순으로 정렬한다. 다른 층은 좌표를 비교하지 않고 뒤에 표시한다.
+- 후보 계산은 선택기를 열 때만 수행한다. 편집 Unit과 가져온/공통 Unit을 기존 좌표계로 읽으며 휴지통·중복 원본은 제외한다. 후보 조회는 읽기 전용이고 자동 연결·UUID 재발급·저장 형식 변경은 하지 않는다. 기존에 알 수 없는 참조도 임의 삭제하지 않고 명시적으로 해제하게 했다.
+- 기존 `unit_ids` 배열·IMDF 인코더·Undo/Redo/프로젝트 저장 흐름을 유지한다. Unit 선택/해제 한 번이 실행취소 한 칸이다. Anchor 선택기와 IMDF 검증/노드·엣지 내보내기는 바꾸지 않았다.
+- Debug/Release 전체8/8·Release strict 서명 검증 통과(Compliance188/188, 추가19). 이름/UUID 검색, 포함/경계·구멍·분리된 면, 기존 UUID·휴지통·다른 층, 복수 선택/해제·기존 미확인 참조 보존·Undo/Redo·저장 재열기·IMDF 참조 배열을 검사했다. 로그 `imdfrnt-self-tests.G8PnxJ`/`imdfrnt-self-tests.JDg5Uc`. 검수 앱 `IM-DFrnt/.build/IMD113-amenity-unit-picker/IM-DFrnt.app`.
+- 실제 SwiftUI 팝오버 마우스/키보드·좁은 창·VoiceOver 및 사용자 실사용 프로젝트의 수동 검수는 아직 하지 않았다. 기존 실행 앱/원본 프로젝트·32개 모드 전용 변경·사용자 HTML은 보존한다. PR·push·자동 승인/merge는 하지 않는다.
+
 ## 2026-10-28 — #99 / IMD-80 길안내 전용 내보내기
 
 - PR98이 merge된 최신 develop `9c6b841`에서 `feat/#99-navigation-only-export`를 만들고 기존 IMD-80/#99를 재사용했다. 이후 개발에도 ponytail을 기본 적용한다. 기존 그래프 exporter·관계 JSON 인코더·안전한 폴더 writer를 재사용하며 SQLite/새 의존성·일반 검증 우회 플래그는 넣지 않는다.
