@@ -80,5 +80,92 @@ enum AmenityUnitSelectionSelfTest {
         check("#113 가져온 Unit·공통 Unit도 같은 좌표계로 정렬·편집본 중복 제외", originals.prefix(5).map(\.id) == [allocatedID, nearID, imported.uuidString.lowercased(), global.uuidString.lowercased(), far.id.uuidString.lowercased()])
         check("#113 가져온 Unit 다른 언어 이름 표시", originals.first { $0.id == imported.uuidString.lowercased() }?.label.contains("原本") == true)
         check("#113 공통 원본이 남아도 휴지통 Unit 제외", !originals.contains { $0.id == trash.id.uuidString.lowercased() })
+        var rawAmenity = FeatureGroup(featureType: .amenity, serialNumber: "amenity-raw-unit", memberIDs: [])
+        rawAmenity.drawnVertices = [LocalPoint(8.5, 4.5)]
+        var sharedAmenity = FeatureGroup(featureType: .amenity, serialNumber: "amenity-global-unit", memberIDs: [])
+        sharedAmenity.drawnVertices = [LocalPoint(10.5, 4.5)]
+        env.features.insert(rawAmenity); env.features.insert(sharedAmenity)
+        let rawBefore = env.activeLevel!.geoJSON, globalBefore = env.buildingProject.globalGeoJSON
+        env.connectAmenitiesToContainingUnits([rawAmenity.id, sharedAmenity.id])
+        check("#113 일괄 연결은 가져온/공통 Unit UUID 포함·원본 GeoJSON 보존", Set(env.features.feature(rawAmenity.id)!.value("unit_ids").projectJSON.array.compactMap(\.string)) == [allocatedID, imported.uuidString.lowercased()] && Set(env.features.feature(sharedAmenity.id)!.value("unit_ids").projectJSON.array.compactMap(\.string)) == [allocatedID, global.uuidString.lowercased()] && env.activeLevel!.geoJSON == rawBefore && env.buildingProject.globalGeoJSON == globalBefore)
+        // Original geographic Unit data is still in the native drawing projection after Footprint alignment.
+        env.buildingProject.levels[current].info.footprintGeoAnchors = [LocalPoint(0, 0), LocalPoint(100, 0), LocalPoint(0, 100)].map {
+            AnchorPair(local: $0, geo: projection.geoPoint(for: LocalPoint($0.x + 1000, $0.y)), label: "정렬 회귀")
+        }
+        check("#113 Footprint 정렬 뒤에도 원본 Unit 포함 판정은 native 좌표 유지", env.amenityUnitChoices(for: rawAmenity).first { $0.id == imported.uuidString.lowercased() }?.distance == 0)
+        var nativeAnchors = AnchorStore()
+        for point in [LocalPoint(0, 0), LocalPoint(100, 0), LocalPoint(0, 100)] {
+            nativeAnchors.add(local: point, geo: projection.geoPoint(for: point), label: "원본 좌표")
+        }
+        env.anchors = nativeAnchors
+        env.buildingProject.levels[current].info.imdfCoordinates = nil
+        var svgAmenity = FeatureGroup(featureType: .amenity, serialNumber: "amenity-native-svg", memberIDs: [])
+        svgAmenity.drawnVertices = [LocalPoint(8.5, 4.5)]
+        env.features.insert(svgAmenity)
+        env.connectAmenitiesToContainingUnits([svgAmenity.id])
+        check("#113 SVG 원본 GPS와 Footprint 정렬이 달라도 포함 Unit 정확히 연결", env.features.feature(svgAmenity.id)!.value("unit_ids").projectJSON.array.compactMap(\.string).contains(imported.uuidString.lowercased()))
+        try bulkConnection(check, env: env)
+    }
+
+    private static func bulkConnection(_ check: (String, Bool) -> Void, env: AppEnvironment) throws {
+        try env.createNewProject(); env.openSample()
+        func box(_ x: Double, _ size: Double) -> [LocalPoint] {
+            [LocalPoint(x, 0), LocalPoint(x + size, 0), LocalPoint(x + size, size), LocalPoint(x, size)]
+        }
+        var a = FeatureGroup(featureType: .unit, serialNumber: "unit-a", memberIDs: [])
+        a.polygonRings = [box(0, 10), [LocalPoint(4, 4), LocalPoint(6, 4), LocalPoint(6, 6), LocalPoint(4, 6)], box(20, 10)]
+        a.multiPolygon = true
+        var b = FeatureGroup(featureType: .unit, serialNumber: "unit-b", memberIDs: [])
+        b.polygonRings = [box(30, 10)]
+        var trashed = FeatureGroup(featureType: .unit, serialNumber: "unit-deleted", memberIDs: [])
+        trashed.polygonRings = [box(90, 20)]; trashed.isInTrash = true
+        let exportID = UUID(), unknown = UUID().uuidString.uppercased()
+        env.ids.adopt(a.id, id: exportID)
+        for unit in [a, b, trashed] { env.features.insert(unit) }
+        var other = ProjectLevel(info: ProjectLevelInfo(name: "다른 층", ordinal: 1))
+        var upstairs = FeatureGroup(featureType: .unit, serialNumber: "unit-other-level", memberIDs: [])
+        upstairs.polygonRings = [box(90, 20)]
+        other.editing.features.insert(upstairs); env.buildingProject.levels.append(other)
+        func amenity(_ name: String, _ point: LocalPoint?) -> FeatureGroup {
+            var f = FeatureGroup(featureType: .amenity, serialNumber: name, memberIDs: [])
+            f.drawnVertices = point.map { [$0] }
+            f.properties["category"] = .string("drinkingwater")
+            return f
+        }
+        var first = amenity("amenity-in-a", LocalPoint(2, 2)); first.properties["unit_ids"] = .stringArray([unknown])
+        let island = amenity("amenity-island", LocalPoint(25, 2))
+        let boundary = amenity("amenity-boundary", LocalPoint(30, 2))
+        let hole = amenity("amenity-hole", LocalPoint(5, 5))
+        let outside = amenity("amenity-outside", LocalPoint(100, 2))
+        let missing = amenity("amenity-no-point", nil)
+        let hidden = amenity("amenity-filtered-out", LocalPoint(35, 2))
+        var deleted = amenity("amenity-trash", LocalPoint(2, 2)); deleted.isInTrash = true
+        var existing = amenity("amenity-existing", LocalPoint(2, 2)); existing.properties["unit_ids"] = .stringArray([exportID.uuidString.uppercased()])
+        var invalid = amenity("amenity-invalid", LocalPoint(2, 2)); invalid.properties["unit_ids"] = .json(.array([.number(42)]))
+        let targets = [first, island, boundary, hole, outside, missing, deleted, existing, invalid]
+        for f in targets + [hidden] { env.features.insert(f) }
+        let before = env.projectContents, undoCount = env.undoStack.undoEntries.count
+        env.connectAmenitiesToContainingUnits(targets.map(\.id) + [first.id, a.id, UUID()])
+        func links(_ f: FeatureGroup) -> PropertyValue { env.features.feature(f.id)!.value("unit_ids") }
+        let aid = exportID.uuidString.lowercased(), bid = b.id.uuidString.lowercased()
+        check("#113 일괄 포함 연결은 기존 참조 유지·원본 export UUID 추가", links(first) == .stringArray([unknown, aid]))
+        check("#113 일괄 연결 MultiPolygon 섬·경계의 복수 Unit 포함", links(island) == .stringArray([aid]) && links(boundary) == .stringArray([aid, bid].sorted()))
+        check("#113 구멍·다른 층·휴지통 Unit·좌표 없는 Amenity는 추정 연결하지 않음", links(hole) == .null && links(outside) == .null && links(missing) == .null)
+        check("#113 화면 필터 제외·휴지통 Amenity·기존 대소문자 참조·비문자열 배열 보존", links(hidden) == .null && links(deleted) == .null && links(existing) == existing.value("unit_ids") && links(invalid) == invalid.value("unit_ids"))
+        check("#113 일괄 작업은 Undo 한 칸·결과 요약", env.undoStack.undoEntries.count == undoCount + 1 && env.banner?.text.contains("3개 추가") == true && env.banner?.text.contains("4개 건너뜀") == true)
+        let after = env.projectContents
+        check("#113 일괄 연결은 Unit 도형·UUID 대장·다른 층 보존", after.levels[0].editing.ids == before.levels[0].editing.ids && after.levels[0].editing.features.features(ofType: .unit, includingTrashed: true) == before.levels[0].editing.features.features(ofType: .unit, includingTrashed: true) && after.levels[1] == before.levels[1])
+        env.undo(); check("#113 일괄 연결 한 번 Undo로 전체 복원", env.projectContents == before)
+        env.redo(); check("#113 일괄 연결 Redo로 전체 재적용", env.projectContents == after)
+        let nextUndo = env.undoStack.undoEntries.count
+        env.connectAmenitiesToContainingUnits(targets.map(\.id))
+        check("#113 재실행은 참조 중복·Undo 칸 추가 없음", env.projectContents == after && env.undoStack.undoEntries.count == nextUndo)
+        let saved = try ProjectFile.decoded(from: env.makeProjectFile()!.encoded()).commonProject()
+        check("#113 일괄 참조 기존 v9 저장 왕복", saved == after)
+        var ids = env.ids
+        let exporter = GeoJSONExporter(document: env.document!, segmentation: env.segmentation, georeferencer: env.georeferencer)
+        let output = exporter.serialize(env.features.feature(first.id)!, ids: &ids, serialToUUID: [:])
+        check("#113 일괄 참조 기존 IMDF 배열 직렬화", (output["properties"] as? [String: Any])?["unit_ids"] as? [String] == [unknown, aid])
+        check("#113 잘못된 구멍이 있으면 바깥 링만으로 포함 추정 금지", AmenityUnitChoice.distance(from: LocalPoint(2, 2), to: [box(0, 10), []]) == nil)
     }
 }

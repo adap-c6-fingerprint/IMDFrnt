@@ -19,6 +19,14 @@ struct RightSidebar: View {
                         // 상위 토글 하나로 통째로 접히면 카드마다 따로 접고 펴는 뜻이 사라진다.
                         // 여기서는 개수만 알려주고, 접고 펴는 것은 카드 각자의 몫이다.
                         if !all.isEmpty { CategoryFilterBar(type: type, features: all) }
+                        if type == .amenity {
+                            Button("표시된 Amenity 포함 Unit 일괄 연결") {
+                                env.connectAmenitiesToContainingUnits(live.map(\.id))
+                            }
+                            .controlSize(.small)
+                            .disabled(live.isEmpty || env.isProjectBusy)
+                            .help("현재 층에서 표시 중인 Amenity에 포함/경계 Unit을 추가합니다. 기존 연결은 유지하고, 포함 Unit이 없으면 건너뜁니다. 실행취소 한 번으로 복원할 수 있습니다.")
+                        }
 
                         if all.isEmpty {
                             Text("아직 저장된 feature가 없습니다.\n캔버스에서 개체를 선택하고 'Feature로 저장'을 누르세요.")

@@ -1,5 +1,14 @@
 # IM-DFrnt 진행 기록
 
+## 2026-11-04 — #113 현재 층 Amenity 포함 Unit 일괄 연결
+
+- 같은 기능의 기존 `feat/#113-amenity-unit-picker`/PR114와 이슈 #113을 재사용한다. 오른쪽 Amenity 목록 상단에 `표시된 Amenity 포함 Unit 일괄 연결` 버튼을 추가했다. 현재 층·카테고리 필터에 표시된 live Amenity만 대상으로 하며 다른 층/휴지통은 처리하지 않는다.
+- 현재 층의 Unit 후보 도형을 한 번만 읽어 재사용한다. 각 Amenity를 실제 포함/경계 Unit에 연결하고, 포함 Unit 없음·좌표 미확보·잘못된 기존 값은 건너뛴다. 구멍은 포함으로 보지 않는다. 경계가 겹치면 해당 Unit들을 모두 추가한다. 가장 가까운 Unit을 임의 선택하지 않는다.
+- 기존 수동/미확인 참조와 UUID 대장을 보존하며 대소문자 중복 없이 추가하고 전체 변경을 `perform` 한 번으로 묶었다. 재실행해 추가할 연결이 없으면 Undo 칸을 만들지 않는다. 추가/이미 연결/건너뜀 개수를 안내한다. 저장 v9·IMDF 검증/인코더·도형 원본은 그대로다.
+- 원본 GeoJSON의 native 좌표 처리를 기존 수동 선택기와 공유한다. SVG GPS와 Footprint 정렬이 다를 때 포함 Unit을 놓치는 회귀를 먼저 실패로 재현한 뒤, 원본 좌표 변환에서 원본 GPS를 사용하도록 한 곳을 보정했다. 원본 IMDF 투영은 그대로 유지하며 잘못된 구멍을 생략해 바깥 면만 포함으로 추측하지 않는다.
+- 최종 Debug/Release 전체8/8·Compliance203/203(직전188 대비 추가15)·Release strict 서명 검증 통과. 현재 층/명시 대상·기존 연결·복수 포함/경계·구멍·휴지통·좌표 없음·잘못된 배열·Undo/Redo·재실행·가져온/공통 Unit·native 투영·UUID/원본 도형·저장/기존 IMDF 직렬화를 검사했다. 로그 `imdfrnt-self-tests.OQgr2X`/`imdfrnt-self-tests.hxQi7Y`. 최신 검수 앱 `IM-DFrnt/.build/IMD113-amenity-unit-bulk-native/IM-DFrnt.app`.
+- 실제 팝오버/일괄 버튼 클릭·카테고리 필터 UI·큰 실사용 프로젝트·VoiceOver는 수동 검수 대기다. 원본 프로젝트·기존 실행 앱·32개 모드 전용 변경과 사용자 HTML을 보존한다. 이번 추가 수정은 로컬 커밋까지 진행하며 별도 push/PR 갱신·승인·merge는 하지 않는다.
+
 ## 2026-11-03 — #113 Amenity Unit 연결 선택
 
 - `develop 2457fa6`에서 `feat/#113-amenity-unit-picker`를 만들었다. #112의 내보내기 경고 전환과 분리하며 이번 작업에서는 검증 조건을 완화하지 않는다.
