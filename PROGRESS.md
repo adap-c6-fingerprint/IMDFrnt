@@ -1,5 +1,31 @@
 # IM-DFrnt 진행 기록
 
+## 2026-11-10 — #112 IMDF 경고 확인 후 ZIP 내보내기 (PR #114)
+
+- 사용자 요청으로 기존 PR #114 브랜치에서 구현한다. 일반 IMDF ZIP의 완결성 위반/권장 경고를 스크롤 가능한 목록으로 보여 주고 `취소` / `그래도 내보내기`를 제공한다. 취소가 기본 선택이며, 동의한 경우에만 이미 검증한 동일 스냅샷의 ZIP 저장으로 진행한다.
+- 도형·미입력 참조를 자동 보정하거나 삭제하지 않는다. 새 UUID 대장은 경고/저장 취소 때 반영하지 않고 실제 저장 성공 뒤에만 반영한다. 완결성 위반을 포함한 출력은 Apple IMDF 적합성/제출 승인을 보장하지 않는다고 안내한다.
+- 기본 빌더·개별 GeoJSON·지도+길찾기 묶음의 엄격한 검증과 Opening 전용 Sandbox 정책을 유지한다. GPS/좌표 생성 불가·미완료 Footprint 이전·손상된 원본 컬렉션·파일 읽기/ZIP 생성 실패는 계속 차단한다.
+- Debug/Release 빌드와 각각 전체 8/8 자체 검사, IMDF Compliance 218/218(추가15), Release strict 서명·diff 검사를 통과했다. 로그 `imdfrnt-self-tests.MFfGRZ` / `imdfrnt-self-tests.LvLAVu`. 정상 바이트 유지·복합 완결성 위반·도형/UUID/원본 보존·미완성 Level·실제 ZIP 왕복·기존 엄격 경로·손상 입력/안전한 파일 경로를 검사했다.
+- 최근 도서관 저장본을 원본 변경 없이 임시 ZIP으로 출력했다. Opening 경계 위반 1건을 보존한 채 feature 2,235개/파일 10개 출력 및 압축 무결성·원본 바이트 불변을 확인했다. 실제 GUI 버튼 클릭·취소·VoiceOver 및 Apple 제출 검수는 미완료다. 기존 실행 앱·사용자 HTML·32개 모드 전용 변경을 보존했다.
+
+## 2026-11-04 — #113 현재 층 Amenity 포함 Unit 일괄 연결
+
+- 같은 기능의 기존 `feat/#113-amenity-unit-picker`/PR114와 이슈 #113을 재사용한다. 오른쪽 Amenity 목록 상단에 `표시된 Amenity 포함 Unit 일괄 연결` 버튼을 추가했다. 현재 층·카테고리 필터에 표시된 live Amenity만 대상으로 하며 다른 층/휴지통은 처리하지 않는다.
+- 현재 층의 Unit 후보 도형을 한 번만 읽어 재사용한다. 각 Amenity를 실제 포함/경계 Unit에 연결하고, 포함 Unit 없음·좌표 미확보·잘못된 기존 값은 건너뛴다. 구멍은 포함으로 보지 않는다. 경계가 겹치면 해당 Unit들을 모두 추가한다. 가장 가까운 Unit을 임의 선택하지 않는다.
+- 기존 수동/미확인 참조와 UUID 대장을 보존하며 대소문자 중복 없이 추가하고 전체 변경을 `perform` 한 번으로 묶었다. 재실행해 추가할 연결이 없으면 Undo 칸을 만들지 않는다. 추가/이미 연결/건너뜀 개수를 안내한다. 저장 v9·IMDF 검증/인코더·도형 원본은 그대로다.
+- 원본 GeoJSON의 native 좌표 처리를 기존 수동 선택기와 공유한다. SVG GPS와 Footprint 정렬이 다를 때 포함 Unit을 놓치는 회귀를 먼저 실패로 재현한 뒤, 원본 좌표 변환에서 원본 GPS를 사용하도록 한 곳을 보정했다. 원본 IMDF 투영은 그대로 유지하며 잘못된 구멍을 생략해 바깥 면만 포함으로 추측하지 않는다.
+- 최종 Debug/Release 전체8/8·Compliance203/203(직전188 대비 추가15)·Release strict 서명 검증 통과. 현재 층/명시 대상·기존 연결·복수 포함/경계·구멍·휴지통·좌표 없음·잘못된 배열·Undo/Redo·재실행·가져온/공통 Unit·native 투영·UUID/원본 도형·저장/기존 IMDF 직렬화를 검사했다. 로그 `imdfrnt-self-tests.OQgr2X`/`imdfrnt-self-tests.hxQi7Y`. 최신 검수 앱 `IM-DFrnt/.build/IMD113-amenity-unit-bulk-native/IM-DFrnt.app`.
+- 실제 팝오버/일괄 버튼 클릭·카테고리 필터 UI·큰 실사용 프로젝트·VoiceOver는 수동 검수 대기다. 원본 프로젝트·기존 실행 앱·32개 모드 전용 변경과 사용자 HTML을 보존한다. 이번 추가 수정은 로컬 커밋까지 진행하며 별도 push/PR 갱신·승인·merge는 하지 않는다.
+
+## 2026-11-03 — #113 Amenity Unit 연결 선택
+
+- `develop 2457fa6`에서 `feat/#113-amenity-unit-picker`를 만들었다. #112의 내보내기 경고 전환과 분리하며 이번 작업에서는 검증 조건을 완화하지 않는다.
+- 오른쪽 Amenity의 `unit_ids` 직접 입력 칸을 검색 가능한 복수 Unit 선택으로 바꿨다. 이름(기존 다국어 표시 규칙)·일련번호·층 이름·전체 UUID를 표시하고, 같은 층에서 포함/경계 Unit → 외곽선까지 가까운 순으로 정렬한다. 다른 층은 좌표를 비교하지 않고 뒤에 표시한다.
+- 후보 계산은 선택기를 열 때만 수행한다. 편집 Unit과 가져온/공통 Unit을 기존 좌표계로 읽으며 휴지통·중복 원본은 제외한다. 후보 조회는 읽기 전용이고 자동 연결·UUID 재발급·저장 형식 변경은 하지 않는다. 기존에 알 수 없는 참조도 임의 삭제하지 않고 명시적으로 해제하게 했다.
+- 기존 `unit_ids` 배열·IMDF 인코더·Undo/Redo/프로젝트 저장 흐름을 유지한다. Unit 선택/해제 한 번이 실행취소 한 칸이다. Anchor 선택기와 IMDF 검증/노드·엣지 내보내기는 바꾸지 않았다.
+- Debug/Release 전체8/8·Release strict 서명 검증 통과(Compliance188/188, 추가19). 이름/UUID 검색, 포함/경계·구멍·분리된 면, 기존 UUID·휴지통·다른 층, 복수 선택/해제·기존 미확인 참조 보존·Undo/Redo·저장 재열기·IMDF 참조 배열을 검사했다. 로그 `imdfrnt-self-tests.G8PnxJ`/`imdfrnt-self-tests.JDg5Uc`. 검수 앱 `IM-DFrnt/.build/IMD113-amenity-unit-picker/IM-DFrnt.app`.
+- 실제 SwiftUI 팝오버 마우스/키보드·좁은 창·VoiceOver 및 사용자 실사용 프로젝트의 수동 검수는 아직 하지 않았다. 기존 실행 앱/원본 프로젝트·32개 모드 전용 변경·사용자 HTML은 보존한다. PR·push·자동 승인/merge는 하지 않는다.
+
 ## 2026-10-28 — #99 / IMD-80 길안내 전용 내보내기
 
 - PR98이 merge된 최신 develop `9c6b841`에서 `feat/#99-navigation-only-export`를 만들고 기존 IMD-80/#99를 재사용했다. 이후 개발에도 ponytail을 기본 적용한다. 기존 그래프 exporter·관계 JSON 인코더·안전한 폴더 writer를 재사용하며 SQLite/새 의존성·일반 검증 우회 플래그는 넣지 않는다.

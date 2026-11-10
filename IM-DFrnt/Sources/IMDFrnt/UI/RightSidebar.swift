@@ -19,6 +19,14 @@ struct RightSidebar: View {
                         // 상위 토글 하나로 통째로 접히면 카드마다 따로 접고 펴는 뜻이 사라진다.
                         // 여기서는 개수만 알려주고, 접고 펴는 것은 카드 각자의 몫이다.
                         if !all.isEmpty { CategoryFilterBar(type: type, features: all) }
+                        if type == .amenity {
+                            Button("표시된 Amenity 포함 Unit 일괄 연결") {
+                                env.connectAmenitiesToContainingUnits(live.map(\.id))
+                            }
+                            .controlSize(.small)
+                            .disabled(live.isEmpty || env.isProjectBusy)
+                            .help("현재 층에서 표시 중인 Amenity에 포함/경계 Unit을 추가합니다. 기존 연결은 유지하고, 포함 Unit이 없으면 건너뜁니다. 실행취소 한 번으로 복원할 수 있습니다.")
+                        }
 
                         if all.isEmpty {
                             Text("아직 저장된 feature가 없습니다.\n캔버스에서 개체를 선택하고 'Feature로 저장'을 누르세요.")
@@ -419,7 +427,8 @@ struct PropertySlotRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(field.key).font(.caption.monospaced())
+                Text(feature.featureType == .amenity && field.key == "unit_ids" ? "Unit 선택" : field.key)
+                    .font(.caption.monospaced())
                 if field.isNonStandard {
                     Text("비표준").font(.system(size: 8))
                         .padding(.horizontal, 3)
@@ -457,6 +466,8 @@ struct PropertySlotRow: View {
             Text(env.exportID(for: feature)?.uuidString.lowercased() ?? "내보내기 시 자동 생성")
                 .font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        } else if feature.featureType == .amenity, field.key == "unit_ids" {
+            AmenityUnitPicker(feature: feature)
         } else if feature.featureType == .venue, field.key == "hours" {
             OpeningHoursEditor(value: Binding(get: {
                 if case .string(let text) = feature.value("hours") { return text }; return ""
