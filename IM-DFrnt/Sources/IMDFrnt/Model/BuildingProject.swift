@@ -88,6 +88,7 @@ struct BuildingProject: Equatable, Codable {
     var extraFiles: [String: ProjectJSON] = [:]
     var crossLevelEdges: [RoutingEdge] = []
     var edgeGroups: [RoutingEdgeGroup]?
+    var nodeGroups: [RoutingNodeGroup]?
     var layoutVersion = "layout-1"
     var hardSearchRadiusMeters = 25.0
     var imdfSourceName: String?
@@ -140,6 +141,7 @@ struct BuildingProject: Equatable, Codable {
 
     func validate() throws {
         try routingGraph.validateEdgeGroups()
+        try routingGraph.validateNodeGroups()
         try RoutingFeatureLinks.validateUnique(in: self)
         guard Set(levels.map(\.id)).count == levels.count else {
             throw IMDFImporter.Failure(message: "프로젝트의 층 ID가 중복됩니다.")
@@ -160,7 +162,7 @@ struct BuildingProject: Equatable, Codable {
         RoutingGraph(floors: levels.map(\.info), nodes: levels.flatMap(\.nodes),
                      edges: levels.flatMap(\.edges) + crossLevelEdges,
                      layoutVersion: layoutVersion, hardSearchRadiusMeters: hardSearchRadiusMeters,
-                     imdfSourceName: imdfSourceName, edgeGroups: edgeGroups)
+                     imdfSourceName: imdfSourceName, edgeGroups: edgeGroups, nodeGroups: nodeGroups)
     }
 
     mutating func applyRouting(_ graph: RoutingGraph) {
@@ -181,6 +183,7 @@ struct BuildingProject: Equatable, Codable {
         hardSearchRadiusMeters = graph.hardSearchRadiusMeters
         imdfSourceName = graph.imdfSourceName
         edgeGroups = graph.edgeGroups
+        nodeGroups = graph.nodeGroups
     }
 
     /// Reconstruct type-based files without changing original IDs or properties.

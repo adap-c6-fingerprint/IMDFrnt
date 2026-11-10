@@ -200,6 +200,7 @@ enum RoutingSelfTest {
         ClientDatasetSelfTest.run(check: check)
         VerticalReplicationSelfTest.run(check: check)
         RoutingEdgeGroupSelfTest.run(check: check)
+        RoutingNodeGroupSelfTest.run(check: check)
         RoutingViewportSelfTest.run(check: check)
         RoutingMapLayersSelfTest.run(check: check)
         await RoutingFeatureLinksSelfTest.run(check: check)

@@ -285,7 +285,14 @@ extension AppEnvironment {
 
     func updateRoutingNode(_ id: UUID, field: String, _ change: (inout RoutingNode) -> Void) {
         guard let index = routing.nodes.firstIndex(where: { $0.id == id }) else { return }
-        perform("노드 정보 편집", coalescingKey: field == "metadata" ? nil : "node:\(id):\(field)") { change(&routing.nodes[index]) }
+        perform("노드 정보 편집", coalescingKey: field == "metadata" ? nil : "node:\(id):\(field)") {
+            var graph = routing
+            let category = graph.nodes[index].category
+            change(&graph.nodes[index])
+            if graph.nodes[index].category != category { try? graph.assignNodeGroup(id, to: nil) }
+            routing = graph
+            normalizeRoutingEdgeState()
+        }
     }
 
     func updateRoutingEdge(_ id: UUID, _ change: (inout RoutingEdge) -> Void) {
@@ -293,6 +300,8 @@ extension AppEnvironment {
         perform("연결 정보 편집") {
             change(&routing.edges[index])
             if routing.edges[index].category == .stairs { routing.edges[index].accessible = false }
+            // Explicit edge edits turn it into a manual connection, preserved by group changes.
+            routing.edges[index].autoVerticalGroupID = nil
         }
     }
 

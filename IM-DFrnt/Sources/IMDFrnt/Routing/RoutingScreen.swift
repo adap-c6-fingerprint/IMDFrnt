@@ -119,6 +119,8 @@ struct RoutingScreen: View {
     private var inspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                RoutingNodeGroupsPanel()
+                Divider()
                 RoutingEdgeGroupsPanel()
                 Divider()
                 RoutingFeatureLinksPanel()
@@ -248,7 +250,10 @@ private struct RoutingNodeEditor: View {
                     .font(.caption2.monospacedDigit()).textSelection(.enabled)
             }
             if RoutingNodeCategory(rawValue: node.category)?.isVertical == true {
+                RoutingNodeGroupAssignment(node: node)
                 VerticalReplicationSection(node: node)
+            } else if node.verticalGroupID != nil {
+                Button("이전 노드 그룹 배정 해제") { env.assignRoutingNodeGroup(node.id, to: nil) }
             }
             Text("메타데이터 (JSON)").font(.subheadline.weight(.semibold))
             TextEditor(text: $metadata).font(.system(.caption, design: .monospaced))

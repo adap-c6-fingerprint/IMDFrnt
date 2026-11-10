@@ -37,6 +37,10 @@ extension RoutingGraph {
         var result = VerticalReplicationResult()
         let group = source.verticalGroupID ?? UUID()
         if let index = nodes.firstIndex(where: { $0.id == sourceID }) { nodes[index].verticalGroupID = group }
+        migrateNodeGroups()
+        if nodeGroup(group) == nil {
+            nodeGroups = (nodeGroups ?? []) + [RoutingNodeGroup(id: group, name: source.name.isEmpty ? "시설 · \(group.uuidString.prefix(8))" : source.name)]
+        }
 
         let targets = floors.filter { $0.id != source.floorID && (targetFloorIDs?.contains($0.id) ?? true) }
         for target in targets {
@@ -66,18 +70,9 @@ extension RoutingGraph {
 
     /// 층 번호가 이웃한 엘리베이터 노드끼리만 잇는다. 이미 있는 연결은 그대로 둔다.
     mutating func connectElevatorGroup(_ group: UUID) -> Int {
-        let members = verticalGroup(group).filter { $0.category == RoutingNodeCategory.elevator.rawValue }
-        var added = 0
-        for (a, b) in zip(members, members.dropFirst()) {
-            guard let aOrdinal = floor(a.floorID)?.ordinal,
-                  let bOrdinal = floor(b.floorID)?.ordinal,
-                  aOrdinal < Int.max,
-                  bOrdinal == aOrdinal + 1 else { continue }
-            let before = edges.count
-            _ = connect(a.id, b.id)
-            added += edges.count - before
-        }
-        return added
+        guard verticalGroup(group).allSatisfy({ $0.category == "elevator" }) else { return 0 }
+        migrateNodeGroups()
+        return reconcileNodeGroup(group)
     }
 }
 

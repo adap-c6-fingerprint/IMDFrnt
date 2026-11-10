@@ -50,7 +50,7 @@ enum NavigationDatasetSelfTest {
             file.buildingProject = persisted
             let reopened = try ProjectFile.decoded(from: file.encoded()).commonProject()
             let again = try NavigationDataset.build(project: reopened)
-            check("#99 저장 v9·재열기/반복 출력 UUID·바이트 유지", file.version == 9 && again.files == output.files)
+            check("#99 현재 형식 저장·재열기/반복 출력 UUID·바이트 유지", file.version == ProjectFile.currentVersion && again.files == output.files)
             check("#99 도형·그래프·기존 대장은 원본에서 불변", project.levels[0].editing.ids.peek(unit.id) == nil && project.routingGraph == persisted.routingGraph && project.imdfFiles() == persisted.imdfFiles())
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("IMDFrntNavOnly-\(UUID())")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

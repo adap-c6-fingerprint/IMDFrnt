@@ -13,8 +13,10 @@ enum RoutingExporter {
         return object
     }
 
-    static func collection(_ graph: RoutingGraph) throws -> [String: Any] {
-        do { try graph.validateEdgeGroups() }
+    static func collection(_ original: RoutingGraph) throws -> [String: Any] {
+        var graph = original
+        graph.migrateNodeGroups()
+        do { try graph.validateEdgeGroups(); try graph.validateNodeGroups() }
         catch { throw Failure(messages: [error.localizedDescription]) }
         var errors: [String] = []
         if graph.nodes.isEmpty { errors.append("먼저 노드를 찍어 주세요.") }
@@ -73,6 +75,7 @@ enum RoutingExporter {
                                "level_id": floor.id.uuidString.lowercased(), "name": node.name,
                                "category": node.category, "metadata": try metadata(node.metadataJSON)]
             if let group = node.verticalGroupID { properties["vertical_group_id"] = group.uuidString.lowercased() }
+            if let group = graph.nodeGroup(node.verticalGroupID) { properties["vertical_group_name"] = group.name }
             features.append([
                 "type": "Feature", "id": node.id.uuidString.lowercased(),
                 "properties": properties,
@@ -88,6 +91,7 @@ enum RoutingExporter {
                 properties["group_id"] = group.id.uuidString.lowercased()
                 properties["group_name"] = group.name
             }
+            if let group = edge.autoVerticalGroupID { properties["vertical_group_id"] = group.uuidString.lowercased() }
             features.append([
                 "type": "Feature", "id": edge.id.uuidString.lowercased(),
                 "properties": properties,
@@ -95,6 +99,9 @@ enum RoutingExporter {
             ])
         }
         return ["type": "FeatureCollection", "schema_version": 1,
+                "node_groups": (graph.nodeGroups ?? []).sorted { $0.id.uuidString < $1.id.uuidString }.map {
+                    ["id": $0.id.uuidString.lowercased(), "name": $0.name]
+                },
                 "layout_version": graph.layoutVersion,
                 "routing_config": ["hard_search_radius_meters": graph.hardSearchRadiusMeters],
                 "features": features]
