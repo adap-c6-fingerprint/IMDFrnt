@@ -26,6 +26,7 @@ struct CanvasBatches {
         var background: CanvasBackground
         var primaryOpacity: Double
         var objectCount: Int
+        var workOnly: Bool? = nil
     }
 
     var key: Key
@@ -48,6 +49,7 @@ struct GhostBatches {
 @MainActor
 final class CanvasBatchStore {
     var objects: CanvasBatches?
+    var workObjects: CanvasBatches?
     var ghost: GhostBatches?
 }
 
@@ -76,18 +78,19 @@ extension CanvasView {
 @MainActor
 extension AppEnvironment {
     /// 지금 표시 상태로 만든 개체 묶음. 표시 상태·도형·배경·상위 레이어 투명도가 같으면 만든 것을 그대로 준다.
-    func canvasObjectBatches(document doc: DrawingDocument, primaryOpacity: Double) -> CanvasBatches {
+    func canvasObjectBatches(document doc: DrawingDocument, primaryOpacity: Double, workOnly: Bool? = nil) -> CanvasBatches {
         let states = renderStates()
         let key = CanvasBatches.Key(states: renderStateRevision, geometry: geometryRevision,
                                     background: canvasBackground, primaryOpacity: primaryOpacity,
-                                    objectCount: doc.objects.count)
-        if let hit = canvasBatchStore.objects, hit.key == key { return hit }
+                                    objectCount: doc.objects.count, workOnly: workOnly)
+        if let hit = workOnly == true ? canvasBatchStore.workObjects : canvasBatchStore.objects, hit.key == key { return hit }
         let background = canvasBackground, segmentation = segmentation, cache = renderCache
         var fills: [(Color, Path)] = []
         var strokes: [CanvasBatches.Stroke: Path] = [:], strokeOrder: [(rank: Int, key: CanvasBatches.Stroke)] = []
         var boxes: [CGRect] = []
         for o in doc.objects {
             let st = states[o.id] ?? renderState(for: o)
+            if let workOnly, (st.isTaggedHere || st.isTaggedOtherLayer) != workOnly { continue }
             guard st.isVisible, st.opacity * primaryOpacity > 0.01 else { continue }
             let entry = cache.entry(for: o, segmentation: segmentation)
             if let fill = o.style.fill {
@@ -112,7 +115,8 @@ extension AppEnvironment {
                                  fills: fills,
                                  strokes: ordered.map { ($0.element.key, strokes[$0.element.key] ?? Path()) },
                                  selectedBoxes: boxes)
-        canvasBatchStore.objects = made
+        if workOnly == true { canvasBatchStore.workObjects = made }
+        else { canvasBatchStore.objects = made }
         return made
     }
 

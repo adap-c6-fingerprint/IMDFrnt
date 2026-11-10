@@ -8,18 +8,12 @@ struct DrawingLayersPanel: View {
             if let level = env.activeLevel {
                 Text("\(level.info.name) 도면 레이어").font(.headline)
                 if level.info.imdfCoordinates == nil {
-                    controls("SVG 도면", kind: "svg", value: env.primarySVGPresentation)
+                    DrawingLayerVisibilityControls(title: "기본 도면", kind: "svg", value: env.primarySVGPresentation)
                     Button("이 층 도면 불러오기…") { env.importRoutingDrawing() }
                 } else {
                     Text("IMDF 도형").font(.callout.weight(.medium))
-                    if let reference = level.referenceDrawing {
-                        controls("참고 SVG", kind: "reference", value: reference.presentation)
-                        Text(reference.sourceName).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        Button(role: .destructive) { env.requestReferenceDrawingDeletion() } label: { Text("참고 도면 삭제").foregroundStyle(.red) }
-                    }
-                    Button("참고 도면 불러오기…") { env.importRoutingDrawing() }
-                    Text("참고 도면은 도면 영역에 맞춰 표시됩니다.").font(.caption2).foregroundStyle(.secondary)
                 }
+                ReferenceDrawingLayerControls()
                 Text("전역 Footprint의 표시·편집은 메인 화면의 footprint 레이어에서 관리합니다.")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
@@ -29,7 +23,15 @@ struct DrawingLayersPanel: View {
         .disabled(env.isProjectBusy)
     }
 
-    private func controls(_ title: String, kind: String, value: DrawingLayerPresentation) -> some View {
+}
+
+struct DrawingLayerVisibilityControls: View {
+    @EnvironmentObject var env: AppEnvironment
+    let title: String
+    let kind: String
+    let value: DrawingLayerPresentation
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle(title, isOn: Binding(get: { value.isVisible }, set: { env.updateDrawingLayer(kind, visible: $0) }))
             HStack {

@@ -144,13 +144,13 @@ extension AppEnvironment {
 
 /// 점을 칸으로 나눠 둔 색인. 클릭 근처의 점 찾기와 화면에 보이는 점만 그리기에 쓴다 —
 /// C5 도면은 점이 약 4만 8천 개라 매번 전부 훑으면 그리기가 느려진다.
-struct SnapPointGrid {
+struct SnapPointGrid: Sendable {
     private var cells: [Int64: [Int]] = [:]
     private(set) var points: [SnapPointExtractor.SnapPoint] = []
     private var cellSize: Double = 1
     private var keys: [GridKey: Int] = [:]
 
-    struct GridKey: Hashable {
+    struct GridKey: Hashable, Sendable {
         let x: Int64
         let y: Int64
         init(_ p: LocalPoint) {

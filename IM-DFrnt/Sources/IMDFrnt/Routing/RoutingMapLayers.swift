@@ -70,26 +70,28 @@ struct RoutingMapDrawing {
               backgroundColors: CanvasBackground, scale: CGFloat, visible: CGRect,
               reference: (GraphicsContext) -> Void = { _ in }) {
         // enum 순서가 합성 순서다. 불투명도는 면/선 각각이 아니라 레이어 전체에 적용한다.
-        for layer in RoutingMapLayer.allCases where settings[layer] > 0 {
-            var composite = context
-            composite.opacity *= settings[layer]
-            composite.drawLayer { ctx in
-                if layer == .background {
-                    reference(ctx)
-                    background.drawImages(in: ctx)
-                }
-                for shape in shapes[layer] ?? [] {
-                    let width = CanvasZoom.strokeWidth(shape.style.strokeWidth, at: scale)
-                    guard shape.bounds.insetBy(dx: -width - 2, dy: -width - 2).intersects(visible) else { continue }
-                    if let fill = shape.style.fill {
-                        ctx.fill(shape.path, with: .color(backgroundColors.resolveFill(fill)), style: FillStyle(eoFill: true))
+        for layer in RoutingMapLayer.allCases {
+            if settings[layer] > 0 {
+                var composite = context
+                composite.opacity *= settings[layer]
+                composite.drawLayer { ctx in
+                    if layer == .background {
+                        background.drawImages(in: ctx)
                     }
-                    if let stroke = shape.style.stroke {
-                        ctx.stroke(shape.path, with: .color(backgroundColors.resolve(stroke)),
-                                   style: StrokeStyle(lineWidth: width, dash: shape.style.dashPattern.map { CGFloat($0) }))
+                    for shape in shapes[layer] ?? [] {
+                        let width = CanvasZoom.strokeWidth(shape.style.strokeWidth, at: scale)
+                        guard shape.bounds.insetBy(dx: -width - 2, dy: -width - 2).intersects(visible) else { continue }
+                        if let fill = shape.style.fill {
+                            ctx.fill(shape.path, with: .color(backgroundColors.resolveFill(fill)), style: FillStyle(eoFill: true))
+                        }
+                        if let stroke = shape.style.stroke {
+                            ctx.stroke(shape.path, with: .color(backgroundColors.resolve(stroke)),
+                                       style: StrokeStyle(lineWidth: width, dash: shape.style.dashPattern.map { CGFloat($0) }))
+                        }
                     }
                 }
             }
+            if layer == .background { reference(context) }
         }
     }
 }

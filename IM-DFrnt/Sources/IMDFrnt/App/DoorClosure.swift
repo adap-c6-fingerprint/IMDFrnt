@@ -82,7 +82,10 @@ extension AppEnvironment {
             doorDraftPoints.remove(at: idx)
             return
         }
-        if let snap = SnapPointExtractor.nearest(to: point, among: doorSnapCache, within: radius) {
+        let primary = SnapPointExtractor.nearest(to: point, among: doorSnapCache, within: radius)
+        let candidate = nearestDrawingSnap(to: point, within: radius)
+        let snap = [primary, candidate].compactMap { $0 }.min { $0.point.distance(to: point) < $1.point.distance(to: point) }
+        if let snap {
             toggleDoorPoint(snap.point)
             return
         }

@@ -21,6 +21,9 @@ enum ProjectOpeningPreparation {
         }
         for level in project.levels {
             if let reference = level.referenceDrawing {
+                guard reference.alignment?.isValid != false else {
+                    throw CocoaError(.coderReadCorrupt)
+                }
                 _ = try SVGParser.parse(data: Data(reference.svg.utf8), sourceName: reference.sourceName)
             }
         }
@@ -90,8 +93,9 @@ extension AppEnvironment {
     }
 
     @discardableResult
-    func importDrawingAsync(at url: URL, confirmingChanges: (() -> Bool)? = nil) async -> DocumentOpenResult {
+    func importDrawingAsync(at url: URL, asReference: Bool = false, confirmingChanges: (() -> Bool)? = nil) async -> DocumentOpenResult {
         guard !isProjectBusy else { return .failed }
+        guard !asReference || activeLevel != nil else { return .failed }
         isProjectActionInProgress = true
         let task = beginLongTask("도면 불러오는 중", detail: url.lastPathComponent, fraction: nil)
         defer { isProjectActionInProgress = false; endLongTask(task) }
@@ -110,7 +114,9 @@ extension AppEnvironment {
             // Finder's unsaved-work decision follows validation and precedes
             // every mutation, including clearing an anchor-only editor.
             guard confirmingChanges?() ?? true else { return .cancelled }
-            if buildingProject.levels.isEmpty {
+            if asReference {
+                applyReferenceDrawing(prepared)
+            } else if buildingProject.levels.isEmpty {
                 if !hasCreatedProject { resetProjectState() }
                 perform("첫 층 도면 불러오기") {
                     let info = ProjectLevelInfo(id: id, name: "1층", ordinal: 0, sourceName: prepared.input.sourceName, svg: prepared.input.svg)

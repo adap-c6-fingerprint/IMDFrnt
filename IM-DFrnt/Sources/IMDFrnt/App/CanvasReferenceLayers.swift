@@ -14,7 +14,9 @@ struct PreparedCanvasReferences: Sendable {
     let input: CanvasReferenceInput
     let reference: DrawingDocument?
     let paths: [Path]
+    let bounds: [CGRect]
     let footprintPaths: [Path]
+    let snapIndex: SnapPointGrid
 
     static func make(_ input: CanvasReferenceInput) throws -> Self {
         let doc = try input.svg.isEmpty ? nil : SVGParser.parse(data: Data(input.svg.utf8), sourceName: input.sourceName)
@@ -42,7 +44,11 @@ struct PreparedCanvasReferences: Sendable {
             if !path.isEmpty { footprints.append(path) }
         }
         try Task.checkCancellation()
-        return Self(input: input, reference: doc, paths: doc?.objects.map { $0.geometry.swiftUIPath } ?? [], footprintPaths: footprints)
+        let snaps = doc.map { SnapPointExtractor.points(in: $0.objects, segmentation: SegmentationStore()) } ?? []
+        try Task.checkCancellation()
+        return Self(input: input, reference: doc, paths: doc?.objects.map { $0.geometry.swiftUIPath } ?? [],
+                    bounds: doc?.objects.map { $0.geometry.boundingBox } ?? [],
+                    footprintPaths: footprints, snapIndex: SnapPointGrid(points: snaps))
     }
 }
 
@@ -91,6 +97,8 @@ extension AppEnvironment {
 
     func applyReferenceDrawing(_ prepared: PreparedLevelDrawing) {
         guard let i = buildingProject.levels.firstIndex(where: { $0.id == prepared.input.levelID }) else { return }
+        isAligningReferenceDrawing = false
+        referenceDrawingPreview = nil
         perform("층 참고 도면 불러오기") {
             buildingProject.levels[i].referenceDrawing = LevelReferenceDrawing(svg: prepared.input.svg, sourceName: prepared.input.sourceName)
         }
@@ -114,6 +122,10 @@ extension AppEnvironment {
                 buildingProject.levels[i].svgPresentation = presentation
             }
         }
+        if kind == "reference", visible == false || value == 0 {
+            isAligningReferenceDrawing = false
+            referenceDrawingPreview = nil
+        }
         invalidateRenderStates()
     }
 
@@ -122,6 +134,8 @@ extension AppEnvironment {
         requestDeletion(title: "참고 도면을 삭제할까요?", message: "\(reference.sourceName)을 이 층에서 제거합니다. IMDF 도형과 노드·연결은 유지됩니다.") { env in
             env.perform("층 참고 도면 삭제") {
                 if let i = env.buildingProject.levels.firstIndex(where: { $0.id == id }) { env.buildingProject.levels[i].referenceDrawing = nil }
+                env.isAligningReferenceDrawing = false
+                env.referenceDrawingPreview = nil
             }
         }
     }

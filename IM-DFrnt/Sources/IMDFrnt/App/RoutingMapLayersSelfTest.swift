@@ -142,7 +142,12 @@ enum RoutingMapLayersSelfTest {
         let referenceOnly = RoutingMapDrawing(background: empty, shapes: [:])
         let visibleReference = pixel(RoutingMapLayerSettings(background: 1, unit: 0, fixture: 0), map: referenceOnly, reference: true)
         let hiddenReference = pixel(RoutingMapLayerSettings(background: 0, unit: 1, fixture: 1), map: referenceOnly, reference: true)
-        check("#92 참고 도면도 배경 0%에서 숨김", visibleReference?.alphaComponent == 1 && hiddenReference?.alphaComponent == 0)
+        check("#121 참고 도면은 기본 배경 투명도와 독립", visibleReference?.alphaComponent == 1 && hiddenReference?.alphaComponent == 1)
+        let blueBackground = RoutingMapDrawing(background: empty, shapes: [.background: [shape(RGBAColor(r: 0, g: 0, b: 1, a: 1))]])
+        let referenceAbove = pixel(RoutingMapLayerSettings(background: 1, unit: 0, fixture: 0), map: blueBackground, reference: true)
+        check("#121 참고 도면은 불투명 기본 배경보다 위에 합성", referenceAbove.map { $0.redComponent > $0.blueComponent + 0.5 } == true)
+        let unitAbove = pixel(RoutingMapLayerSettings(background: 1, unit: 1, fixture: 0), reference: true)
+        check("#121 IMDF Unit은 참고 도면보다 위에 합성", unitAbove.map { $0.greenComponent > 0.55 && $0.redComponent < 0.05 } == true)
         let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1, bitsPerSample: 8,
             samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         bitmap.setColor(.red, atX: 0, y: 0)

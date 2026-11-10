@@ -276,7 +276,7 @@ extension AppEnvironment {
     }
 
     private func rawPointTarget(near point: LocalPoint, radius: Double, freePoint: Bool, edges: Bool) -> LocalPoint? {
-        let snap = snapPointIndex.nearest(to: point, within: radius)?.point
+        let snap = nearestDrawingSnap(to: point, within: radius)?.point
         let saved = savedFeatureVertex(near: point, radius: radius)
         switch (snap, saved) {
         case let (s?, v?): return s.distance(to: point) < v.distance(to: point) ? s : v
@@ -627,7 +627,7 @@ extension AppEnvironment {
     /// 끄는 동안에도 꼭짓점·교점 근처면 그 점에 붙여 보여준다. 놓았을 때와 같은 자리를 미리 보여야 한다.
     func updateVertexDrag(to p: LocalPoint, tolerance: Double, freePoint: Bool) {
         guard var drag = vertexDrag else { return }
-        if let snap = snapPointIndex.nearest(to: p, within: tolerance * 1.5) {
+        if let snap = nearestDrawingSnap(to: p, within: tolerance * 1.5) {
             drag.location = snap.point
         } else {
             drag.location = p

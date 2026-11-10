@@ -150,7 +150,14 @@ final class AppEnvironment: ObservableObject {
         }
     }
     @Published var showRoutingScreen = false
-    @Published var routingFloorID: UUID?
+    @Published var routingFloorID: UUID? {
+        didSet {
+            if routingFloorID != oldValue {
+                isAligningReferenceDrawing = false
+                referenceDrawingPreview = nil
+            }
+        }
+    }
     @Published var routingSelectedFeature: RoutingFeatureReference?
     @Published var routingFeatureCandidates: [RoutingFeatureReference] = []
     @Published var routingFeatureReplacement: RoutingFeatureReplacement?
@@ -179,6 +186,8 @@ final class AppEnvironment: ObservableObject {
     @Published var drawingLoadError: String?
     var isInstallingLevelDrawing = false
     @Published var canvasReferences: PreparedCanvasReferences?
+    @Published var isAligningReferenceDrawing = false
+    @Published var referenceDrawingPreview: ReferenceDrawingAlignment?
     var canvasReferenceCache: [UUID: PreparedCanvasReferences] = [:]
     var canvasReferenceTask: Task<Void, Never>?
 
@@ -600,6 +609,8 @@ final class AppEnvironment: ObservableObject {
         levelDrawingCache.reset()
         canvasReferenceTask?.cancel(); canvasReferenceTask = nil
         canvasReferenceCache = [:]; canvasReferences = nil
+        isAligningReferenceDrawing = false
+        referenceDrawingPreview = nil
         document = nil
         loadedSVG = nil
         projectID = id
