@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 ///
 /// 규격(OGC 20-094 Archives·Manifest 절, 위키 src18)과 C5 예제를 따른다.
 /// - ZIP 최상위에 `manifest.json`과 `{type}.geojson`을 둔다. 하위 폴더를 만들지 않는다(C5 예제와 같다).
-/// - 필수 파일과 레코드·속성·참조·공간 관계는 최종 바이트로 검증한다. 초안 저장과 공식 내보내기는 구분한다.
+/// - 최종 바이트를 검증하며, 앱의 ZIP 출력에서만 명시적 확인을 받고 완결성 위반을 허용한다.
 /// - 각 층의 level feature는 **그 층의 UUID를 id로 쓴다.** 같은 층의 다른 feature의 `level_id`가 비어 있으면 이 값으로 채운다.
 enum IMDFArchive {
 
@@ -24,6 +24,8 @@ enum IMDFArchive {
         var ids: [UUID: IDAssigner]
         var featureCounts: [String: Int]
         var warnings: [String]
+        /// 사용자가 확인하기 전까지 저장하면 안 되는 IMDF 완결성 위반.
+        var validationErrors: [String] = []
     }
 
     struct Blocked: Error, Sendable { let messages: [String] }
@@ -34,13 +36,15 @@ enum IMDFArchive {
     /// 백그라운드에서 돌리기 위해 값 대신 데이터로 받는다.
     static func build(projectData: Data, documents: [UUID: DrawingDocument],
                       now: Date = Date(), reporter: LongTaskReporter? = nil,
-                      openingBoundaryPolicy: IMDFValidation.OpeningBoundaryPolicy = .strict) throws -> Output {
+                      openingBoundaryPolicy: IMDFValidation.OpeningBoundaryPolicy = .strict,
+                      allowValidationErrors: Bool = false) throws -> Output {
         let file = try ProjectFile.decoded(from: projectData)
         let project = file.commonProject()
         let levels = project.levels.sorted { $0.info.ordinal < $1.info.ordinal }
         let imported = project.imdfFiles()
         let defaultLanguage = project.manifest["language"]?.string ?? "ko"
         var blockers: [String] = []
+        var validationErrors: [String] = []
         if project.legacyManifests?.isEmpty == false && project.manifestConflictsResolved != true {
             blockers.append("이전 층별 Manifest 값이 서로 다릅니다. 상단 manifest 또는 건물·층 관리에서 사용할 값을 선택하세요.")
         }
@@ -91,19 +95,23 @@ enum IMDFArchive {
             for type in Set(p.features.map(\.featureType)).sorted(by: { $0.rawValue < $1.rawValue }) {
                 for blocker in validator.validate(type: type) where blocker != .noFeatures {
                     let message = "\(name): \(blocker.message)"
-                    if seen.insert(message).inserted { blockers.append(message) }
+                    if seen.insert(message).inserted {
+                        if case .geometryMismatch = blocker { validationErrors.append(message) }
+                        else { blockers.append(message) }
+                    }
                 }
             }
             let levelFeatures = p.features.filter { $0.featureType == .level }
             let importedLevels = p.level.geoJSON["level.geojson"]?.count ?? 0
             if levelFeatures.count > 1 {
-                blockers.append("\(name): level 다각형이 \(levelFeatures.count)개입니다. 층 하나에 level은 하나여야 합니다.")
+                validationErrors.append("\(name): level 다각형이 \(levelFeatures.count)개입니다. 층 하나에 level은 하나여야 합니다.")
             } else if levelFeatures.isEmpty && importedLevels == 0 {
-                blockers.append("\(name): level 다각형이 없습니다. level 레이어에서 층의 외곽을 그려야 다른 개체가 이 층을 가리킬 수 있습니다.")
+                validationErrors.append("\(name): level 다각형이 없습니다. level 레이어에서 층의 외곽을 그려야 다른 개체가 이 층을 가리킬 수 있습니다.")
             }
         }
-        // 정보 type 칸 점검(2026-10-20). Apple 검증의 Violation은 받아 주지 않으니 내보내기를 막고, Warning은 알리기만 한다.
+        // 좌표 생성·마이그레이션 실패는 동의로 우회하지 않는다. 완결성 위반만 별도로 모은다.
         guard blockers.isEmpty else { throw Blocked(messages: blockers) }
+        if !allowValidationErrors, !validationErrors.isEmpty { throw Blocked(messages: validationErrors) }
 
         // 3. id 먼저 발급 — 건물·주소 id를 알아야 building_ids·address_id를 채운다.
         //    level feature의 id는 그 층의 UUID다(가져온 IMDF의 층 id와도 같다).
@@ -213,12 +221,16 @@ enum IMDFArchive {
             files[name] = try encode(value.anyValue)
             // 가져온 아카이브에 있던 다른 파일(LICENSE 등)도 버리지 않는다.
         }
+        guard files.keys.allSatisfy({ !$0.contains("/") && !$0.contains("\\") && $0 != "." && $0 != ".." }) else {
+            throw Blocked(messages: ["IMDF 파일명에는 경로나 상위 폴더를 지정할 수 없습니다."])
+        }
         let validation = IMDFValidation.check(files: files, openingBoundaryPolicy: openingBoundaryPolicy)
-        guard validation.errors.isEmpty else { throw Blocked(messages: validation.errors) }
+        validationErrors += validation.errors
+        if !allowValidationErrors, !validationErrors.isEmpty { throw Blocked(messages: validationErrors) }
         warnings += validation.warnings
         reporter?.report(1, "완료")
         return Output(files: files, ids: Dictionary(uniqueKeysWithValues: prepared.map { ($0.level.id, $0.ids) }),
-                      featureCounts: counts, warnings: warnings)
+                      featureCounts: counts, warnings: warnings, validationErrors: validationErrors)
     }
 
     /// `version`은 1.0.0만 허용되고, `created`는 패키징 시각으로 매번 새로 쓴다(SHOULD).
@@ -293,7 +305,7 @@ extension AppEnvironment {
         exportIMDFArchive(only: type, openingBoundaryPolicy: .strict)
     }
 
-    /// A separate opt-in command; regular ZIP, individual GeoJSON and client exports remain strict.
+    /// Opening 전용 Sandbox 정책은 유지하며, 추가 완결성 위반은 일반 ZIP처럼 사용자 확인을 받는다.
     func exportIMDFForSandbox() {
         exportIMDFArchive(only: nil, openingBoundaryPolicy: .allowMismatchForSandbox)
     }
@@ -322,7 +334,8 @@ extension AppEnvironment {
             do {
                 output = try await Task.detached(priority: .userInitiated) {
                     try IMDFArchive.build(projectData: projectData, documents: drawings, reporter: reporter,
-                                          openingBoundaryPolicy: openingBoundaryPolicy)
+                                          openingBoundaryPolicy: openingBoundaryPolicy,
+                                          allowValidationErrors: type == nil)
                 }.value
             } catch let blocked as IMDFArchive.Blocked {
                 endLongTask(task)
@@ -333,8 +346,9 @@ extension AppEnvironment {
                 return
             }
             endLongTask(task)
-            adoptExportedIDs(output.ids)
-            // 새로 발급한 id를 프로젝트에 남긴다. 다음 내보내기에서 같은 feature가 같은 id를 갖는다(IMDF 요건).
+            if type == nil, !output.validationErrors.isEmpty || !output.warnings.isEmpty {
+                guard confirmIncompleteIMDFExport(output) else { return }
+            }
 
             let panel = NSSavePanel()
             let sandbox = openingBoundaryPolicy == .allowMismatchForSandbox
@@ -346,23 +360,51 @@ extension AppEnvironment {
             panel.allowedContentTypes = filename == nil ? [.zip] : [.json, UTType(filenameExtension: "geojson") ?? .json]
             panel.canCreateDirectories = true
             panel.title = sandbox ? "Sandbox 검사용 IMDF 저장" : "IMDF 아카이브 저장"
-            panel.message = sandbox ? "Opening–Unit 경계 불일치만 허용합니다. 도형을 수정하거나 다른 오류를 무시하지 않습니다. 최종 제출 전 Sandbox에서 확인하세요."
+            panel.message = !output.validationErrors.isEmpty ? "확인한 검증 경고를 포함해 저장합니다. Apple 제출 요건을 만족하는 파일이라는 뜻은 아닙니다."
+                : sandbox ? "Opening–Unit 경계 불일치를 허용합니다. 도형은 수정하지 않습니다. 최종 제출 전 Sandbox에서 확인하세요."
                 : filename == nil ? "IMDF 규격은 ZIP(.zip)으로 전달하도록 정합니다."
                 : "전체 프로젝트를 검증한 뒤 모든 층의 이 타입을 한 파일로 저장합니다. 이 파일 하나는 완전한 IMDF 아카이브가 아닙니다."
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do {
                 if let filename { try output.files[filename]!.write(to: url, options: .atomic) }
                 else { try IMDFArchive.writeZip(output.files, to: url) }
+                adoptExportedIDs(output.ids)
+                // 경고 또는 저장 패널에서 취소한 경우 새 UUID를 프로젝트에 반영하지 않는다.
                 let total = output.featureCounts.values.reduce(0, +)
                 let summary = "\(url.lastPathComponent) 저장 완료 — feature \(total)개, 파일 \(output.files.count)개"
-                notify(output.warnings.isEmpty ? summary : summary + " · " + output.warnings.joined(separator: " "),
-                       isError: !output.warnings.isEmpty)
+                let issueCount = output.validationErrors.count + output.warnings.count
+                if type != nil {
+                    notify(output.warnings.isEmpty ? summary : summary + " · " + output.warnings.joined(separator: " "),
+                           isError: !output.warnings.isEmpty)
+                } else {
+                    notify(issueCount == 0 ? summary : summary + " · 검증 경고 \(issueCount)건을 포함해 저장했습니다.")
+                }
             } catch let blocked as IMDFArchive.Blocked {
                 notify(blocked.messages.joined(separator: " "), isError: true)
             } catch {
                 notify("저장 실패: \(error.localizedDescription)", isError: true)
             }
         }
+    }
+
+    private func confirmIncompleteIMDFExport(_ output: IMDFArchive.Output) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "IMDF 검증 경고"
+        alert.informativeText = "IMDF 완결성 또는 권장 조건을 만족하지 않습니다. 그래도 내보내면 현재 도형과 속성을 그대로 ZIP에 저장합니다. Apple IMDF 적합성이나 제출 승인을 보장하지 않습니다."
+        alert.addButton(withTitle: "취소")
+        alert.addButton(withTitle: "그래도 내보내기")
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 240))
+        scroll.hasVerticalScroller = true
+        let text = NSTextView(frame: scroll.bounds)
+        text.isEditable = false
+        text.isVerticallyResizable = true
+        text.textContainer?.widthTracksTextView = true
+        text.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        text.string = (output.validationErrors + output.warnings).joined(separator: "\n\n")
+        scroll.documentView = text
+        alert.accessoryView = scroll
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     /// 층별 id 대장을 되돌려 넣는다. 지금 층은 편집 중인 값에도 반영한다.
