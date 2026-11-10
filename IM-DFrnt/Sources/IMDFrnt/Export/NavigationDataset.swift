@@ -15,7 +15,8 @@ enum NavigationDataset {
 
     static func build(project: BuildingProject) throws -> Output {
         try project.validate()
-        let graph = project.routingGraph
+        var graph = project.routingGraph
+        graph.migrateNodeGroups()
         let routing = try RoutingExporter.encoded(graph)
         let unitLevels = project.unitLevelReferences
         var ids: [UUID: IDAssigner] = [:]
@@ -45,9 +46,13 @@ enum NavigationDataset {
         let groups: [ProjectJSON] = (graph.edgeGroups ?? []).map {
             .object(["id": .string($0.id.uuidString.lowercased()), "name": .string($0.name)])
         }
+        let nodeGroups: [ProjectJSON] = (graph.nodeGroups ?? []).sorted { $0.id.uuidString < $1.id.uuidString }.map {
+            .object(["id": .string($0.id.uuidString.lowercased()), "name": .string($0.name)])
+        }
         let manifest = try ProjectJSON.object([
             "schema_version": .number(1), "kind": .string("navigation-only"),
             "layout_version": .string(graph.layoutVersion), "levels": .array(levels), "edge_groups": .array(groups),
+            "node_groups": .array(nodeGroups),
             "routing_file": .string(ClientDataset.routingFile), "routing_sha256": .string(ClientDataset.sha256(routing)),
             "feature_links_file": .string(NavigationFeatureLinks.fileName), "feature_links_sha256": .string(ClientDataset.sha256(links))
         ]).data()

@@ -79,6 +79,8 @@ struct RoutingEdge: Identifiable, Equatable, Codable {
     var accessible = true
     var category: RoutingEdgeCategory = .walkway
     var groupID: UUID?
+    /// Only these connections may be removed when facility group membership changes.
+    var autoVerticalGroupID: UUID?
 }
 
 struct RoutingEdgeGroup: Identifiable, Equatable, Codable {
@@ -107,6 +109,7 @@ struct RoutingGraph: Equatable, Codable {
     var imdfSourceName: String?
     /// Optional for projects written before edge grouping (#88).
     var edgeGroups: [RoutingEdgeGroup]?
+    var nodeGroups: [RoutingNodeGroup]?
 
     func edgeGroup(_ id: UUID?) -> RoutingEdgeGroup? { edgeGroups?.first { $0.id == id } }
 

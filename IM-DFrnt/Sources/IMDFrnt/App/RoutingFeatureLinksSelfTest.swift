@@ -70,7 +70,7 @@ enum RoutingFeatureLinksSelfTest {
         do {
             let file = env.makeProjectFile()!, data = try file.encoded(), reopened = AppEnvironment()
             try reopened.adopt(ProjectFile.decoded(from: data), from: nil)
-            check("#95 v9 저장·재열기로 연결 보존", file.version == 9 && reopened.routing == env.routing)
+            check("#95 현재 형식 저장·재열기로 연결 보존", file.version == ProjectFile.currentVersion && reopened.routing == env.routing)
             var legacy = try ProjectJSON.parse(data); legacy["version"] = .number(8)
             var project = legacy["buildingProject"]!
             var levels = project["levels"]!.array

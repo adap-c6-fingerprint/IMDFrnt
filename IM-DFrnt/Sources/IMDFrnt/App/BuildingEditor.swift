@@ -249,6 +249,14 @@ extension AppEnvironment {
             buildingProject.levels[i].info = info
             updateLevelFeature(i, previous: previous)
             if id == routingFloorID { anchors = info.anchors }
+            if previous.ordinal != info.ordinal {
+                var graph = buildingProject.routingGraph
+                // A floor edit must not opt old node-only stair groups into automatic connections.
+                let managed = Set(graph.edges.compactMap(\.autoVerticalGroupID))
+                for group in managed { _ = graph.reconcileNodeGroup(group) }
+                buildingProject.applyRouting(graph)
+                normalizeRoutingEdgeState()
+            }
         }
     }
 
@@ -330,6 +338,7 @@ extension ProjectFile {
             buildingProject.migrateGlobalMetadata()
             buildingProject.migrateLevelFootprintsToGlobal()
             buildingProject.migrateSharedFootprint()
+            buildingProject.migrateNodeGroups()
             return buildingProject
         }
         var project = BuildingProject()
@@ -351,6 +360,7 @@ extension ProjectFile {
         project.migrateGlobalMetadata()
         project.migrateLevelFootprintsToGlobal()
         project.migrateSharedFootprint()
+        project.migrateNodeGroups()
         return project
     }
 }

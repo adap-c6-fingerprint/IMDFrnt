@@ -82,11 +82,14 @@ extension AppEnvironment {
         let metadata: BuildingProject?
         let mergedRecords: [String: [ProjectJSON]]?
         let mergedEdgeGroups: [RoutingEdgeGroup]?
+        let mergedNodeGroups: [RoutingNodeGroup]?
         do {
             let linked = RoutingFeatureLinks.preparingImport(original, metadata: originalMetadata)
             let grouped = try RoutingEdgeGroupImport.prepare(linked, source: originalMetadata, target: projectContents)
             mergedEdgeGroups = grouped.groups
-            let prepared = try LevelImportIdentity.prepare(grouped.level, targetID: targetID,
+            let nodeGrouped = try RoutingNodeGroupImport.prepare(grouped.level, source: originalMetadata, target: projectContents)
+            mergedNodeGroups = nodeGrouped.groups
+            let prepared = try LevelImportIdentity.prepare(nodeGrouped.level, targetID: targetID,
                 project: projectContents, metadata: originalMetadata)
             source = prepared.level; metadata = prepared.metadata
             mergedRecords = try metadata.map { try prepareLevelMetadata($0, source: source, targetID: targetID) }
@@ -127,6 +130,7 @@ extension AppEnvironment {
             // IMDF에서 온 층은 GeoJSON이 원래 층 ID를 가리킨다. 지금 층 ID로 바꿔야 내보낼 때 어긋나지 않는다.
             buildingProject.levels[i] = level
             buildingProject.edgeGroups = mergedEdgeGroups
+            buildingProject.nodeGroups = mergedNodeGroups
             if let metadata, let mergedRecords {
                 mergeLevelMetadata(metadata, source: source, targetID: targetID, records: mergedRecords)
             }
