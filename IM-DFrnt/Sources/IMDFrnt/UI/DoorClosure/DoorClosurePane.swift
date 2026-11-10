@@ -87,6 +87,8 @@ struct DoorClosurePane: View {
                             dash: o.style.dashPattern.map { CGFloat($0) }))
             }
 
+            env.drawReferenceDrawing(in: ctx, canvas: doc.canvasSize, zoom: scale, showSnaps: true, visible: visible)
+
             // 2) 이미 저장한 임시 문 — 실선으로 굵게. 여기는 '이미 닫힌 자리'다.
             for d in env.doorClosures.doors {
                 var p = Path()

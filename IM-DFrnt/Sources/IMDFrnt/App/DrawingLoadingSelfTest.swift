@@ -233,6 +233,7 @@ enum DrawingLoadingSelfTest {
                 }
             }
             try await DrawingLoadingReviewSelfTest.run(environment: environment, check: check)
+            try await ReferenceDrawingSelfTest.run(environment: environment, check: check)
         } catch { check("도면 로딩 검증", false); print(error) }
         print("== Drawing Loading: \(total - failures)/\(total) PASS ==")
         exit(failures == 0 ? 0 : 1)

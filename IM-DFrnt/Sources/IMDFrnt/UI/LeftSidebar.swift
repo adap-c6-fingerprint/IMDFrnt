@@ -602,6 +602,13 @@ struct LeftSidebar: View {
 
     private var layerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
+            if env.activeLevel != nil {
+                if env.activeLevel?.info.imdfCoordinates == nil {
+                    DrawingLayerVisibilityControls(title: "기본 도면", kind: "svg", value: env.primarySVGPresentation)
+                }
+                ReferenceDrawingLayerControls()
+                Divider().padding(.vertical, 4)
+            }
             ForEach(otherLayers) { layer in
                 HStack(spacing: 6) {
                     Button {

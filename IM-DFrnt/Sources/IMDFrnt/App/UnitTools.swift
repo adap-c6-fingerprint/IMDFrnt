@@ -214,7 +214,7 @@ extension AppEnvironment {
             notify("unit의 변 위(꼭짓점에서 떨어진 자리)를 누르세요.", isError: true)
             return
         }
-        if let snap = snapPointIndex.nearest(to: q, within: radius)?.point,
+        if let snap = nearestDrawingSnap(to: q, within: radius)?.point,
            units.contains(where: { $0.polygonRings.contains { ring in
                ring.indices.contains { Self.projection(of: snap, onto: ring[$0], ring[($0 + 1) % ring.count]).distance(to: snap) < 1e-6 } } }) {
             q = snap

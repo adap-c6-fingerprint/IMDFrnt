@@ -30,6 +30,8 @@ struct CanvasView: View {
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var dragStart: CGSize?
+    @State private var referenceDragStart: ReferenceDrawingAlignment?
+    @State private var referenceDragFloorID: UUID?
     @State private var lastDrag: CGSize = .zero
     @State private var gestureScale: CGFloat = 1
     @State private var marquee: MarqueeRect?
@@ -95,6 +97,16 @@ struct CanvasView: View {
                     }
                 } else {
                     emptyState
+                }
+
+                if env.isAligningReferenceDrawing, env.activeLevel?.referenceDrawing != nil {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            ReferenceDrawingAlignmentControls()
+                        }
+                        Spacer()
+                    }.padding(12)
                 }
 
                 VStack {
@@ -282,7 +294,7 @@ struct CanvasView: View {
                 if let drawing = env.routingMapDrawingCache.value(env: env, document: doc) {
                     drawing.draw(in: ctx, settings: env.currentRoutingMapLayerSettings,
                                  backgroundColors: env.canvasBackground, scale: s, visible: visible) { reference in
-                        drawReferenceLayers(in: reference, canvasSize: doc.canvasSize, scale: s, routing: true)
+                        drawReferenceLayers(in: reference, canvasSize: doc.canvasSize, scale: s, routing: true, visible: visible)
                     }
                     if let selected = env.routingSelectedFeature, env.currentRoutingMapLayerSettings[selected.kind.layer] > 0 {
                         for shape in drawing.shapes[selected.kind.layer] ?? [] where shape.reference == selected {
@@ -295,7 +307,6 @@ struct CanvasView: View {
             }
             let states = env.renderStates()
             // 노드 화면은 별도 레이어를 쓰므로 도면 편집용 개체 상태는 필요할 때만 구한다.
-            drawReferenceLayers(in: ctx, canvasSize: doc.canvasSize, scale: s)
             let primary = env.currentRoutingFloor?.imdfCoordinates == nil ? env.primarySVGPresentation : DrawingLayerPresentation(isVisible: true, opacity: 1)
             if primary.isVisible {
                 var images = ctx; images.opacity *= primary.opacity
@@ -333,71 +344,81 @@ struct CanvasView: View {
             }
 
             // 상위 기본 레이어 / 현재 property type 레이어
-            let onScreen = env.spatialIndex.drawIndices(in: visible, moved: Set(offsets.keys),
-                                                        count: doc.objects.count)
-            // 확대해 일부만 보고 있으면 격자로 화면 안의 개체만 돈다. 6만 개를 매 프레임 훑던 것이 이동·확대 버벅임의 큰 몫이었다.
-            if primary.isVisible, onScreen == nil, offsets.isEmpty {
-                let batches = env.canvasObjectBatches(document: doc, primaryOpacity: primary.opacity)
-                var g = ctx
-                g.opacity *= primary.opacity
-                for (color, path) in batches.fills { g.fill(path, with: .color(color)) }
-                for (key, path) in batches.strokes {
-                    let style = StrokeStyle(lineWidth: CanvasZoom.strokeWidth(key.width, at: s, emphasis: key.emphasized ? 2.0 : 1.0),
-                                            dash: key.borrowed
-                                                ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
-                                                : key.dash.map { CGFloat($0) })
-                    g.stroke(path, with: .color(key.color), style: style)
-                }
-                for b in batches.selectedBoxes { drawSelectionBox(b, in: g, scale: s, background: background) }
-                // 도면 대부분이 보이고 옮기는 개체가 없으면 같은 색·굵기끼리 묶은 경로를 그린다(`CanvasBatches`).
-                // 묶음은 표시 상태·도형이 바뀔 때만 다시 만든다. 화면만 옮기는 동안은 만든 것을 그대로 쓴다.
-            } else {
-                for o in onScreen.map({ $0.map { doc.objects[$0] } }) ?? doc.objects {
-                    let st = states[o.id] ?? env.renderState(for: o)
-                    guard primary.isVisible, st.isVisible, st.opacity * primary.opacity > 0.01 else { continue }
-
-                    let cache = renderCache.entry(for: o, segmentation: segmentation)
-                    let off = offsets[o.id] ?? .zero
-                    let pad = o.style.strokeWidth / 2 + 2
-                    let box = (off == .zero ? cache.box
-                                            : cache.box.offsetBy(dx: off.width, dy: off.height))
-                        .insetBy(dx: -pad, dy: -pad)
-                    guard box.intersects(visible) else { continue }
-                    // 화면 밖 개체는 건너뛴다(제안 5). 200배로 확대해 귀퉁이만 보고 있어도
-                    // 이전에는 도면 전체를 그렸다.
-
+            let separatesReference = env.activeLevel?.referenceDrawing != nil
+            for pass in 0..<(separatesReference ? 2 : 1) {
+                if pass == 1 { drawReferenceLayers(in: ctx, canvasSize: doc.canvasSize, scale: s, visible: visible) }
+                let workOnly: Bool? = separatesReference ? pass == 1 : nil
+                // Tagged SVG objects are IMDF work, not part of the reference/background layer.
+                let primary = pass == 1 ? DrawingLayerPresentation(isVisible: true, opacity: 1) : primary
+                let onScreen = env.spatialIndex.drawIndices(in: visible, moved: Set(offsets.keys),
+                                                            count: doc.objects.count)
+                // 확대해 일부만 보고 있으면 격자로 화면 안의 개체만 돈다. 6만 개를 매 프레임 훑던 것이 이동·확대 버벅임의 큰 몫이었다.
+                if primary.isVisible, onScreen == nil, offsets.isEmpty {
+                    let batches = env.canvasObjectBatches(document: doc, primaryOpacity: primary.opacity, workOnly: workOnly)
                     var g = ctx
                     g.opacity *= primary.opacity
-                    if off != .zero { g.translateBy(x: off.width, y: off.height) }
-                    // 옮긴 개체는 좌표를 옮긴 사본을 만드는 대신 **자를 옮긴다**(제안 2).
-                    // `GraphicsContext`는 값 타입이라 복사가 싸다.
-                    let path = cache.path
-
-                    if let fill = o.style.fill {
-                        g.fill(path, with: .color(
-                            background.resolveFill(fill).opacity(st.opacity * 0.35)))
+                    for (color, path) in batches.fills { g.fill(path, with: .color(color)) }
+                    for (key, path) in batches.strokes {
+                        let style = StrokeStyle(lineWidth: CanvasZoom.strokeWidth(key.width, at: s, emphasis: key.emphasized ? 2.0 : 1.0),
+                                                dash: key.borrowed
+                                                    ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
+                                                    : key.dash.map { CGFloat($0) })
+                        g.stroke(path, with: .color(key.color), style: style)
                     }
-                    // 명세 10-2-2: 빌려온 개체는 **점선 테두리 + 다른 색**으로 구분한다.
-                    // 소유·비활성·선택 어느 것과도 다른 상태라 색을 따로 준다 —
-                    // 같은 색을 쓰면 "내가 저장한 것"과 "남에게 빌린 것"이 구분되지 않는다.
-                    let strokeColor = Self.strokeColor(st, style: o.style, background: background)
-                    let width = CanvasZoom.strokeWidth(
-                        o.style.strokeWidth, at: s,
-                        emphasis: st.isSelected || st.isBorrowed || st.isHighlighted ? 2.0 : 1.0)
-                    let style = StrokeStyle(lineWidth: width,
-                                            dash: st.isBorrowed
-                                                ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
-                                                : o.style.dashPattern.map { CGFloat($0) })
-                    // 빌림 표시 점선은 **화면상** 간격이 일정해야 한다. 도면 좌표로 두면
-                    // 확대할수록 점선 한 칸이 화면을 가로질러 실선처럼 보인다.
-                    // 반면 원본 점선(`dashPattern`)은 도면이 가진 성질이라 확대와 함께 커지는 게 맞다.
-                    // 원본이 점선이든 실선이든 빌린 동안에는 같은 점선으로 덮어쓴다.
-                    // 상태 표시가 도면 원본 스타일에 따라 달라지면 알아볼 수 없다.
-                    g.stroke(path, with: .color(strokeColor.opacity(st.opacity)), style: style)
+                    for b in batches.selectedBoxes { drawSelectionBox(b, in: g, scale: s, background: background) }
+                    // 도면 대부분이 보이고 옮기는 개체가 없으면 같은 색·굵기끼리 묶은 경로를 그린다(`CanvasBatches`).
+                    // 묶음은 표시 상태·도형이 바뀔 때만 다시 만든다. 화면만 옮기는 동안은 만든 것을 그대로 쓴다.
+                } else {
+                    for o in onScreen.map({ $0.map { doc.objects[$0] } }) ?? doc.objects {
+                        let st = states[o.id] ?? env.renderState(for: o)
+                        if let workOnly, (st.isTaggedHere || st.isTaggedOtherLayer) != workOnly { continue }
+                        guard primary.isVisible, st.isVisible, st.opacity * primary.opacity > 0.01 else { continue }
 
-                    if st.isSelected { drawSelectionBox(cache.box, in: g, scale: s, background: background) }
+                        let cache = renderCache.entry(for: o, segmentation: segmentation)
+                        let off = offsets[o.id] ?? .zero
+                        let pad = o.style.strokeWidth / 2 + 2
+                        let box = (off == .zero ? cache.box
+                                                : cache.box.offsetBy(dx: off.width, dy: off.height))
+                            .insetBy(dx: -pad, dy: -pad)
+                        guard box.intersects(visible) else { continue }
+                        // 화면 밖 개체는 건너뛴다(제안 5). 200배로 확대해 귀퉁이만 보고 있어도
+                        // 이전에는 도면 전체를 그렸다.
+
+                        var g = ctx
+                        g.opacity *= primary.opacity
+                        if off != .zero { g.translateBy(x: off.width, y: off.height) }
+                        // 옮긴 개체는 좌표를 옮긴 사본을 만드는 대신 **자를 옮긴다**(제안 2).
+                        // `GraphicsContext`는 값 타입이라 복사가 싸다.
+                        let path = cache.path
+
+                        if let fill = o.style.fill {
+                            g.fill(path, with: .color(
+                                background.resolveFill(fill).opacity(st.opacity * 0.35)))
+                        }
+                        // 명세 10-2-2: 빌려온 개체는 **점선 테두리 + 다른 색**으로 구분한다.
+                        // 소유·비활성·선택 어느 것과도 다른 상태라 색을 따로 준다 —
+                        // 같은 색을 쓰면 "내가 저장한 것"과 "남에게 빌린 것"이 구분되지 않는다.
+                        let strokeColor = Self.strokeColor(st, style: o.style, background: background)
+                        let width = CanvasZoom.strokeWidth(
+                            o.style.strokeWidth, at: s,
+                            emphasis: st.isSelected || st.isBorrowed || st.isHighlighted ? 2.0 : 1.0)
+                        let style = StrokeStyle(lineWidth: width,
+                                                dash: st.isBorrowed
+                                                    ? [5, 3].map { CanvasZoom.screenLength($0, at: s) }
+                                                    : o.style.dashPattern.map { CGFloat($0) })
+                        // 빌림 표시 점선은 **화면상** 간격이 일정해야 한다. 도면 좌표로 두면
+                        // 확대할수록 점선 한 칸이 화면을 가로질러 실선처럼 보인다.
+                        // 반면 원본 점선(`dashPattern`)은 도면이 가진 성질이라 확대와 함께 커지는 게 맞다.
+                        // 원본이 점선이든 실선이든 빌린 동안에는 같은 점선으로 덮어쓴다.
+                        // 상태 표시가 도면 원본 스타일에 따라 달라지면 알아볼 수 없다.
+                        g.stroke(path, with: .color(strokeColor.opacity(st.opacity)), style: style)
+
+                        if st.isSelected { drawSelectionBox(cache.box, in: g, scale: s, background: background) }
+                    }
                 }
+
             }
+            if !separatesReference { drawReferenceLayers(in: ctx, canvasSize: doc.canvasSize, scale: s, visible: visible) }
 
             // 다각형 선택 모드(신기능 5-4) — 폴리곤 type 레이어에서는 면을 그리고 고른다.
             // **면 → 선 → 점 순서가 규칙이다.** 면을 나중에 그리면 경계선과 꼭짓점을 덮어
@@ -1026,29 +1047,17 @@ struct CanvasView: View {
                    with: .color(color), lineWidth: 1.5 / s)
     }
 
-    private func drawReferenceLayers(in context: GraphicsContext, canvasSize: CGSize, scale: CGFloat, routing: Bool = false) {
+    private func drawReferenceLayers(in context: GraphicsContext, canvasSize: CGSize, scale: CGFloat, routing: Bool = false, visible: CGRect) {
         guard let prepared = env.canvasReferences, prepared.input.levelID == env.routingFloorID else { return }
+        env.drawReferenceDrawing(in: context, canvas: canvasSize, zoom: scale,
+                                 showSnaps: !routing && env.isPointWorkMode,
+                                 visible: visible)
         let footprint = env.footprintPresentation
         if footprint.isVisible {
             for path in prepared.footprintPaths {
                 context.fill(path, with: .color(.purple.opacity(footprint.opacity * 0.15)), style: FillStyle(eoFill: true))
                 context.stroke(path, with: .color(.purple.opacity(footprint.opacity)), lineWidth: CanvasZoom.screenLength(2, at: scale))
             }
-        }
-        guard let doc = prepared.reference else { return }
-        let presentation = routing ? DrawingLayerPresentation(isVisible: true, opacity: 1) : env.activeLevel?.referenceDrawing?.presentation
-        guard let presentation,
-              presentation.isVisible, doc.canvasSize.width > 0, doc.canvasSize.height > 0 else { return }
-        let fit = min(canvasSize.width / doc.canvasSize.width, canvasSize.height / doc.canvasSize.height)
-        var layer = context
-        layer.opacity *= presentation.opacity
-        layer.translateBy(x: (canvasSize.width - doc.canvasSize.width * fit) / 2,
-                          y: (canvasSize.height - doc.canvasSize.height * fit) / 2)
-        layer.scaleBy(x: fit, y: fit)
-        doc.drawImages(in: layer)
-        for (object, path) in zip(doc.objects, prepared.paths) {
-            if let fill = object.style.fill { layer.fill(path, with: .color(env.canvasBackground.resolveFill(fill)), style: FillStyle(eoFill: true)) }
-            layer.stroke(path, with: .color(env.canvasBackground.resolve(object.style.stroke)), lineWidth: object.style.strokeWidth)
         }
     }
 
@@ -1168,6 +1177,19 @@ struct CanvasView: View {
     private func dragGesture(viewport: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                if env.isAligningReferenceDrawing || referenceDragStart != nil {
+                    guard env.isAligningReferenceDrawing else { return }
+                    guard env.activeLevel?.referenceDrawing != nil else { return }
+                    if referenceDragStart == nil {
+                        referenceDragStart = env.referenceDrawingAlignment
+                        referenceDragFloorID = env.routingFloorID
+                    }
+                    guard referenceDragFloorID == env.routingFloorID, var alignment = referenceDragStart else { return }
+                    let start = toLocal(value.startLocation), end = toLocal(value.location)
+                    alignment.x += end.x - start.x; alignment.y += end.y - start.y
+                    if alignment.isValid { env.referenceDrawingPreview = alignment }
+                    return
+                }
                 if dragStart == nil {
                     dragStart = offset
                     lastDrag = .zero
@@ -1253,6 +1275,15 @@ struct CanvasView: View {
                 }
             }
             .onEnded { value in
+                if referenceDragStart != nil || env.isAligningReferenceDrawing {
+                    let preview = env.referenceDrawingPreview
+                    env.referenceDrawingPreview = nil
+                    if referenceDragFloorID == env.routingFloorID, let preview {
+                        env.updateReferenceDrawingAlignment(preview)
+                    }
+                    referenceDragStart = nil; referenceDragFloorID = nil
+                    return
+                }
                 let moved = abs(value.translation.width) + abs(value.translation.height)
                 if env.showRoutingScreen {
                     if routingDragFloorID != env.currentRoutingFloor?.id {

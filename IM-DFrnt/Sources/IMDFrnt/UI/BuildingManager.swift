@@ -67,6 +67,9 @@ struct BuildingManager: View {
         }
         .frame(width: 920, height: 760)
         .textFieldStyle(.roundedBorder)
+        .onChange(of: env.isAligningReferenceDrawing) { _, aligning in
+            if aligning { dismiss() }
+        }
         .alert(env.pendingDeletion?.title ?? "삭제할까요?", isPresented: Binding(
             get: { env.pendingDeletion != nil }, set: { if !$0 { env.cancelDeletion() } }
         ), presenting: env.pendingDeletion) { request in
